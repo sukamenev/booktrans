@@ -51,7 +51,7 @@ def about_lines(work, st, code):
     """
     models = _models(work)
     span = _work_span(work, code)
-    body = [st["about_made"].format(pipeline=PIPELINE)]
+    body = [st["about_made"].format(pipeline=f"{PIPELINE} ({PIPELINE_URL})")]
     if models:
         body.append(st["about_model"].format(models=", ".join(models)))
     if span:
@@ -100,7 +100,8 @@ FB2_INLINE = {
 }
 
 NOTE_PREFIX = "Прим. переводчика: "
-PIPELINE = "Booktrans"
+PIPELINE = "BookTrans"
+PIPELINE_URL = "https://github.com/sukamenev/booktrans"
 
 
 def esc(s, links=None, notes_map=None):
@@ -281,7 +282,7 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
     for i, line in enumerate(body):
         line = esc(line)
         if i == 0:
-            line = line.replace(PIPELINE, f"<strong>{PIPELINE}</strong>")
+            line = line.replace(PIPELINE, f"<strong>{PIPELINE}</strong>", 1)
         w(f"<p>{line}</p>")
     w("</section>")
 

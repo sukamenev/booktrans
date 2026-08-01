@@ -1,4 +1,4 @@
-# booktrans
+# BookTrans
 
 *[Русская версия](README.ru.md)*
 
@@ -311,11 +311,17 @@ reversible. That is where a cheaper model is worth trying first.
 What does not: tables of contents, newsletter advertising, watermarks from
 pirated files.
 
-## Watermarks
+## Foreign insertions
 
-Pirated files stamp their mark on every page. The built-in list covers
-oceanofpdf, libgen, z-lib, anna's archive, flibusta, royallib and stock
-phrases such as "downloaded from" and "scanned by".
+Ebooks often carry lines that are no part of the book: marks left by file
+hosts and scanners, "downloaded from such-and-such", "scanned by so-and-so",
+converter signatures. They sit in the middle of the text, repeat on every
+page and tear a paragraph in two.
+
+This harms translation directly: the break lands inside a chunk, the model
+takes it for part of the sentence, and coherence is lost. So such lines are
+removed before translation — not to conceal where a file came from, but to
+keep the text a text. The built-in list covers the commonest specimens.
 
 Add your own to `watermarks.txt` next to the script — one pattern per line,
 Python regular expressions, case-insensitive:
