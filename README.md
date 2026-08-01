@@ -312,6 +312,38 @@ machinery that keeps a book coherent.
 On a subscription the gain is limited: the quota is counted in tokens per
 window, so three threads simply exhaust it three times faster.
 
+## Choosing a model
+
+From a run on a 190,000-word novel — roughly 100 chunks.
+
+| | Gemini 3.1 Pro | Claude Opus 5 |
+|---|---|---|
+| time for one book | **1–2 hours** | **up to 10 hours** on a subscription |
+| plan | $20 tier is enough | $100 tier or better |
+| will refuse | scenes of nudity and violence | takes on anything |
+
+**With Gemini, always set a fallback model.** It will not translate certain
+passages: it reaches a scene of physical intimacy or cruelty and **breaks off
+silently** mid-sentence, with no explanation. It looks like a markup failure
+though the cause is the content. The pipeline recognises this, but the only
+cure it has is a fallback:
+
+```bash
+./bt_agy book.epub --fallback-agent claude --fallback-model claude-opus-5
+```
+
+Refused chunks are then translated and edited by Opus while everything else
+stays with Gemini — fast and four times cheaper.
+
+**Opus takes on anything but is slow.** On subscription plans a hundred-chunk
+book takes some ten hours: every chunk is thought over for three to five
+minutes, and that cannot be sped up — translation is sequential by design,
+each chunk building on the previous one. A $20 plan will not carry such a
+book; $100 or above is the sensible choice.
+
+You can interrupt at any point: the next run picks up where it stopped, and
+nothing already done is paid for twice.
+
 ## Per-pass models
 
 ```bash
