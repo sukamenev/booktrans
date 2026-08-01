@@ -1,0 +1,4 @@
+#!/bin/sh
+# Booktrans с русскими умолчаниями: интерфейс по-русски, перевод на русский.
+# Любой явный ключ сильнее: booktrans_ru книга.epub --to de переведёт на немецкий.
+BT_UI=ru BT_TO=ru exec "$(dirname "$0")/booktrans" "$@"

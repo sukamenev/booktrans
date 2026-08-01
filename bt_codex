@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Запуск перевода книг через Codex CLI
+#
+# Примеры вызова с разграничением моделей по этапам:
+#   1. Дефолтный запуск (модель по умолчанию Codex CLI):
+#      ./bt_codex книга.epub -p глоссарий.md
+#
+#   2. Использование модели gpt-4o:
+#      ./bt_codex книга.epub --model gpt-4o
+#
+#   3. Использование gpt-4o-mini для разведки и gpt-4o для перевода:
+#      ./bt_codex книга.epub --scout gpt-4o-mini --translator gpt-4o
+
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEFAULT_MODEL=""
+
+if [[ -n "$DEFAULT_MODEL" ]]; then
+    exec "$HERE/booktrans" --agent codex --model "$DEFAULT_MODEL" "$@"
+else
+    exec "$HERE/booktrans" --agent codex "$@"
+fi

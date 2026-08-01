@@ -1,0 +1,1022 @@
+"""Нарезка, перевод, редактура. Все проходы возобновляемые."""
+import concurrent.futures as cf
+import json
+import os
+import re
+import threading
+import time
+
+from .agent import Fatal
+from .lang import T
+
+TARGET_WORDS = 2600
+MAX_WORDS = 3600
+# Второй ограничитель, по числу блоков. Считать один размер по словам мало:
+# у стихов строка — отдельный блок в три-четыре слова, и в кусок на 800 слов
+# их набивается под две сотни. Столько идентификаторов модель в точности не
+# возвращает — на Белянине из такого куска пропало 52 строки разом.
+MAX_BLOCKS = 70
+# Если строфы не размечены, стихи режем группами по столько строк. Разрез
+# посреди четверостишия непоправим: рифмующаяся строка уходит в другой
+# запрос, и переводчик её уже не видит.
+VERSE_GROUP = 4
+# Для стихов предел куда строже, чем для прозы. Замерено на живой книге:
+# кусок из 58 стихотворных строк переводился 1220 секунд и стоил $2.24, тогда
+# как прозаический кусок втрое большего объёма — 104 секунды и $0.31. Рифма
+# и размер обходятся модели вдесятеро дороже, и держать их помногу в одном
+# запросе незачем: строфы друг от друга не зависят.
+MAX_VERSE = 24
+TAIL_PARAS = 3
+LOOKAHEAD_WORDS = 150
+TERMS_BUDGET = 6000
+DIGEST_EVERY = 8        # как часто пересжимать конспект
+DIGEST_BUDGET = 4000    # предел его размера в знаках
+HEAD_KINDS = ("title", "subtitle")
+
+
+def words(s):
+    return len(re.sub(r"<[^>]+>", " ", s).split())
+
+
+def strip(s):
+    return re.sub(r"<[^>]+>", "", s)
+
+
+# ---------------------------------------------------------------- нарезка
+
+def _cut_points(blocks):
+    """Где резать можно. Внутри стихотворения — только по границам строф,
+    а если их нет — через каждые VERSE_GROUP строк."""
+    ok = set()
+    run = 0
+    for i, b in enumerate(blocks):
+        nxt = blocks[i + 1] if i + 1 < len(blocks) else None
+        if b["kind"] == "verse":
+            run += 1
+        else:
+            run = 0
+        if nxt is None or nxt["kind"] != "verse" or b["kind"] != "verse":
+            ok.add(i)                       # граница стихов и прозы
+            continue
+        if run % VERSE_GROUP == 0:
+            ok.add(i)                       # ровно столько-то строк — можно
+    return ok
+
+
+def _split_section(blocks):
+    """Одну секцию — на примерно равные части, а не «до предела и огрызок»."""
+    total = sum(words(b["text"]) for b in blocks)
+    n_blocks = sum(1 for b in blocks if b["kind"] in ("p", "verse", "note"))
+    if total <= MAX_WORDS and n_blocks <= MAX_BLOCKS:
+        return [blocks]
+    n = max(1, round(total / TARGET_WORDS))
+    while total / n > MAX_WORDS:
+        n += 1
+    # ...и столько же раз, сколько нужно, чтобы блоков в куске было немного
+    n = max(n, -(-n_blocks // MAX_BLOCKS))
+    target = total / n
+    ok = _cut_points(blocks)
+    parts, cur, cw, done = [], [], 0, 0
+    for i, b in enumerate(blocks):
+        cur.append(b)
+        cw += words(b["text"])
+        rest = total - done - cw
+        # Предел по блокам сильнее предполагаемого числа частей: стихи
+        # сбиваются в конец главы, и без этого весь остаток лёг бы
+        # в последний кусок одной кучей.
+        n_cur = sum(1 for x in cur if x["kind"] in ("p", "verse", "note"))
+        n_verse = sum(1 for x in cur if x["kind"] == "verse")
+        if n_verse >= MAX_VERSE and rest > 0 and i in ok:
+            parts.append(cur)              # стихов набралось предельно
+            done += cw
+            cur, cw = [], 0
+            continue
+        if n_cur >= MAX_BLOCKS and rest > 0 and i in ok:
+            parts.append(cur)
+            done += cw
+            cur, cw = [], 0
+            continue
+        if len(parts) == n - 1:
+            continue
+        if cw >= target * 0.75:
+            nxt = blocks[i + 1] if i + 1 < len(blocks) else None
+            if (cw >= target or (nxt and nxt["kind"] == "break")) and i in ok:
+                if rest >= target * 0.5:
+                    parts.append(cur)
+                    done += cw
+                    cur, cw = [], 0
+    if cur:
+        parts.append(cur)
+    return parts
+
+
+def make_chunks(blocks):
+    """Границу секции (заголовка) не пересекаем: в одном запросе — один кусок
+    текста с одной интонацией. Заголовки прилипают к следующей секции."""
+    sections, cur = [], []
+    for b in blocks:
+        if b["kind"] == "title" and any(x["kind"] == "p" for x in cur):
+            sections.append(cur)
+            cur = []
+        cur.append(b)
+    if cur:
+        sections.append(cur)
+
+    # Крошечные разделы подряд склеиваем. Такое бывает в глоссариях и
+    # указателях, где каждая статья набрана подзаголовком: у одной книги так
+    # вышло сорок кусков по семьдесят слов, и каждый платил полную цену за
+    # системный промпт со справочником. Настоящие главы не трогаем — только
+    # то, что заведомо мельче четверти куска.
+    small = TARGET_WORDS // 4
+    merged, buf = [], []
+    for sec in sections:
+        w = sum(words(b["text"]) for b in sec)
+        if w < small:
+            buf.append(sec)
+            if sum(words(b["text"]) for s2 in buf for b in s2) >= TARGET_WORDS:
+                merged.append([b for s2 in buf for b in s2])
+                buf = []
+            continue
+        if buf:
+            merged.append([b for s2 in buf for b in s2])
+            buf = []
+        merged.append(sec)
+    if buf:
+        merged.append([b for s2 in buf for b in s2])
+    sections = merged
+
+    chunks = []
+    for sec in sections:
+        for part in _split_section(sec):
+            chunks.append({"blocks": part})
+    last = ""
+    for i, c in enumerate(chunks, 1):
+        c["index"] = i
+        c["words"] = sum(words(b["text"]) for b in c["blocks"])
+        heads = [strip(b["text"]) for b in c["blocks"] if b["kind"] == "title"]
+        if heads:
+            last = heads[0][:40]
+            c["label"] = last
+        else:
+            # продолжение длинного раздела: показываем тот же заголовок,
+            # иначе в выводе идут безымянные прочерки
+            c["label"] = f"{last} (прод.)" if last else ""
+    return chunks
+
+
+def translatable(blocks):
+    """В модель идут абзацы и стихотворные строки. Заголовки — отдельной
+    таблицей: короткие строки в начале запроса модель принимает за шапку
+    промпта и теряет."""
+    return [b for b in blocks if b["kind"] in ("p", "verse", "note")]
+
+
+# ---------------------------------------------------------------- общее
+
+def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
+    tail = ""
+    if extra_tag:
+        m = re.search(rf"<<<{extra_tag}>>>\s*(.*)$", out, re.S)
+        if m:
+            tail = m.group(1).strip()
+        out = re.split(rf"<<<{extra_tag}>>>", out)[0]
+    got = {}
+    for m in re.finditer(r"<<<[PV]\s+(\S+?)>>>\s*(.*?)(?=<<<[PV]\s+\S+?>>>|$)", out, re.S):
+        got[m.group(1)] = m.group(2).strip()
+    empty = [k for k, v in got.items() if not v]
+    if expected is not None:
+        missing = [i for i in expected if i not in got]
+        extra = [i for i in got if i not in expected]
+        if missing or extra or empty:
+            # Сплошной хвост пропущенного — это не сбой разметки, а обрыв:
+            # модель дошла до какого-то места и дальше писать не стала.
+            # Чаще всего упирается в содержание — насилие, телесность,
+            # откровенная сцена. Сказать об этом надо прямо, иначе человек
+            # часами проверяет размеры кусков и бюджеты токенов, как было.
+            if missing and not extra and not empty \
+                    and missing == expected[expected.index(missing[0]):]:
+                raise Truncated(missing[0], len(missing), len(expected))
+            raise ValueError(f"не сошлись абзацы: пропущено {missing[:4]} ({len(missing)}), "
+                             f"лишних {extra[:4]}, пустых {empty[:4]}")
+    if allowed is not None:
+        unknown = [i for i in got if i not in allowed]
+        if unknown or empty:
+            raise ValueError(f"неизвестные идентификаторы {unknown[:4]}, пустые {empty[:4]}")
+    return got, tail
+
+
+def parse_notes_blocks(out, allowed):
+    """Блоки <<<NOTE id вид>>> из ответа. Общий разбор для сносок и редактуры."""
+    items = []
+    for m in re.finditer(r"<<<NOTE\s+(\S+?)\s+(reference|fact|term|source)>>>\s*"
+                         r"TERM:\s*(.*?)\n\s*TEXT:\s*(.*?)(?=<<<|\Z)", out, re.S):
+        bid, kind, term, text = m.groups()
+        if bid in allowed and text.strip():
+            items.append({"block": bid, "kind": kind, "term": term.strip(),
+                          "text": " ".join(text.split())})
+    return items
+
+
+class Refused(RuntimeError):
+    """Модель дважды остановилась на одном месте: скорее всего, не хочет
+    переводить это содержание, а не ошибается с разметкой."""
+
+    def __init__(self, first, n, total):
+        self.first, self.n, self.total = first, n, total
+        super().__init__(f"перевод остановлен на блоке {first}")
+
+
+class Truncated(ValueError):
+    """Ответ оборвался: с какого-то блока и до конца куска ничего нет."""
+
+    def __init__(self, first, n, total):
+        self.first, self.n, self.total = first, n, total
+        super().__init__(f"ответ оборван на блоке {first}: "
+                         f"не хватает {n} из {total}")
+
+
+def _run(agent, system, prompt, retries, parse_fn, log):
+    cur = prompt
+    stops = []
+    for attempt in range(1, retries + 1):
+        try:
+            t0 = time.time()
+            out, meta = agent.run(system, cur)
+            return parse_fn(out), meta, time.time() - t0
+        except Truncated as e:
+            stops.append(e.first)
+            log("\n    " + T("retry", attempt, e))
+            # Оборвалось дважды на одном и том же месте — дело не в
+            # случайности и не в размере куска: модель не хочет переводить
+            # именно это. Дальнейшие попытки бесполезны и стоят денег.
+            if len(stops) >= 2 and stops[-1] == stops[-2]:
+                raise Refused(e.first, e.n, e.total) from None
+            cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
+                            "Верни РОВНО требуемые идентификаторы, каждый один раз.")
+        except Fatal:
+            raise                       # повторять нечего: беда не в тексте
+        except Exception as e:
+            log("\n    " + T("retry", attempt, e))
+            cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
+                            "Верни РОВНО требуемые идентификаторы, каждый один раз.")
+    raise RuntimeError("исчерпаны попытки")
+
+
+# ---------------------------------------------------------------- перевод
+
+def accumulated_terms(state, upto):
+    """Термины из ранее переведённых кусков.
+
+    Без этого модель не видит своих же решений и даёт одному термину разные
+    переводы в разных частях книги. Побеждает первое вхождение.
+    """
+    seen = {}
+    for k in sorted((int(x) for x in state.get("terms", {}))):
+        if k >= upto:
+            break
+        for line in state["terms"][str(k)].splitlines():
+            line = line.strip()
+            if "=" not in line or line.lower().startswith(("нет", "none")):
+                continue
+            en, ru = (p.strip() for p in line.split("=", 1))
+            if en and ru and ru != "—" and en not in seen:
+                seen[en] = ru
+    out, size = [], 0
+    for en, ru in seen.items():
+        s = f"{en} = {ru}"
+        if size + len(s) > TERMS_BUDGET:
+            break
+        out.append(s)
+        size += len(s)
+    return out
+
+
+def condense(state, upto, agent, retries, log):
+    """Накопительный конспект вместо скользящего окна.
+
+    Окно последних N сводок теряет начало книги: при переводе 51-го куска
+    события первых сорока просто не видны, и забытое обстоятельство
+    всплывает ошибкой. Здесь общий конспект раз в несколько кусков
+    пересжимается заново — ранние события не исчезают, а ужимаются
+    до строчки и доживают до конца.
+    """
+    digest = state.get("digest", "")
+    done = state.get("digest_upto", 0)
+    fresh = [state["sum"][str(k)] for k in range(done + 1, upto)
+             if str(k) in state["sum"]]
+    if len(fresh) < DIGEST_EVERY:
+        return (digest + "\n\n" + "\n\n".join(fresh)).strip()
+
+    prompt = (
+        "Ниже конспект прочитанной части книги и свежие заметки о том, что "
+        "случилось дальше. Сведи их в один связный конспект.\n\n"
+        "Требования: сохранить всё, что может понадобиться дальше — кто есть "
+        "кто, что произошло, что изменилось, чем дело кончилось; ранние "
+        "события можно ужать до строчки, но не выбрасывать; уложиться "
+        f"примерно в {DIGEST_BUDGET} знаков; писать сплошным текстом, "
+        "без заголовков и списков.\n\n"
+        "## Конспект\n\n" + (digest or "(пока пусто)") +
+        "\n\n## Что было дальше\n\n" + "\n\n".join(fresh))
+    log("  " + T("digest_go"), end="")
+    (new, _), meta, dt = _run(agent, "", prompt, retries, lambda o: (o.strip(), ""), log)
+    state["digest"] = new
+    state["digest_upto"] = upto - 1
+    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+    log(T("digest_done", len(new), f"{dt:.0f}", f"{meta['model']}{cost}"))
+    return new
+
+
+def translate_prompt(chunk, nxt, summary, tail, terms, task):
+    # стихи помечаем отдельно: иначе модель их не отличит и переведёт прозой,
+    # а редактор потом «выправит» ритм окончательно
+    src = "\n".join(f"<<<{'V' if b['kind'] == 'verse' else 'P'} {b['id']}>>>\n{b['text']}"
+                    for b in translatable(chunk["blocks"]))
+    parts = [task, f"Фрагмент {chunk['index']}."
+                   + (f" Раздел: {chunk['label']}." if chunk["label"] else "")]
+    if summary:
+        parts.append("## Что было в книге до этого места\n\n"
+                     "Фон для связности. Не переводить и не пересказывать в ответе.\n\n" + summary)
+    if tail:
+        parts.append("## Последние абзацы уже готового перевода\n\n"
+                     "Продолжай этим же стилем и ритмом; не повторяй только что "
+                     "использованные обороты.\n\n" + tail)
+    if terms:
+        parts.append("## Термины, уже принятые в предыдущих фрагментах\n\n"
+                     "Твои же решения из ранее переведённых кусков. Встретишь любой — "
+                     "бери отсюда дословно, нового варианта не придумывай.\n\n" + "\n".join(terms))
+    parts.append("## Фрагмент для перевода\n\n"
+                 "Переведи каждый абзац. Верни все идентификаторы, в том же порядке.\n\n" + src)
+    if nxt:
+        ahead = " ".join(strip(b["text"]) for b in translatable(nxt["blocks"])[:4])
+        ahead = " ".join(ahead.split()[:LOOKAHEAD_WORDS])
+        if ahead:
+            parts.append("## Что идёт дальше (переводить НЕ надо)\n\n"
+                         "Нужно только чтобы не оборвать мысль.\n\n" + ahead)
+    return "\n\n---\n\n".join(parts)
+
+
+def translate(work, chunks, agent, system, task, retries, log, only=None, fallback=None):
+    os.makedirs(f"{work}/tr", exist_ok=True)
+    os.makedirs(f"{work}/prompts", exist_ok=True)
+    sp = f"{work}/state.json"
+    state = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {"sum": {}, "terms": {}}
+    # готовность считаем по блокам, а не по именам файлов: если нарезка
+    # изменилась, старый файл покроет не те блоки и оставит дыру
+    have = set()
+    if os.path.isdir(f"{work}/tr"):
+        for n in sorted(os.listdir(f"{work}/tr")):
+            if n.endswith(".json"):
+                have |= set(json.load(open(f"{work}/tr/{n}", encoding="utf-8"))["tr"])
+
+    done = skipped = 0
+    for i, c in enumerate(chunks):
+        idx = c["index"]
+        if only and idx not in only:
+            continue
+        out_path = f"{work}/tr/{idx:04d}.json"
+        if not only and all(b["id"] in have for b in translatable(c["blocks"])):
+            skipped += 1
+            continue
+        summary = condense(state, idx, agent, retries, log)
+        tail = ""
+        prev = f"{work}/tr/{idx - 1:04d}.json"
+        if os.path.exists(prev):
+            vals = [v for v in json.load(open(prev, encoding="utf-8"))["tr"].values() if v.strip()]
+            tail = "\n\n".join(vals[-TAIL_PARAS:])
+        nxt = chunks[i + 1] if i + 1 < len(chunks) else None
+        prompt = translate_prompt(c, nxt, summary, tail, accumulated_terms(state, idx), task)
+        open(f"{work}/prompts/{idx:04d}.txt", "w", encoding="utf-8").write(prompt)
+
+        expected = [b["id"] for b in translatable(c["blocks"])]
+        log(f"[{idx:04d}/{len(chunks):04d}] {c['label'][:24]:24s} "
+            + T("words_n", f"{c['words']:5d}") + " ... ", end="")
+        try:
+            (res, extra), meta, dt = _run(
+                agent, system, prompt, retries,
+                lambda o: _parse_translate(o, expected), log)
+        except Refused as e:
+            # Показываем сам текст: по нему сразу видно, почему модель встала,
+            # и не нужно гадать про размеры кусков и бюджеты токенов.
+            src = next((b["text"] for b in c["blocks"] if b["id"] == e.first), "")
+            src = re.sub(r"<[^>]+>", "", src)[:150]
+            log("")
+            log("    " + T("refused", e.first, e.n, e.total))
+            log(f"      {src}…")
+            if fallback is None:
+                log("    " + T("refused_hint"))
+                continue
+            # Подстраховка: то же задание другой модели. Отказ — свойство
+            # модели, а не текста, и у другой такого запрета может не быть.
+            log("    " + T("refused_retry"))
+            try:
+                (res, extra), meta, dt = _run(
+                    fallback, system, prompt, retries,
+                    lambda o: _parse_translate(o, expected), log)
+            except (Refused, RuntimeError) as e2:
+                log("    " + T("refused_both", getattr(e2, "first", e.first)))
+                continue
+        extra, found = extra
+        summ, terms = _split_meta(extra)
+        json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
+                   "footnotes": found, "tr": res},
+                  open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        # Пустой конспект — признак сломанного протокола, а не молчания
+        # модели: значит, служебные ярлыки в ответе не совпали с теми, что
+        # ищет разборщик. Молча это не проходит, потому что конспект и список
+        # терминов — то, что держит книгу единой между кусками, и книга
+        # соберётся как ни в чём не бывало, только термины разойдутся.
+        if not summ.strip():
+            log("")
+            log("    " + T("no_summary"))
+        state["sum"][str(idx)] = summ
+        if terms:
+            state["terms"][str(idx)] = terms
+        json.dump(state, open(sp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        done += 1
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        log(T("ready_in", f"{dt:.0f}", f"{meta['model']}{cost}"))
+    return done, skipped
+
+
+def _parse_translate(out, expected):
+    """Ответ переводчика: абзацы + сноски + служебный блок."""
+    ids = {i for i in expected}
+    found = parse_notes_blocks(out, ids)
+    body = re.split(r"<<<NOTE\s", out)[0]
+    res, extra = parse_blocks(body, expected=expected, extra_tag="META")
+    m = re.search(r"<<<META>>>\s*(.*)$", out, re.S)
+    if m:
+        extra = m.group(1).strip()
+    return res, (extra, found)
+
+
+def _split_meta(extra):
+    summ = re.search(r"SUMMARY:\s*(.*?)(?=TERMS:|$)", extra, re.S)
+    terms = re.search(r"TERMS:\s*(.*)$", extra, re.S)
+    return (summ.group(1).strip() if summ else extra.strip(),
+            terms.group(1).strip() if terms else "")
+
+
+# ---------------------------------------------------------------- редактура
+
+def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
+         fallback=None):
+    os.makedirs(f"{work}/ed", exist_ok=True)
+    todo = []
+    skipped = 0
+    for c in chunks:
+        idx = c["index"]
+        if only and idx not in only:
+            continue
+        edp = f"{work}/ed/{idx:04d}.json"
+        if os.path.exists(edp) and not only:
+            # по составу блоков, а не по наличию файла: изменилась нарезка —
+            # старый файл покрывает не тот кусок
+            prev = json.load(open(edp, encoding="utf-8")).get("blocks")
+            if prev is None or prev == [b["id"] for b in translatable(c["blocks"])]:
+                skipped += 1
+                continue
+        if os.path.exists(f"{work}/tr/{idx:04d}.json"):
+            todo.append(c)
+    # редактура привязана к файлам кусков, и это нормально: она не обязана
+    # покрывать каждый блок
+
+    done = total = 0
+    lock = threading.Lock()
+
+    n_all = len(chunks)
+
+    def one(c):
+        nonlocal done, total
+        idx = c["index"]
+        who = (c["label"] or "—")[:24]
+        out_path = f"{work}/ed/{idx:04d}.json"
+        made = json.load(open(f"{work}/tr/{idx:04d}.json", encoding="utf-8"))
+        draft = made["tr"]
+        if not draft:
+            return
+        # Кусок, который основная модель переводить отказалась, она откажется
+        # и править: отказ вызван содержанием, а оно никуда не делось.
+        # Редактируем той же моделью, что перевела. Замерено: на таком куске
+        # основная модель дала 2 правки из 41, и обе в первых двух абзацах.
+        mine = agent
+        if fallback is not None and made.get("model") \
+                and made["model"] == getattr(fallback, "model", None):
+            mine = fallback
+        with lock:
+            log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_start", f"{len(draft):3d}"))
+        # при jobs>1 предыдущий кусок может быть ещё не отредактирован —
+        # берём что есть; шов чуть хуже, зато проходы идут одновременно
+        tail = ""
+        if idx > 1:
+            prev = current(work, idx - 1)
+            tail = "\n\n".join([v for v in prev.values() if v.strip()][-TAIL_PARAS:])
+        # Конспект сюжета, накопленный при переводе. Редактору он нужен не
+        # меньше: правя местоимения, обращения и связки, легко исказить смысл,
+        # если не знаешь, кто в сцене, что уже случилось и кем персонажи
+        # приходятся друг другу.
+        digest = ""
+        sp = f"{work}/state.json"
+        if os.path.exists(sp):
+            st = json.load(open(sp, encoding="utf-8"))
+            parts = [st.get("digest", "")]
+            parts += [st["sum"][str(k)] for k in range(st.get("digest_upto", 0) + 1, idx)
+                      if str(k) in st.get("sum", {})]
+            digest = "\n\n".join(p for p in parts if p).strip()
+        # только русский текст: оригинал намеренно не показываем, иначе
+        # правка идёт в сторону чужого синтаксиса, а не хорошего русского
+        pairs = [f"<<<{'V' if b['kind'] == 'verse' else 'P'} {b['id']}>>>\n{draft[b['id']]}"
+                 for b in translatable(c["blocks"]) if b["id"] in draft]
+        parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
+        if digest:
+            parts.append("## Что было в книге до этого места\n\n"
+                         "Правя местоимения, обращения и связки, сверяйся с этим: "
+                         "кто в сцене, что уже произошло, кем персонажи приходятся "
+                         "друг другу. Править или пересказывать этот текст не надо.\n\n"
+                         + digest)
+        if tail:
+            parts.append("## Хвост предыдущего, уже отредактированного куска\n\n"
+                         "Нужен для гладкого стыка. Править его не надо.\n\n" + tail)
+        parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
+        prompt = "\n\n---\n\n".join(parts)
+        open(f"{work}/prompts/{idx:04d}.edit.txt", "w", encoding="utf-8").write(prompt)
+
+        (res, notes), meta, dt = _run(
+            mine, system, prompt, retries,
+            lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
+        json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
+                   "notes": notes, "blocks": list(draft),
+                   "edits": {k: {"old": draft[k], "new": v} for k, v in res.items()}},
+                  open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        with lock:
+            done += 1
+            total += len(res)
+            log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
+                + T("ed_done", f"{len(res):3d}", f"{len(draft):3d}",
+                    f"{dt:.0f}", f"{meta['model']}{cost}"))
+
+            # Редактура по замыслу возвращает только изменённые абзацы, и
+            # оборванный ответ выглядит ровно как «посмотрел всё, править
+            # нечего». Отличить можно по месту последней правки: на здоровом
+            # куске они идут по всему тексту, а когда модель упирается в
+            # содержание — обрываются в начале и дальше пусто. Замерено на
+            # одной книге: обычный кусок — 27 правок из 70, последняя на
+            # 70-м блоке; кусок со спорной сценой — 2 из 41, обе в первых
+            # двух блоках.
+            ids = [b["id"] for b in draft]
+            last = max((ids.index(k) + 1 for k in res if k in ids), default=0)
+            if res and len(ids) >= 20 and (len(ids) - last) / len(ids) > 0.6:
+                log("    " + T("edit_stopped", last, len(ids)))
+
+    if jobs > 1 and len(todo) > 1:
+        log("  " + T("in_threads", jobs))
+        with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+            list(ex.map(one, todo))
+    else:
+        for c in todo:
+            one(c)
+    return done, skipped, total
+
+
+def current(work, idx):
+    tp = f"{work}/tr/{idx:04d}.json"
+    if not os.path.exists(tp):
+        return {}
+    base = json.load(open(tp, encoding="utf-8"))["tr"]
+    ep = f"{work}/ed/{idx:04d}.json"
+    if os.path.exists(ep):
+        for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
+            base[k] = e["new"]
+    return base
+
+
+def all_translations(work):
+    """Черновик с наложенной редактурой + счётчик правок."""
+    tr, edited = {}, 0
+    d = f"{work}/tr"
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if n.endswith(".json"):
+                tr.update(json.load(open(f"{d}/{n}", encoding="utf-8"))["tr"])
+    d = f"{work}/ed"
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if not n.endswith(".json"):
+                continue
+            for k, e in json.load(open(f"{d}/{n}", encoding="utf-8"))["edits"].items():
+                if k in tr:
+                    tr[k] = e["new"]
+                    edited += 1
+    return tr, edited
+
+
+# ---------------------------------------------------------------- сноски
+
+def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
+    """Предложение сносок и проверка фактов.
+
+    Идёт по кускам, накапливая уже предложенное: одно и то же понятие не должно
+    получить сноску дважды. Результат — work/notes.json, который сборщик
+    накладывает на текст. Ставит сноски сборщик, а не модель: иначе длинная
+    глава, переведённая несколькими запросами, получит пояснение по разу
+    на каждый.
+    """
+    os.makedirs(f"{work}/nt", exist_ok=True)
+    todo, skipped = [], 0
+    for c in chunks:
+        idx = c["index"]
+        if only and idx not in only:
+            continue
+        if os.path.exists(f"{work}/nt/{idx:04d}.json") and not only:
+            skipped += 1
+            continue
+        todo.append(c)
+
+    # Список «уже объяснено» снимается один раз, до начала: при работе в
+    # несколько потоков куски не увидят предложений друг друга. Это не беда —
+    # окончательная дедупликация по термину всё равно делается при сборке,
+    # так что дублей в книге не будет, лишними окажутся лишь предложения.
+    already = []
+    for n in sorted(os.listdir(f"{work}/nt")):
+        if n.endswith(".json"):
+            for it in json.load(open(f"{work}/nt/{n}", encoding="utf-8"))["notes"]:
+                already.append(it["term"])
+
+    done = total = 0
+    lock = threading.Lock()
+    n_all = len(chunks)
+
+    def one(c):
+        nonlocal done, total
+        idx = c["index"]
+        who = (c["label"] or "—")[:24]
+        out_path = f"{work}/nt/{idx:04d}.json"
+        tr = current(work, idx)
+        if not tr:
+            return
+        with lock:
+            log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("nt_start"))
+
+        pairs = [f"<<<P {b['id']}>>>\nОРИГИНАЛ: {b['text']}\nПЕРЕВОД:  {tr[b['id']]}"
+                 for b in translatable(c["blocks"]) if b["id"] in tr]
+        parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
+        if already:
+            parts.append("## Уже объяснено раньше — не повторять\n\n" + "\n".join(sorted(set(already))))
+        parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
+        prompt = "\n\n---\n\n".join(parts)
+        open(f"{work}/prompts/{idx:04d}.notes.txt", "w", encoding="utf-8").write(prompt)
+
+        def parse_notes(out):
+            items = []
+            for m in re.finditer(
+                    r"<<<NOTE\s+(\S+?)\s+(reference|fact|term|source)>>>\s*TERM:\s*(.*?)\n"
+                    r"TEXT:\s*(.*?)(?=<<<NOTE|\Z)", out, re.S):
+                bid, kind, term, text = m.groups()
+                if bid in tr and text.strip():
+                    items.append({"block": bid, "kind": kind,
+                                  "term": term.strip(), "text": " ".join(text.split())})
+            return items, ""
+
+        (items, _), meta, dt = _run(agent, system, prompt, retries, parse_notes, log)
+        json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
+                   "notes": items}, open(out_path, "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        with lock:
+            done += 1
+            total += len(items)
+            log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
+                + T("nt_done", f"{len(items):2d}", f"{dt:.0f}",
+                    f"{meta['model']}{cost}"))
+
+    if jobs > 1 and len(todo) > 1:
+        log("  " + T("in_threads", jobs))
+        with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+            list(ex.map(one, todo))
+    else:
+        for c in todo:
+            one(c)
+    return done, skipped, total
+
+
+def all_notes(work, order):
+    """Все сноски в порядке следования по книге, по одной на блок."""
+    got, seen = {}, set()
+    src = []
+    for sub, key in (("tr", "footnotes"), ("ed", "footnotes"), ("nt", "notes")):
+        d = f"{work}/{sub}"
+        if not os.path.isdir(d):
+            continue
+        for n in sorted(os.listdir(d)):
+            if n.endswith(".json"):
+                src += json.load(open(f"{d}/{n}", encoding="utf-8")).get(key) or []
+    for it in src:
+        key = it["term"].lower()
+        if key in seen:
+            continue                    # одно понятие объясняем один раз
+        seen.add(key)
+        got.setdefault(it["block"], []).append(it)
+    merged = {}
+    for bid in sorted(got, key=lambda x: order.get(x, 10 ** 9)):
+        # Метку «Прим. переводчика» получают все сноски этого прохода, включая
+        # выходные данные цитат. Прежде их оставляли без метки как «не
+        # примечание, а библиография», но у книги, где авторских сносок нет
+        # вовсе, читатель принимал такую сноску за авторскую. Авторские сюда
+        # не попадают: они приходят блоками из самой книги.
+        merged[bid] = {"text": " ".join(i["text"] for i in got[bid]),
+                       "source_only": False}
+    return merged
+
+
+# ---------------------------------------------------------------- разведка
+
+SCOUT_WORDS = 18000     # крупный блок: на вход много, на выход мало
+SCOUT_BUDGET = 24000    # предел справочника в знаках: он идёт в КАЖДЫЙ запрос
+
+
+# Коды жанров fb2, которые конвейер принимает от разведки. Список нарочно
+# короткий: он идёт в промпт, а тот и без того несёт большой справочник.
+# Ответ вне списка отбрасывается — в fb2 это поле читают программы, и
+# «фантастика» вместо `sf` делает его негодным.
+GENRES = {
+    "sf", "sf_space", "sf_cyberpunk", "sf_social", "sf_horror", "sf_fantasy",
+    "sf_heroic", "sf_detective", "sf_action", "sf_history",
+    "det_classic", "det_political", "det_action", "thriller",
+    "love_contemporary", "love_history", "love_detective",
+    "prose_history", "prose_contemporary", "prose_classic", "prose_rus_classic",
+    "child_prose", "child_adv", "poetry", "nonfiction", "sci_popular",
+    "adv_history", "adv_maritime", "adv_animal", "adv_western",
+    "humor_prose", "humor_satire",
+}
+
+
+def scout_meta(work):
+    """Выходные данные, вычитанные разведкой из самого текста.
+
+    Нужны там, где формат их не хранит: у txt и pdf метаданных нет вовсе,
+    и без этого в заголовок книги попадает имя файла. Берётся только как
+    запасной вариант — порядок старшинства задан в booktrans.
+    """
+    p = f"{work}/scout.md"
+    if not os.path.exists(p):
+        return {}
+    txt = open(p, encoding="utf-8").read()
+    # Уровень заголовка не задан жёстко: модель ставит то «##», то «#», и
+    # книга из-за одной решётки выходила с заглавием оригинала. Заодно
+    # принимаем перевод названия раздела — по-английски и по-немецки.
+    m = re.search(r"#{1,4}\s*(?:ВЫХОДНЫЕ ДАННЫЕ|IMPRINT|METADATA|IMPRESSUM)"
+                  r"(.*?)(?=\n#{1,4}\s|\Z)", txt, re.S | re.I)
+    if not m:
+        return {}
+    out = {}
+    allowed = {"title", "author", "year", "publisher", "series", "series_no",
+               "genre"}
+    for line in m.group(1).splitlines():
+        # Терпим к оформлению: модель любит завернуть строку в маркированный
+        # список и выделить ключ полужирным. Сам ключ при этом остаётся
+        # латинским, и по нему всё находится.
+        mm = re.match(r"\s*[-*]?\s*\**\s*(\w+)\s*\**\s*[=:]\s*(.+?)\s*$", line)
+        if not mm:
+            continue
+        key, v = mm.group(1), mm.group(2).strip().strip("`\"\'*")
+        # Ключ один: title_target. Кода языка тут быть не должно — «tr»
+        # читается и как «translated», и как турецкий, а при переводе на
+        # турецкий это стало бы прямой путаницей.
+        if key not in allowed | {"title_target", "author_target"}:
+            continue
+        if key == "genre":
+            # Сверяем со словарём: выдуманный код хуже умолчания, потому что
+            # выглядит как настоящий и никем не проверяется.
+            v = v.strip().strip("`").lower()
+            if v not in GENRES:
+                continue
+        if v and not v.startswith("("):
+            out[key] = v
+    return out
+
+
+def scout(work, blocks, agent, system, task, retries, log, to='ru',
+          src_name=None):
+    """Крупноблочный проход ДО перевода.
+
+    Собирает голоса персонажей, имена собственные и повторяющиеся термины.
+    Дёшево: на вход идут десятки тысяч слов, на выходе — короткий разбор.
+    Результат склеивается в work/scout.md и дальше уходит в системный промпт
+    каждого запроса, так что решения по именам и интонациям принимаются
+    один раз на всю книгу, а не заново в каждом куске.
+    """
+    out_path = f"{work}/scout.md"
+    if os.path.exists(out_path):
+        log("  " + T("scout_done_already"))
+        return open(out_path, encoding="utf-8").read()
+
+    paras = [b for b in blocks if b["kind"] in ("p", "title")]
+    parts, cur, cw = [], [], 0
+    for b in paras:
+        cur.append(b)
+        cw += words(b["text"])
+        if cw >= SCOUT_WORDS:
+            parts.append(cur)
+            cur, cw = [], 0
+    if cur:
+        parts.append(cur)
+
+    findings = []
+    for i, part in enumerate(parts, 1):
+        text = "\n\n".join(strip(b["text"]) for b in part)
+        # Имя исходного файла — подсказка, а не истина. В библиотеках в него
+        # кладут автора и заглавие, но порядок бывает любым: «Заглавие —
+        # Автор», «Автор. Заглавие», иногда с номером из каталога. Разбирать
+        # это правилами — значит путать автора с заглавием через раз, и
+        # молча. Модель книгу читает и разберётся сама.
+        hint = ""
+        if src_name and i == 1:
+            hint = (f"\n\n## Имя исходного файла\n\n`{src_name}`\n\n"
+                    "В нём часто закодированы автор и заглавие, но порядок и "
+                    "написание бывают любыми, а иногда там номер из каталога "
+                    "или мусор. Бери это как подсказку: сведения из самого "
+                    "текста книги всегда важнее. Если в тексте выходных "
+                    "данных нет, а имя файла читается уверенно — используй его.")
+        prompt = (f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}\n\n{text}")
+        log("  " + T("scout_block", i, len(parts),
+                     f"{sum(words(b['text']) for b in part):6d}"), end="")
+        (res, _), meta, dt = _run(agent, system, prompt, retries, lambda o: (o, ""), log)
+        findings.append(res)
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+
+    if len(findings) > 1:
+        log("  " + T("scout_merge"), end="")
+        merge = (
+            "Ниже — разборы разных частей одной книги, сделанные по отдельности. "
+            "Сведи их в один справочник.\n\n"
+            "Требования:\n"
+            "- убрать повторы; если по одному имени или термину предложены разные "
+            "варианты, выбрать один и указать его;\n"
+            f"- **уложиться примерно в {SCOUT_BUDGET} знаков**. Этот справочник "
+            "уходит в каждый запрос на перевод, поэтому он должен быть плотным: "
+            "таблицы вместо прозы, строка на сущность, никаких рассуждений и "
+            "пересказа сюжета;\n"
+            "- сохранить всё, что влияет на выбор слова: имена, род, склонение, "
+            "свойства предметов, перемены, обращения, голоса рассказчиков, "
+            "опасные места. Второстепенные подробности, не влияющие на перевод, "
+            "выбросить;\n"
+            "- формат разделов тот же, что в разборах.\n\n---\n\n"
+            + "\n\n---\n\n".join(findings))
+        (merged, _), meta, dt = _run(agent, system, merge, retries, lambda o: (o, ""), log)
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+    else:
+        merged = findings[0] if findings else ""
+
+    open(out_path, "w", encoding="utf-8").write(merged)
+    log("  " + T("scout_ref", out_path, len(merged)))
+    if len(merged) > SCOUT_BUDGET * 1.6:
+        log("  " + T("scout_big", out_path))
+
+    # Двоящиеся термины ловим до перевода, а не после. Запись вида
+    # «одиночка / синглтон» — это не решение, и переводчик, работая кусками,
+    # будет выбирать заново в каждом: у одного романа так вышло 45 раз одно
+    # слово и 29 раз другое. Правится это одной строкой в справочнике — но
+    # только если о ней знать.
+    #
+    # Ищем узко. Строка вида «duo / trio / quartet | дуэт / трио / квартет» —
+    # это перечень, косая черта в нём законна. Раздвоение — когда в оригинале
+    # термин один, а вариантов перевода несколько.
+    from .lang import SCRIPTS, script_of
+    rng = SCRIPTS.get(script_of(to) or "", "")
+    sep = re.compile(r"\s/\s|\bили\b|\bor\b")
+    forked = []
+    if rng:
+        has_target = re.compile(rf"[{rng}]")
+        inside = False
+        for line in merged.splitlines():
+            if line.startswith("#"):
+                inside = bool(re.search(r"ИМЕНА|ТЕРМИН|NAMES|TERMS", line, re.I))
+                continue
+            if not inside or line.count("|") < 3 or "---" in line:
+                continue
+            cols = [c.strip() for c in line.split("|")]
+            orig, trans = cols[1], cols[2]
+            if len(trans) > 70 or not has_target.search(trans):
+                continue
+            if len(sep.split(trans)) > len(sep.split(orig)):
+                forked.append(re.sub(r"\s+", " ", line.strip())[:88])
+    if forked:
+        log("  " + T("scout_forked", len(forked)))
+        for x in forked[:8]:
+            log(f"      {x}")
+    return merged
+
+
+# ---------------------------------------------------------------- заголовки
+
+def headings(work, blocks, agent, system, retries, log):
+    """Заголовки и подзаголовки — одним запросом на всю книгу.
+
+    Их немного (десятки), и они обязаны совпадать дословно между собой:
+    десять вхождений одного имени рассказчика не должны выглядеть по-разному.
+    Отдельно от прозы ещё и потому, что короткая строка в начале запроса
+    принимается моделью за шапку промпта и молча теряется.
+    """
+    path = f"{work}/headings.json"
+    have = {}
+    if os.path.exists(path):
+        have = {k: v for k, v in json.load(open(path, encoding="utf-8")).items()
+                if not k.startswith("_")}
+    uniq = []
+    for b in blocks:
+        if b["kind"] in HEAD_KINDS and b["text"] not in have and b["text"] not in uniq:
+            uniq.append(b["text"])
+    if not uniq:
+        return have
+    log("  " + T("heads_todo", len(uniq)), end="")
+    listing = "\n".join(f"{i}. {t}" for i, t in enumerate(uniq, 1))
+    prompt = (
+        "Переведи заголовки и подзаголовки книги. Это номера глав, названия "
+        "разделов, имена рассказчиков в шапках, строки места и времени.\n\n"
+        "Правила: держать регистр оригинала (написанное прописными остаётся "
+        "прописными); имена и термины брать из справочника выше; номера глав "
+        "переводить как принято по-русски.\n\n"
+        "Верни строго по строке на каждый пункт, в том же порядке и с тем же "
+        "номером, без пояснений:\n1. перевод\n2. перевод\n\n"
+        "## Заголовки\n\n" + listing)
+
+    def parse_heads(out):
+        got = {}
+        for m in re.finditer(r"^\s*(\d+)[.)]\s*(.+)$", out, re.M):
+            i = int(m.group(1))
+            if 1 <= i <= len(uniq):
+                got[uniq[i - 1]] = m.group(2).strip()
+        missing = [t for t in uniq if t not in got]
+        if missing:
+            raise ValueError(f"не переведено {len(missing)} заголовков: {missing[:3]}")
+        return got, ""
+
+    (got, _), meta, dt = _run(agent, system, prompt, retries, parse_heads, log)
+    have.update(got)
+    json.dump(have, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+    log(T("ready_in", f"{dt:.0f}", f"{meta['model']}{cost}"))
+    return have
+
+
+# ---------------------------------------------------------------- структура
+
+def detect_structure(work, styles, agent, task, retries, log):
+    """Определение вёрстки моделью: какой стиль чем является.
+
+    Эвристика по именам классов всегда угадывает — у каждого издательства
+    разметка своя, и заголовок бывает и <h1>, и <p class="CN">, и
+    <p class="Chap-Title-ct">. Модель смотрит на перепись стилей (десяток
+    строк с примерами, не книгу) и решает. Результат лежит в
+    work/structure.json и правится руками.
+    """
+    path = f"{work}/structure.json"
+    if os.path.exists(path):
+        got = {k: v for k, v in json.load(open(path, encoding="utf-8")).items()
+               if not k.startswith("_")}
+        log("  " + T("struct_known", len(got)) + " " + T("delete_to_redo", path))
+        return got
+    if not styles:
+        return {}
+
+    listing = []
+    for r in styles:
+        ex = " / ".join(s.replace("\n", " ")[:70] for s in r["samples"])
+        listing.append(f'{r["tag"]}|{r["cls"]}  ×{r["count"]}  → {ex}')
+    prompt = task + "\n\n---\n\n## Перепись стилей\n\n" + "\n".join(listing)
+    open(f"{work}/prompts/structure.txt", "w", encoding="utf-8").write(prompt)
+
+    log("  " + T("struct_styles", len(styles)), end="")
+
+    def parse_map(out):
+        got = {}
+        for m in re.finditer(r"^\s*([a-z0-9]+)\|([^=\n]*?)\s*="
+                             r"\s*(title|subtitle|p|verse|note|skip)\s*$",
+                             out, re.M | re.I):
+            got[f"{m.group(1)}|{m.group(2).strip()}"] = m.group(3).lower()
+        if not got:
+            raise ValueError("не разобрал ни одной строки вида тег|класс = вид")
+        return got, ""
+
+    (got, _), meta, dt = _run(agent, "", prompt, retries, parse_map, log)
+
+    known = {f'{r["tag"]}|{r["cls"]}' for r in styles}
+    got = {k: v for k, v in got.items() if k in known}
+    counts = {}
+    for r in styles:
+        counts[got.get(f'{r["tag"]}|{r["cls"]}', "?")] = \
+            counts.get(got.get(f'{r["tag"]}|{r["cls"]}', "?"), 0) + r["count"]
+
+    out = {"_comment": "Разметка книги: тег|класс = title|subtitle|p|verse|note|skip. "
+                       "Определена моделью, правится руками. Удалите файл, "
+                       "чтобы определить заново."}
+    out.update(got)
+    json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+    log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+    log("  " + ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())
+                         if k != "?"))
+    return got
