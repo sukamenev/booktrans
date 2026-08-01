@@ -513,6 +513,12 @@ channel.
 
 ## Disclaimer
 
+BookTrans is a general-purpose text tool. It translates a public-domain book,
+your own manuscript, an office document and a book you bought all the same
+way; it circumvents no protection and distributes no books. What to feed it
+and what to do with the output is decided — and answered for — by whoever
+runs it.
+
 The software is provided as is, without warranty of any kind. The author
 accepts no liability for the consequences of its use, including:
 
