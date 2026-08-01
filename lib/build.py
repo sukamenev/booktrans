@@ -393,6 +393,36 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
                sum(1 for b in blocks if b["kind"] == "p")))
 
 
+# Разряды тысяч разделяют по-разному: «7,386» по-английски, «7386» или
+# «7 386» по-русски, «7.386» по-немецки. Перед сверкой группы склеиваем,
+# иначе честный перевод выглядит потерей двух чисел из трёх.
+SEPS = ",.\u00a0\u202f\u2009 '\u2019"      # запятая, точка, пробелы, апостроф
+GROUPED = re.compile(rf"\b\d{{1,3}}(?:[{re.escape(SEPS)}]\d{{3}})+(?!\d)")
+GSEP = re.compile(rf"[{re.escape(SEPS)}]")
+
+
+def _nums(t, group=True):
+    t = strip(t)
+    if group:
+        t = GROUPED.sub(lambda m: GSEP.sub("", m.group()), t)
+    return Counter(re.findall(r"\d+", t))
+
+
+def _more(log, n, T):
+    """Сколько осталось за кадром. Молчаливый обрыв списка читается как
+    «это всё», и человек проверяет восемь строк вместо двадцати двух."""
+    if n > 0:
+        log("     " + T("qa_more", n))
+
+
+def _cut(s, n):
+    """Обрезка по границе слова: обрывок посреди слова читать нечем."""
+    s = " ".join(s.split())
+    if len(s) <= n:
+        return s
+    return s[:n].rsplit(" ", 1)[0].rstrip(" ,;:.—-") + "…"
+
+
 def review_report(work, log, T=None):
     T = T or lang.T
     """Места, которые просит посмотреть глазами.
@@ -419,9 +449,16 @@ def review_report(work, log, T=None):
         return
     log("")
     log(T("review_head", len(items)))
+    # В консоли — первая мысль замечания, целиком — в файле рядом с кусками.
+    # Замечание бывает на полстраницы, и вываливать сорок таких в поток значит
+    # смыть остальной отчёт.
+    p = os.path.join(work, "review.md")
+    with open(p, "w", encoding="utf-8") as f:
+        for idx, t in items:
+            f.write(f"## {idx:04d}\n\n{t}\n\n")
     for idx, t in items:
-        first = " ".join(t.split())[:300]
-        log("  " + T("review_item", f"{idx:04d}", first))
+        log("  " + T("review_item", f"{idx:04d}", _cut(t, 300)))
+    log("  " + T("review_file", p))
 
 
 def unfinished_edits(work, log, T=None):
@@ -483,7 +520,7 @@ def sources_report(work, log, T=None):
         seen.add(k)
         flag = "  !! по памяти" if "памят" in it["text"].lower() else ""
         log(f"  [{it['block']}] {it['term']}{flag}")
-        log(f"      {it['text'][:150]}")
+        log(f"      {_cut(it['text'], 150)}")
     log("  " + T("sources_hint"))
 
 
@@ -544,7 +581,11 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
     for i, s in src.items():
         if i not in tr:
             continue
-        a, b = Counter(re.findall(r"\d+", strip(s))), Counter(re.findall(r"\d+", strip(tr[i])))
+        # Тот же знак бывает и разделителем разрядов, и десятичной запятой:
+        # «.003 per cent» → «0,003 процента». Какое прочтение верное, из текста
+        # не видно, поэтому число считаем уцелевшим, если оно нашлось хоть при
+        # одном из двух.
+        a, b = _nums(s), _nums(tr[i]) | _nums(tr[i], group=False)
         if a - b:
             lost.append((i, sorted(a - b)))
     if lost:
@@ -552,6 +593,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
         log("   " + T("qa2_bad", len(lost)))
         for i, x in lost[:8]:
             log(f"     {i}  {x}")
+        _more(log, len(lost) - 8, T)
     else:
         log("   " + T("qa2_ok"))
 
@@ -573,6 +615,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
         log("   " + T("qa3_bad", len(odd)))
         for r, i in sorted(odd)[:8]:
             log(f"     {i}  ({r})")
+        _more(log, len(odd) - 8, T)
     else:
         log("   " + T("qa3_ok"))
 
@@ -588,7 +631,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
         if left:
             log("   " + T("qa4_bad", len(left)))
             for i in left[:8]:
-                log(f"     {i}: {strip(tr[i])[:80]}")
+                log(f"     {i}: {_cut(strip(tr[i]), 80)}")
+            _more(log, len(left) - 8, T)
         else:
             log("   " + T("qa4_none"))
     else:
