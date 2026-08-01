@@ -313,15 +313,17 @@ pirated files.
 
 ## Foreign insertions
 
-Ebooks often carry lines that are no part of the book: marks left by file
-hosts and scanners, "downloaded from such-and-such", "scanned by so-and-so",
-converter signatures. They sit in the middle of the text, repeat on every
-page and tear a paragraph in two.
+What gets removed: pointers to the site the file was hosted on, advertising
+blocks, and the signatures of scanners and converters — anything that is no
+part of the book yet has been inserted into its text.
 
-This harms translation directly: the break lands inside a chunk, the model
-takes it for part of the sentence, and coherence is lost. So such lines are
-removed before translation — not to conceal where a file came from, but to
-keep the text a text. The built-in list covers the commonest specimens.
+Such lines sit in the middle of a paragraph, repeat on every page and tear a
+sentence in two. This harms translation directly: the break lands inside a
+chunk, the model takes it for part of the sentence, and coherence is lost.
+Hence the rule to remove them before translation rather than after.
+
+The built-in list covers the commonest specimens; you can inspect and extend
+it in `watermarks.txt`.
 
 Add your own to `watermarks.txt` next to the script — one pattern per line,
 Python regular expressions, case-insensitive:
