@@ -513,6 +513,12 @@ short quotation rather than a chunk of the book, with `WebSearch` alone — neve
 `WebFetch`, which opens arbitrary addresses and is a ready-made exfiltration
 channel.
 
+## Licence
+
+MIT — take it, change it, build it into anything, paid products included.
+The one condition is to keep the copyright notice. Full text in
+[LICENSE](LICENSE).
+
 ## Disclaimer
 
 BookTrans is a general-purpose text tool. It translates a public-domain book,

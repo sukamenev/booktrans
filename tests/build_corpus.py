@@ -17,10 +17,10 @@ from lib import extract as E
 # они не попадают и пути у каждого свои. Порядок такой: переменная окружения,
 # затем файл tests/corpus.paths, затем умолчание рядом с проектом.
 #
-#   BOOKTRANS_SOURCES  — папка с книгами, названными в этом скрипте поимённо
-#                        (Semiosis, Neverness и прочие)
-#   BOOKTRANS_LIBRARY  — домашняя библиотека, откуда берутся fb2, txt и pdf
-#   BOOKTRANS_GUTENBERG — папка со скачанным с «Проекта Гутенберг»
+#   BT_SOURCES    — папка с книгами, названными в этом скрипте поимённо
+#                   (Semiosis, Neverness и прочие)
+#   BT_LIB        — домашняя библиотека, откуда берутся fb2, txt и pdf
+#   BT_GUTENBERG  — папка со скачанным с «Проекта Гутенберг»
 #
 # Файл corpus.paths — те же имена, по строке «ИМЯ = значение». Он не в
 # репозитории: у каждого свои пути.
@@ -38,15 +38,15 @@ def _paths():
     def get(name, default):
         return os.path.expanduser(os.environ.get(name) or conf.get(name) or default)
 
-    return (get("BOOKTRANS_SOURCES", os.path.dirname(os.path.dirname(HERE))),
-            get("BOOKTRANS_LIBRARY", "~/Biblioteka"),
-            get("BOOKTRANS_GUTENBERG", "/tmp/gut"))
+    return (get("BT_SOURCES", os.path.dirname(os.path.dirname(HERE))),
+            get("BT_LIB", "~/Biblioteka"),
+            get("BT_GUTENBERG", "/tmp/gut"))
 
 
 OUT = os.path.join(HERE, "corpus")
 OPF = "{http://www.idpf.org/2007/opf}"
 T, B, GUT = _paths()
-for name, path in (("BOOKTRANS_SOURCES", T), ("BOOKTRANS_LIBRARY", B)):
+for name, path in (("BT_SOURCES", T), ("BT_LIB", B)):
     if not os.path.isdir(path):
         sys.exit(f"нет папки {path}\n"
                  f"Задайте {name} в окружении или в {HERE}/corpus.paths")
