@@ -1,23 +1,6 @@
 #!/usr/bin/env bash
-# Запуск перевода книг через Claude Code CLI
-#
-# Примеры вызова с разграничением моделей по этапам:
-#   1. Дефолтный запуск (модель по умолчанию Claude Code):
-#      ./bt_claude книга.epub -p глоссарий.md
-#
-#   2. Использование Sonnet для разведки, а Opus для перевода:
-#      ./bt_claude книга.epub --scout sonnet --translator opus
-#
-#   3. Задание модели явно через --model:
-#      ./bt_claude книга.epub --model sonnet
-
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-DEFAULT_MODEL=""
-
-if [[ -n "$DEFAULT_MODEL" ]]; then
-    exec "$HERE/booktrans" --agent claude --model "$DEFAULT_MODEL" "$@"
-else
-    exec "$HERE/booktrans" --agent claude "$@"
-fi
+# BookTrans с умолчаниями для агента «claude».
+# Всё остальное — как у booktrans; любой явный ключ сильнее умолчания:
+#   ./bt_claude книга.epub --to de --model другая-модель
+export BT_AGENT="claude"
+exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"

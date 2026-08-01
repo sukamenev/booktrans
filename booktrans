@@ -74,9 +74,13 @@ def main():
     ap.add_argument("--only", choices=ALL_STEPS, help=T("h_only"))
     ap.add_argument("--skip", default="", help=T("h_skip"))
     ap.add_argument("--chunks", help=T("h_chunks"))
-    ap.add_argument("--agent", default="claude", choices=("claude", "agy", "codex", "cmd"))
+    # Умолчания берутся из окружения — тем же путём, что и язык: так обёртки
+    # вроде bt_claude сводятся к одной строке, а вшитое предпочтение одного
+    # поставщика не навязывается тому, кто пользуется другим.
+    ap.add_argument("--agent", default=os.environ.get("BT_AGENT", "claude"),
+                    choices=("claude", "agy", "codex", "cmd"))
     ap.add_argument("--agent-cmd", help=T("h_agentcmd"))
-    ap.add_argument("--model", help=T("h_model"))
+    ap.add_argument("--model", default=os.environ.get("BT_MODEL"), help=T("h_model"))
     ap.add_argument("--effort", choices=("low", "medium", "high"), help="Effort level (low, medium, high)")
     ap.add_argument("--scout", help=T("h_scout"))
     ap.add_argument("--translator", help=T("h_translator"))

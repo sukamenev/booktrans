@@ -21,6 +21,32 @@ With translator's instructions:
 ./booktrans book.epub -p instructions.md --to de -o Buch.epub
 ```
 
+And here is the full arrangement with a fallback — how one translates a long
+novel:
+
+```bash
+./bt_agy moby-dick.epub -p instructions.md --to ru --jobs 5 \
+    --fallback-agent claude --fallback-model claude-opus-5
+```
+
+What each part does:
+
+| | |
+|---|---|
+| `./bt_agy` | wrapper: translate with Gemini through Antigravity. There are also `bt_claude` and `bt_codex`, and your own takes three lines |
+| `moby-dick.epub` | the book. No output name is given, so it names itself: "Мелвилл Герман. Моби Дик.fb2" |
+| `-p instructions.md` | your instructions to the translator: what to call the characters, which terms to fix, what to leave alone |
+| `--to ru` | target language |
+| `--jobs 5` | five threads for editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
+| `--fallback-agent claude` | what to fall back on when the main model refuses a chunk |
+| `--fallback-model claude-opus-5` | and with which model |
+
+The fallback deserves a word. Models sometimes **refuse silently**: they stop
+mid-sentence on certain passages and say nothing. The pipeline recognises this,
+shows the paragraph where it stalled, and hands the chunk to the fallback
+model. That model then edits it too: if one model would not translate a
+passage, it will not edit it either.
+
 **`booktrans_ru`** is the same program with Russian defaults — Russian
 interface, Russian as the target language:
 

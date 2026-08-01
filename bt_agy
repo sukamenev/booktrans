@@ -1,23 +1,7 @@
 #!/usr/bin/env bash
-# Запуск перевода книг через Antigravity CLI (agy)
-#
-# Примеры вызова с разграничением моделей по этапам:
-#   1. Дефолтный запуск (модель по умолчанию Antigravity CLI):
-#      ./bt_agy книга.epub -p глоссарий.md
-#
-#   2. Использование Gemini Pro в качестве переводчика:
-#      ./bt_agy книга.epub --translator pro
-#
-#   3. Использование разных моделей для разведки и перевода:
-#      ./bt_agy книга.epub --scout flash --translator pro
-
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-DEFAULT_MODEL="gemini-3.1-pro-high"
-
-if [[ -n "$DEFAULT_MODEL" ]]; then
-    exec "$HERE/booktrans" --agent agy --model "$DEFAULT_MODEL" "$@"
-else
-    exec "$HERE/booktrans" --agent agy "$@"
-fi
+# BookTrans с умолчаниями для агента «agy».
+# Всё остальное — как у booktrans; любой явный ключ сильнее умолчания:
+#   ./bt_agy книга.epub --to de --model другая-модель
+export BT_AGENT="agy"
+export BT_MODEL="gemini-3.1-pro-high"
+exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"
