@@ -13,14 +13,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from lib import extract as E
 
-# Откуда брать книги. Набор собирается из чужих книг, поэтому в репозиторий
+# ОТКУДА брать книги. Набор собирается из чужих книг, поэтому в репозиторий
 # они не попадают и пути у каждого свои. Порядок такой: переменная окружения,
 # затем файл tests/corpus.paths, затем умолчание рядом с проектом.
 #
-#   BT_SOURCES    — папка с книгами, названными в этом скрипте поимённо
-#                   (Semiosis, Neverness и прочие)
-#   BT_LIB        — домашняя библиотека, откуда берутся fb2, txt и pdf
-#   BT_GUTENBERG  — папка со скачанным с «Проекта Гутенберг»
+#   BT_BOOKS      — папка с книгами, которые названы в этом скрипте поимённо:
+#                   Semiosis_-_Sue_Burke.epub, Neverness_-_David_Zindell.epub
+#   BT_LIB        — домашняя библиотека: оттуда берутся fb2 Лема и Белянина,
+#                   txt и pdf. Внутри ожидается привычная раскладка по папкам
+#   BT_GUTENBERG  — куда скачаны книги «Проекта Гутенберг»: pg2701, pg2707
+#
+# КУДА складывается готовый набор, не настраивается: всегда tests/corpus,
+# рядом с этим скриптом. Опись manifest.json описывает именно его.
 #
 # Файл corpus.paths — те же имена, по строке «ИМЯ = значение». Он не в
 # репозитории: у каждого свои пути.
@@ -38,7 +42,7 @@ def _paths():
     def get(name, default):
         return os.path.expanduser(os.environ.get(name) or conf.get(name) or default)
 
-    return (get("BT_SOURCES", os.path.dirname(os.path.dirname(HERE))),
+    return (get("BT_BOOKS", os.path.dirname(os.path.dirname(HERE))),
             get("BT_LIB", "~/Biblioteka"),
             get("BT_GUTENBERG", "/tmp/gut"))
 
@@ -46,7 +50,7 @@ def _paths():
 OUT = os.path.join(HERE, "corpus")
 OPF = "{http://www.idpf.org/2007/opf}"
 T, B, GUT = _paths()
-for name, path in (("BT_SOURCES", T), ("BT_LIB", B)):
+for name, path in (("BT_BOOKS", T), ("BT_LIB", B)):
     if not os.path.isdir(path):
         sys.exit(f"нет папки {path}\n"
                  f"Задайте {name} в окружении или в {HERE}/corpus.paths")
