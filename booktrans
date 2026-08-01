@@ -388,6 +388,7 @@ def main():
         n += 1
         log(f"=== {n}. {T('step_qa')} ===")
         build.qa(work, blocks, log, T, meta.get("lang"), args.to)
+        build.unfinished_edits(work, log, T)
         build.review_report(work, log)
         build.sources_report(work, log)
         build.usage_report(work, log, T)
@@ -397,6 +398,13 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        sys.exit("\n" + lang.UI(os.environ.get("BT_UI", "en"))("interrupted"))
+        # Потокам говорим остановиться и уходим сразу, не дожидаясь их: всё
+        # сделанное уже на диске, а ожидание висящего запроса — это минуты
+        # и ещё одно Ctrl+C от человека. os._exit минует уборку потоков,
+        # из-за которой прежде вылезала трассировка threading.
+        pipeline.STOP.set()
+        sys.stderr.write("\n" + lang.UI(os.environ.get("BT_UI", "en"))("interrupted") + "\n")
+        sys.stderr.flush()
+        os._exit(130)
     except RuntimeError as e:
         sys.exit(f"\n\n❌ Ошибка: {e}\n(Перезапустите скрипт, чтобы продолжить с места падения)")

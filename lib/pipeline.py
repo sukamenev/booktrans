@@ -7,6 +7,12 @@ import threading
 import time
 
 from .agent import Fatal
+
+# Прерывание с клавиатуры. При работе в несколько потоков одного Ctrl+C мало:
+# рабочие потоки не видят исключения главного, продолжают запросы, и человек
+# жмёт снова и снова, а в конце получает трассировку из недр threading.
+# Флаг решает это просто: потоки сами останавливаются на ближайшей проверке.
+STOP = threading.Event()
 from .lang import T
 
 TARGET_WORDS = 2600
@@ -239,6 +245,8 @@ def _run(agent, system, prompt, retries, parse_fn, log):
     cur = prompt
     stops = []
     for attempt in range(1, retries + 1):
+        if STOP.is_set():
+            raise KeyboardInterrupt
         try:
             t0 = time.time()
             out, meta = agent.run(system, cur)
@@ -472,8 +480,17 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         if os.path.exists(edp) and not only:
             # по составу блоков, а не по наличию файла: изменилась нарезка —
             # старый файл покрывает не тот кусок
-            prev = json.load(open(edp, encoding="utf-8")).get("blocks")
-            if prev is None or prev == [b["id"] for b in translatable(c["blocks"])]:
+            was = json.load(open(edp, encoding="utf-8"))
+            prev = was.get("blocks")
+            fresh = prev is not None \
+                and prev != [b["id"] for b in translatable(c["blocks"])]
+            # Кусок, на котором правка оборвалась, готовым не считаем, если
+            # редактировать будет другая модель: прежняя упёрлась в
+            # содержание, а новая, скорее всего, возьмётся. Той же моделью
+            # переделывать незачем — упрётся снова и потратит деньги зря.
+            now = getattr(agent, "model", None) or ""
+            stale = was.get("stopped_at") and was.get("model") != now
+            if not fresh and not stale:
                 skipped += 1
                 continue
         if os.path.exists(f"{work}/tr/{idx:04d}.json"):
@@ -488,6 +505,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
 
     def one(c):
         nonlocal done, total
+        if STOP.is_set():
+            return
         idx = c["index"]
         who = (c["label"] or "—")[:24]
         out_path = f"{work}/ed/{idx:04d}.json"
@@ -541,13 +560,47 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         prompt = "\n\n---\n\n".join(parts)
         open(f"{work}/prompts/{idx:04d}.edit.txt", "w", encoding="utf-8").write(prompt)
 
+        def _stopped(res, ids):
+            """Оборвалась ли правка. Редактура по замыслу возвращает только
+            изменённые абзацы, и оборванный ответ выглядит ровно как
+            «посмотрел всё, править нечего». Отличить можно по месту
+            последней правки: на здоровом куске они идут по всему тексту,
+            а когда модель упирается в содержание — обрываются в начале и
+            дальше пусто. Замерено на одной книге: обычный кусок — 27 правок
+            из 70, последняя на 70-м блоке; кусок со спорной сценой — 2 из
+            41, обе в первых двух."""
+            if not res or len(ids) < 20:
+                return 0
+            last = max((ids.index(k) + 1 for k in res if k in ids), default=0)
+            return last if (len(ids) - last) / len(ids) > 0.6 else 0
+
+        ids = list(draft)          # ключи словаря и есть идентификаторы
         (res, notes), meta, dt = _run(
             mine, system, prompt, retries,
             lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
-        json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
-                   "notes": notes, "blocks": list(draft),
-                   "edits": {k: {"old": draft[k], "new": v} for k, v in res.items()}},
-                  open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        stopped = _stopped(res, ids)
+        if stopped and fallback is not None and mine is not fallback:
+            # Оборвалась правка — передаём кусок запасной модели, как и при
+            # отказе перевода. Иначе кусок остался бы наполовину нетронутым,
+            # а при следующем запуске зачёлся бы готовым: файл-то записан.
+            with lock:
+                log("    " + T("edit_stopped", stopped, len(ids)))
+                log("    " + T("refused_retry"))
+            (res2, notes2), meta2, dt2 = _run(
+                fallback, system, prompt, retries,
+                lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
+            if len(res2) > len(res):
+                res, notes, meta, dt = res2, notes2, meta2, dt2
+                stopped = _stopped(res, ids)
+        out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
+               "notes": notes, "blocks": ids,
+               "edits": {k: {"old": draft[k], "new": v} for k, v in res.items()}}
+        if stopped:
+            # Помечаем в файле: предупреждение в выводе живёт до конца
+            # прогона, а кусок надо будет перередактировать и завтра.
+            out["stopped_at"] = stopped
+        json.dump(out, open(out_path, "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         with lock:
             done += 1
@@ -555,24 +608,21 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
                 + T("ed_done", f"{len(res):3d}", f"{len(draft):3d}",
                     f"{dt:.0f}", f"{meta['model']}{cost}"))
-
-            # Редактура по замыслу возвращает только изменённые абзацы, и
-            # оборванный ответ выглядит ровно как «посмотрел всё, править
-            # нечего». Отличить можно по месту последней правки: на здоровом
-            # куске они идут по всему тексту, а когда модель упирается в
-            # содержание — обрываются в начале и дальше пусто. Замерено на
-            # одной книге: обычный кусок — 27 правок из 70, последняя на
-            # 70-м блоке; кусок со спорной сценой — 2 из 41, обе в первых
-            # двух блоках.
-            ids = [b["id"] for b in draft]
-            last = max((ids.index(k) + 1 for k in res if k in ids), default=0)
-            if res and len(ids) >= 20 and (len(ids) - last) / len(ids) > 0.6:
-                log("    " + T("edit_stopped", last, len(ids)))
+            if stopped:
+                log("    " + T("edit_stopped", stopped, len(ids)))
 
     if jobs > 1 and len(todo) > 1:
         log("  " + T("in_threads", jobs))
-        with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+        # Не `with`: при выходе он ждёт завершения всех запущенных задач, и
+        # Ctrl+C не доходит до обработчика, пока не вернётся последний
+        # запрос к модели. Человек жмёт снова и снова и в конце получает
+        # трассировку из недр threading. Здесь ожидания нет: очередь
+        # отменяется, флаг STOP останавливает потоки, а сделанное уже на диске.
+        ex = cf.ThreadPoolExecutor(max_workers=jobs)
+        try:
             list(ex.map(one, todo))
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
     else:
         for c in todo:
             one(c)
@@ -649,6 +699,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
 
     def one(c):
         nonlocal done, total
+        if STOP.is_set():
+            return
         idx = c["index"]
         who = (c["label"] or "—")[:24]
         out_path = f"{work}/nt/{idx:04d}.json"
@@ -692,8 +744,16 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
 
     if jobs > 1 and len(todo) > 1:
         log("  " + T("in_threads", jobs))
-        with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
+        # Не `with`: при выходе он ждёт завершения всех запущенных задач, и
+        # Ctrl+C не доходит до обработчика, пока не вернётся последний
+        # запрос к модели. Человек жмёт снова и снова и в конце получает
+        # трассировку из недр threading. Здесь ожидания нет: очередь
+        # отменяется, флаг STOP останавливает потоки, а сделанное уже на диске.
+        ex = cf.ThreadPoolExecutor(max_workers=jobs)
+        try:
             list(ex.map(one, todo))
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
     else:
         for c in todo:
             one(c)

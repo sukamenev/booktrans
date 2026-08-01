@@ -37,8 +37,23 @@ class RateLimited(AgentError):
 
 
 LIMIT_PAT = re.compile(
-    r"usage limit|rate limit|limit reached|too many requests|"
-    r"resets? at|try again later|429|overloaded|capacity", re.I)
+    r"usage limit|rate limit|limit reached|quota|too many requests|"
+    r"resets? (at|in)|try again later|429|overloaded|capacity|"
+    r"upgrade your subscription", re.I)
+
+# «Resets in 3h7m54s» — поставщик сам говорит, когда снимет запрет. Ждать
+# вслепую по четверти часа глупо, когда названо точное время.
+RESET_IN = re.compile(r"resets? in\s+(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?",
+                      re.I)
+
+
+def reset_after(msg):
+    """Через сколько секунд поставщик обещает снять запрет. 0 — не сказал."""
+    m = RESET_IN.search(msg or "")
+    if not m or not any(m.groups()):
+        return 0
+    h, mi, sec = (int(x) if x else 0 for x in m.groups())
+    return h * 3600 + mi * 60 + sec
 
 
 class WaitingAgent:
@@ -68,10 +83,15 @@ class WaitingAgent:
             except RateLimited as e:
                 if waited >= self.max_wait:
                     raise AgentError(T("lim_gave_up", waited // 3600, e))
-                mins = self.interval // 60
-                self.log("\n    " + T("lim_wait", mins, waited // 60))
-                time.sleep(self.interval)
-                waited += self.interval
+                # Названо точное время снятия — ждём его, а не вслепую по
+                # четверти часа. Полминуты сверху: часы у нас и у поставщика
+                # расходятся, а лишний отказ стоит целой попытки.
+                pause = reset_after(str(e))
+                pause = min(pause + 30, self.max_wait - waited) if pause \
+                    else self.interval
+                self.log("\n    " + T("lim_wait", max(pause // 60, 1), waited // 60))
+                time.sleep(pause)
+                waited += pause
 
 
 class Agent:

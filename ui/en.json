@@ -133,5 +133,8 @@
   "effort_clash": "STOP: agy takes the effort either as a model suffix or as --effort, never both.\n  You gave: --model {0} and --effort {1}.\n  Keep one: either «{0}», or the model without the suffix plus --effort {1}.",
   "edit_stopped": "WARNING: the edits stop at block {0} of {1}, with none after that. It looks like the editor did not finish the chunk — usually a sign of content the model will not handle. Worth re-editing with another model.",
   "no_title": "WARNING: no title in «{0}» was found — the book will keep its original title. Add a header to the instructions file:  ---  title_target: Your title  author_target: Author  ---",
-  "would_overwrite": "STOP: the output file would overwrite the source: {0}\n  Give it another name with -o."
+  "would_overwrite": "STOP: the output file would overwrite the source: {0}\n  Give it another name with -o.",
+  "edits_unfinished": "UNFINISHED EDITS — {0} chunks where editing broke off",
+  "edits_unfinished_item": "chunk {0}: edits stop at block {1} of {2}",
+  "edits_unfinished_hint": "They will not redo themselves: the file is written and resume counts them done. Re-edit with another model:  --only edit --chunks {0} --agent claude --model claude-opus-5"
 }

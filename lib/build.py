@@ -424,6 +424,34 @@ def review_report(work, log, T=None):
         log("  " + T("review_item", f"{idx:04d}", first))
 
 
+def unfinished_edits(work, log, T=None):
+    """Куски, где правка оборвалась и кусок остался наполовину нетронутым.
+
+    Файл редактуры при этом записан, и возобновление сочтёт кусок готовым —
+    сам он никогда не переделается. Поэтому список нужен в конце каждого
+    прогона, а не только в тот раз, когда обрыв случился.
+    """
+    T = T or lang.T
+    items = []
+    d = os.path.join(work, "ed")
+    if not os.path.isdir(d):
+        return
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".json"):
+            continue
+        x = json.load(open(os.path.join(d, n), encoding="utf-8"))
+        if x.get("stopped_at"):
+            items.append((x.get("index"), x["stopped_at"], len(x.get("blocks") or [])))
+    if not items:
+        return
+    log("")
+    log(T("edits_unfinished", len(items)))
+    for idx, at, total in items:
+        log("  " + T("edits_unfinished_item", f"{idx:04d}", at, total))
+    log("  " + T("edits_unfinished_hint",
+                 ",".join(str(i) for i, _, _ in items)))
+
+
 def sources_report(work, log, T=None):
     T = T or lang.T
     """Все цитаты, приведённые по чужому переводу, — списком.
