@@ -1,7 +1,9 @@
 """Собрать книгу epub3 с настоящими сносками — такой в библиотеке не нашлось."""
 import os, zipfile, struct, zlib
 
-OUT = '/home/inetstar/Kamenev/programming/Translate/booktrans/tests/corpus/04_epub3_notes_en.epub'
+# Книга пишется рядом со скриптом, в набор для проверок.
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                   'corpus', '04_epub3_notes_en.epub')
 
 def png(w, h, rgb):
     def chunk(t, d):

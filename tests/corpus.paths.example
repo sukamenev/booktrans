@@ -1,0 +1,11 @@
+# Откуда сборщик набора берёт книги. Скопируйте в corpus.paths и поправьте.
+# То же самое можно задать переменными окружения — они сильнее этого файла.
+
+# Папка с книгами, названными в build_corpus.py поимённо (Semiosis, Neverness…)
+BOOKTRANS_SOURCES = ..
+
+# Домашняя библиотека: оттуда берутся fb2, txt и pdf
+BOOKTRANS_LIBRARY = ~/Biblioteka
+
+# Куда скачаны книги «Проекта Гутенберг» (pg2701.epub, pg2707.epub)
+BOOKTRANS_GUTENBERG = /tmp/gut

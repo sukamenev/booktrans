@@ -18,3 +18,6 @@ tests/corpus/
 __pycache__/
 *.py[cod]
 .venv/
+
+# Пути к книгам у каждого свои
+tests/corpus.paths

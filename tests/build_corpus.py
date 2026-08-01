@@ -8,12 +8,48 @@
 """
 import os, re, shutil, subprocess, sys, zipfile
 import xml.etree.ElementTree as ET
-sys.path.insert(0, '/home/inetstar/Kamenev/programming/Translate/booktrans')
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
 from lib import extract as E
 
-OUT = '/home/inetstar/Kamenev/programming/Translate/booktrans/tests/corpus'
+# Откуда брать книги. Набор собирается из чужих книг, поэтому в репозиторий
+# они не попадают и пути у каждого свои. Порядок такой: переменная окружения,
+# затем файл tests/corpus.paths, затем умолчание рядом с проектом.
+#
+#   BOOKTRANS_SOURCES  — папка с книгами, названными в этом скрипте поимённо
+#                        (Semiosis, Neverness и прочие)
+#   BOOKTRANS_LIBRARY  — домашняя библиотека, откуда берутся fb2, txt и pdf
+#   BOOKTRANS_GUTENBERG — папка со скачанным с «Проекта Гутенберг»
+#
+# Файл corpus.paths — те же имена, по строке «ИМЯ = значение». Он не в
+# репозитории: у каждого свои пути.
+
+
+def _paths():
+    conf = {}
+    p = os.path.join(HERE, "corpus.paths")
+    if os.path.exists(p):
+        for line in open(p, encoding="utf-8"):
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                conf[k.strip()] = os.path.expanduser(v.strip())
+
+    def get(name, default):
+        return os.path.expanduser(os.environ.get(name) or conf.get(name) or default)
+
+    return (get("BOOKTRANS_SOURCES", os.path.dirname(os.path.dirname(HERE))),
+            get("BOOKTRANS_LIBRARY", "~/Biblioteka"),
+            get("BOOKTRANS_GUTENBERG", "/tmp/gut"))
+
+
+OUT = os.path.join(HERE, "corpus")
 OPF = "{http://www.idpf.org/2007/opf}"
-T = '/home/inetstar/Kamenev/programming/Translate'; B = os.path.expanduser('~/Biblioteka')
+T, B, GUT = _paths()
+for name, path in (("BOOKTRANS_SOURCES", T), ("BOOKTRANS_LIBRARY", B)):
+    if not os.path.isdir(path):
+        sys.exit(f"нет папки {path}\n"
+                 f"Задайте {name} в окружении или в {HERE}/corpus.paths")
 WORDS = 600
 shutil.rmtree(OUT, ignore_errors=True); os.makedirs(OUT)
 
@@ -124,7 +160,7 @@ def cut_epub(src, dst, keep_names, words=WORDS, max_notes=99, keep_classes=()):
 FB = "{http://www.gribuser.ru/xml/fictionbook/2.0}"
 
 
-def cut_fb2(src, dst, words=WORDS, chapters=2, keep_images=2):
+def cut_fb2(src, dst, words=WORDS, chapters=2, keep_images=2, poem_lines=0):
     txt = E._decode(open(src, 'rb').read())
     txt = re.sub(r'^\s*<\?xml[^>]*\?>', '<?xml version="1.0" encoding="utf-8"?>', txt, count=1)
     root = ET.fromstring(txt)
@@ -151,6 +187,30 @@ def cut_fb2(src, dst, words=WORDS, chapters=2, keep_images=2):
                 else:
                     left[0] -= _words(el)
     prune(main)
+    # Стихи режем отдельно и строфами целиком: разорванное четверостишие
+    # лишает смысла саму проверку, ради которой книга взята. Оставляем по
+    # две строфы в первых четырёх стихотворениях и по одной в остальных —
+    # многострофные нужны для проверки разреза по границе строфы, но держать
+    # их все дорого: стихи обходятся вдесятеро дороже прозы.
+    if poem_lines:
+        seen = 0
+        for parent in main.iter():
+            for poem in list(parent):
+                if poem.tag != FB + 'poem':
+                    continue
+                seen += 1
+                left = poem_lines * 2 if seen <= 4 else poem_lines
+                for st in list(poem):
+                    if st.tag != FB + 'stanza':
+                        continue
+                    vs = st.findall(FB + 'v')
+                    if left <= 0:
+                        poem.remove(st)
+                        continue
+                    for v in vs[left:]:
+                        st.remove(v)
+                    left -= min(len(vs), left)
+
     live = set()
     for a in main.iter():
         h = a.get('{http://www.w3.org/1999/xlink}href') or ''
@@ -178,13 +238,13 @@ for i, (name, extra) in enumerate([('Semiosis', []), ('Interference', ['adcard']
             'abouttheauthor', 'newsletter', 'torad', 'copyright'] + extra
     made.append(cut_epub(f'{T}/{name}_-_Sue_Burke.epub',
                          f'{OUT}/{i:02d}_{name}_en.epub', keep))
-made.append(cut_epub('/tmp/gut/pg2707.epub', f'{OUT}/05_Herodotus_notes_en.epub',
+made.append(cut_epub(GUT + '/pg2707.epub', f'{OUT}/05_Herodotus_notes_en.epub',
                      ['-h-0.htm'], 1200, max_notes=6))
-made.append(cut_epub('/tmp/gut/pg2701.epub', f'{OUT}/06_MobyDick_en.epub', ['-h-1.htm'], 1200))
+made.append(cut_epub(GUT + '/pg2701.epub', f'{OUT}/06_MobyDick_en.epub', ['-h-1.htm'], 1200))
 made.append(cut_fb2(f'{B}/lib/Fantastic/Lem/Станислав Лем. Собрание сочинений в 17 томах/13. Молох.fb2',
                     f'{OUT}/07_Lem_notes_ru.fb2'))
 made.append(cut_fb2(f'{B}/lib/Fantastic/Белянин/Белянин 1 Моя жена - ведьма.fb2',
-                    f'{OUT}/08_Belyanin_verse_ru.fb2'))
+                    f'{OUT}/08_Belyanin_verse_ru.fb2', poem_lines=4))
 # 11. Neverness: две главы со стихами и эпиграфами, вёрстка из безымянных кусков
 zind = f'{T}/Neverness_-_David_Zindell.epub'
 import zipfile as _zf
