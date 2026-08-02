@@ -35,6 +35,7 @@ MAX_VERSE = 24
 TAIL_PARAS = 3
 LOOKAHEAD_WORDS = 150
 TERMS_BUDGET = 6000
+TERMS_TAIL = 1200      # сколько сверх отобранного добавить свежих терминов
 DIGEST_EVERY = 8        # как часто пересжимать конспект
 DIGEST_BUDGET = 4000    # предел его размера в знаках
 HEAD_KINDS = ("title", "subtitle")
@@ -324,12 +325,22 @@ def accumulated_terms(state, upto, text=None):
     for en, ru in seen.items():
         s = f"{en} = {ru}"
         (hot if text and _mentions(en, text) else cold).append(s)
+    if text is None:              # отбирать не по чему — берём свежие
+        hot, cold = cold[::-1], []
     out, size = [], 0
-    for s in hot + cold[::-1]:
-        if size + len(s) > TERMS_BUDGET:
-            continue
-        out.append(s)
-        size += len(s)
+    for s in hot:
+        if size + len(s) <= TERMS_BUDGET:
+            out.append(s)
+            size += len(s)
+    # Немного свежего сверх отобранного: имя может стоять в куске в другой
+    # форме, чем записано, и отбор его прозевает. Но добивать остаток предела
+    # балластом незачем — термин, которого в куске нет, модели не нужен, а
+    # платится он в каждом запросе.
+    room = min(TERMS_BUDGET - size, TERMS_TAIL)
+    for s in cold[::-1]:
+        if len(s) <= room:
+            out.append(s)
+            room -= len(s)
     return out
 
 
