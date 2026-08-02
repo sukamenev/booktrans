@@ -34,7 +34,14 @@ def log(msg="", end="\n"):
     print(msg, end=end, flush=True)
 
 
-def read_prompt(path):
+# Что понимает шапка файла указаний. Ключ не из списка молча пропал бы:
+# написал человек title_ru вместо title_target — и книга вышла бы с
+# заглавием оригинала, а почему, разбирайся сам.
+META_KEYS = {"title", "author", "title_target", "author_target", "series",
+             "series_no", "year", "publisher", "isbn", "lang", "uid"}
+
+
+def read_prompt(path, log=None):
     """Файл заказчика: необязательная шапка с метаданными + указания."""
     if not path:
         return {}, ""
@@ -47,6 +54,10 @@ def read_prompt(path):
                 k, v = line.split(":", 1)
                 meta[k.strip()] = v.strip()
         text = text[m.end():]
+    odd = sorted(set(meta) - META_KEYS)
+    if odd and log:
+        log("  " + lang.T("meta_unknown", ", ".join(odd),
+                          ", ".join(sorted(META_KEYS))))
     return meta, text.strip()
 
 
@@ -236,7 +247,7 @@ def main():
     # Указания заказчика запоминаются в рабочей папке: иначе пересборка
     # без -p молча потеряет название, автора и серию.
     saved = f"{work}/prompt_meta.json"
-    user_meta, user_text = read_prompt(args.prompt)
+    user_meta, user_text = read_prompt(args.prompt, log)
     if args.prompt:
         json.dump({"meta": user_meta, "text": user_text},
                   open(saved, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

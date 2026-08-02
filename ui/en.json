@@ -6,6 +6,7 @@
   "counts": "{} paragraphs, {} words, {} chunks, {} headings",
   "workdir": "work directory: {}",
   "prompt_from": "instructions taken from {}",
+  "meta_unknown": "WARNING: unknown keys in the instructions header: {0}. Understood keys: {1}. The title and author in the target language are title_target and author_target.",
   "no_head_plain": "no headings: the book is split by word count at paragraph boundaries. Normal for continuous prose.",
   "stop_no_head": "STOP: no headings found, although the format carries markup.",
   "stop_no_text": "STOP: almost no text — {} paragraphs, {} words.",
