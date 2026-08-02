@@ -272,11 +272,42 @@ def _run(agent, system, prompt, retries, parse_fn, log):
 
 # ---------------------------------------------------------------- перевод
 
-def accumulated_terms(state, upto):
+def _mentions(term, text):
+    """Встречается ли термин оригинала в этом тексте.
+
+    Ключом бывает и словосочетание, и перечисление через запятую, а в тексте
+    слово стоит в другом числе или с притяжательным окончанием. Поэтому ищем
+    по началу слова и по огрызку без последней буквы: «thallows» так найдётся
+    в «thallow», а «baldo nuts» — по слову «baldo».
+    """
+    for part in re.split(r"[,/;]| и | and ", term):
+        for w in sorted(part.split(), key=len, reverse=True)[:2]:
+            w = w.strip("«»\"'()[].:;!?—-")
+            # В письме без пробелов имя длиной в два знака — обычное дело,
+            # и границы слова там нет: ищем подстрокой.
+            solid = any("⺀" <= c <= "鿿" or "가" <= c <= "힯"
+                        for c in w)
+            if len(w) < (2 if solid else 4):
+                continue
+            stem = w[:-1] if len(w) > 4 and w.endswith("s") else w
+            pat = re.escape(w) if solid else rf"\b{re.escape(stem)}"
+            if re.search(pat, text, re.I):
+                return True
+    return False
+
+
+def accumulated_terms(state, upto, text=None):
     """Термины из ранее переведённых кусков.
 
     Без этого модель не видит своих же решений и даёт одному термину разные
     переводы в разных частях книги. Побеждает первое вхождение.
+
+    Справочник растёт всю книгу и в предел не влезает: на романе средней
+    длины его набирается втрое больше. Обрезать список с конца — худшее,
+    что можно сделать: выпадают как раз недавние имена, которые вот-вот
+    встретятся снова, а место занимают термины из первой главы. Поэтому
+    сначала идёт то, что есть в самом куске (`text`), а остаток предела
+    добивается свежими.
     """
     seen = {}
     for k in sorted((int(x) for x in state.get("terms", {}))):
@@ -289,11 +320,14 @@ def accumulated_terms(state, upto):
             en, ru = (p.strip() for p in line.split("=", 1))
             if en and ru and ru != "—" and en not in seen:
                 seen[en] = ru
-    out, size = [], 0
+    hot, cold = [], []
     for en, ru in seen.items():
         s = f"{en} = {ru}"
+        (hot if text and _mentions(en, text) else cold).append(s)
+    out, size = [], 0
+    for s in hot + cold[::-1]:
         if size + len(s) > TERMS_BUDGET:
-            break
+            continue
         out.append(s)
         size += len(s)
     return out
@@ -392,7 +426,9 @@ def translate(work, chunks, agent, system, task, retries, log, only=None, fallba
             vals = [v for v in json.load(open(prev, encoding="utf-8"))["tr"].values() if v.strip()]
             tail = "\n\n".join(vals[-TAIL_PARAS:])
         nxt = chunks[i + 1] if i + 1 < len(chunks) else None
-        prompt = translate_prompt(c, nxt, summary, tail, accumulated_terms(state, idx), task)
+        here = " ".join(b["text"] for b in translatable(c["blocks"]))
+        prompt = translate_prompt(c, nxt, summary, tail,
+                                  accumulated_terms(state, idx, here), task)
         open(f"{work}/prompts/{idx:04d}.txt", "w", encoding="utf-8").write(prompt)
 
         expected = [b["id"] for b in translatable(c["blocks"])]
@@ -534,7 +570,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # меньше: правя местоимения, обращения и связки, легко исказить смысл,
         # если не знаешь, кто в сцене, что уже случилось и кем персонажи
         # приходятся друг другу.
-        digest = ""
+        digest, terms = "", []
         sp = f"{work}/state.json"
         if os.path.exists(sp):
             st = json.load(open(sp, encoding="utf-8"))
@@ -542,6 +578,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             parts += [st["sum"][str(k)] for k in range(st.get("digest_upto", 0) + 1, idx)
                       if str(k) in st.get("sum", {})]
             digest = "\n\n".join(p for p in parts if p).strip()
+            # Написания, принятые при переводе. Переводчик набирал их по ходу
+            # книги и к последним кускам своего же начала уже не помнил —
+            # оттуда «балдо» в одной главе и «бальдо» в следующей. Редактор
+            # работает после всех и видит справочник целиком, поэтому свести
+            # разнобой к одному виду может только он.
+            terms = accumulated_terms(
+                st, 1 << 30, " ".join(b["text"] for b in translatable(c["blocks"])))
         # только русский текст: оригинал намеренно не показываем, иначе
         # правка идёт в сторону чужого синтаксиса, а не хорошего русского
         pairs = [f"<<<{'V' if b['kind'] == 'verse' else 'P'} {b['id']}>>>\n{draft[b['id']]}"
@@ -556,6 +599,14 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         if tail:
             parts.append("## Хвост предыдущего, уже отредактированного куска\n\n"
                          "Нужен для гладкого стыка. Править его не надо.\n\n" + tail)
+        if terms:
+            parts.append(
+                "## Написания, принятые в этой книге\n\n"
+                "Слева — как в оригинале, справа — как решено писать. Список "
+                "собран по всей книге, включая куски после этого. Встретишь в "
+                "тексте другое написание того же имени или понятия — приведи "
+                "к этому, молча: это не повод для замечания.\n\n"
+                + "\n".join(terms))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(f"{work}/prompts/{idx:04d}.edit.txt", "w", encoding="utf-8").write(prompt)
