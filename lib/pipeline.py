@@ -517,38 +517,64 @@ def _split_meta(extra):
 def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
          fallback=None):
     os.makedirs(f"{work}/ed", exist_ok=True)
+    now = getattr(agent, "model", None) or ""
+
+    # Черновик собираем по всей книге, а не из файла с тем же номером.
+    # Нарезка могла измениться — от новой версии конвейера или от другого
+    # --chunk-words, — и тогда tr/0004.json покрывает уже не тот кусок.
+    # Прежде это кончалось пустым запросом: редактор честно отвечал, что
+    # править нечего, пустой файл правки ложился поверх старого, и сделанная
+    # редактура пропадала кусок за куском.
+    raw, whose = {}, {}
+    d = f"{work}/tr"
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if not n.endswith(".json"):
+                continue
+            x = json.load(open(f"{d}/{n}", encoding="utf-8"))
+            for k, v in x["tr"].items():
+                raw[k] = v
+                whose[k] = x.get("model") or ""
+
+    # Что уже отредактировано — тоже по блокам, а не по номерам файлов. Кусок,
+    # на котором правка оборвалась, считаем сделанным только до места обрыва.
+    ready, stuck = set(), {}
+    d = f"{work}/ed"
+    if os.path.isdir(d):
+        for n in sorted(os.listdir(d)):
+            if not n.endswith(".json"):
+                continue
+            x = json.load(open(f"{d}/{n}", encoding="utf-8"))
+            bl = x.get("blocks") or []
+            at = x.get("stopped_at") or len(bl)
+            ready.update(bl[:at])
+            for i in bl[at:]:
+                stuck[i] = x.get("model") or ""
+
     todo = []
     skipped = 0
     for c in chunks:
         idx = c["index"]
         if only and idx not in only:
             continue
-        edp = f"{work}/ed/{idx:04d}.json"
-        if os.path.exists(edp) and not only:
-            # по составу блоков, а не по наличию файла: изменилась нарезка —
-            # старый файл покрывает не тот кусок
-            was = json.load(open(edp, encoding="utf-8"))
-            prev = was.get("blocks")
-            fresh = prev is not None \
-                and prev != [b["id"] for b in translatable(c["blocks"])]
-            # Кусок, на котором правка оборвалась, готовым не считаем, если
-            # редактировать будет другая модель: прежняя упёрлась в
-            # содержание, а новая, скорее всего, возьмётся. Той же моделью
-            # переделывать незачем — упрётся снова и потратит деньги зря.
-            now = getattr(agent, "model", None) or ""
-            stale = was.get("stopped_at") and was.get("model") != now
-            if not fresh and not stale:
+        ids = [b["id"] for b in translatable(c["blocks"])]
+        # Кусок, на котором правка оборвалась, готовым не считаем, если
+        # редактировать будет другая модель: прежняя упёрлась в содержание,
+        # а новая, скорее всего, возьмётся. Той же моделью переделывать
+        # незачем — упрётся снова и потратит деньги зря.
+        if not only and ids:
+            left = [i for i in ids if i not in ready]
+            if not left or all(stuck.get(i) == now for i in left):
                 skipped += 1
                 continue
-        if os.path.exists(f"{work}/tr/{idx:04d}.json"):
+        if any(i in raw for i in ids):
             todo.append(c)
-    # редактура привязана к файлам кусков, и это нормально: она не обязана
-    # покрывать каждый блок
 
     done = total = 0
     lock = threading.Lock()
 
     n_all = len(chunks)
+    by_index = {c["index"]: c for c in chunks}
 
     def one(c):
         nonlocal done, total
@@ -557,8 +583,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         idx = c["index"]
         who = (c["label"] or "—")[:24]
         out_path = f"{work}/ed/{idx:04d}.json"
-        made = json.load(open(f"{work}/tr/{idx:04d}.json", encoding="utf-8"))
-        draft = made["tr"]
+        ids = [b["id"] for b in translatable(c["blocks"])]
+        draft = {i: raw[i] for i in ids if i in raw}
         if not draft:
             return
         # Кусок, который основная модель переводить отказалась, она откажется
@@ -566,17 +592,27 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # Редактируем той же моделью, что перевела. Замерено: на таком куске
         # основная модель дала 2 правки из 41, и обе в первых двух абзацах.
         mine = agent
-        if fallback is not None and made.get("model") \
-                and made["model"] == getattr(fallback, "model", None):
+        by = whose.get(ids[0], "")
+        if fallback is not None and by and by == getattr(fallback, "model", None):
             mine = fallback
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_start", f"{len(draft):3d}"))
         # при jobs>1 предыдущий кусок может быть ещё не отредактирован —
         # берём что есть; шов чуть хуже, зато проходы идут одновременно
         tail = ""
-        if idx > 1:
-            prev = current(work, idx - 1)
-            tail = "\n\n".join([v for v in prev.values() if v.strip()][-TAIL_PARAS:])
+        prev = by_index.get(idx - 1)
+        if prev:
+            # Хвост берём по идентификаторам предыдущего куска: файл правки с
+            # тем же номером мог остаться от другой нарезки, и в шов попал бы
+            # кусок совсем из другого места книги.
+            pids = [b["id"] for b in translatable(prev["blocks"])]
+            ptxt = {i: raw[i] for i in pids if i in raw}
+            ep = f"{work}/ed/{idx - 1:04d}.json"
+            if os.path.exists(ep):
+                for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
+                    if k in ptxt:
+                        ptxt[k] = e["new"]
+            tail = "\n\n".join([v for v in ptxt.values() if v.strip()][-TAIL_PARAS:])
         # Конспект сюжета, накопленный при переводе. Редактору он нужен не
         # меньше: правя местоимения, обращения и связки, легко исказить смысл,
         # если не знаешь, кто в сцене, что уже случилось и кем персонажи
