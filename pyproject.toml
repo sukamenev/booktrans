@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "booktrans"
+version = "0.1.0"
+description = "Whole book translation pipeline: reads epub/fb2/pdf/txt, translates chapter by chapter with a running glossary, edits monolingually, assembles the result"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Sergey Kamenev" }]
+keywords = ["translation", "ebook", "epub", "fb2", "pdf", "llm", "claude",
+            "gemini", "antigravity", "literary-translation", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: English",
+    "Natural Language :: Russian",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Linguistic",
+]
+# charset-normalizer идёт в зависимостях, а не отдельным дополнением: он
+# чистый python, весит мало, а без него редкие кодировки txt определяются
+# хуже. Одно необязательное дополнение вместо одной строки в зависимостях —
+# это лишний выбор для того, кто ставит первый в жизни инструмент.
+dependencies = ["charset-normalizer>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/sukamenev/booktrans"
+Repository = "https://github.com/sukamenev/booktrans"
+
+[project.scripts]
+booktrans = "booktrans.cli:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/booktrans"]
+# Промпты и правила языков — такие же части программы, как модули: без них
+# конвейер не запускается. Сборщик по умолчанию берёт из пакета не всё,
+# поэтому перечисляем явно.
+artifacts = ["src/booktrans/prompts/*.md", "src/booktrans/langs/*.md"]
+
+# В архив с исходниками не должно попасть ничего из рабочих папок и книг:
+# отрывки из проверочных книг защищены авторским правом, и в индексе,
+# который зеркалят по всему миру, им делать нечего.

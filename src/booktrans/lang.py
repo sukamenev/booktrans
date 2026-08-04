@@ -7,7 +7,7 @@ import json
 import os
 import re
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Частотные короткие слова: по ним язык определяется надёжнее, чем по алфавиту,
 # и работает для языков с общей письменностью.

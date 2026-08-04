@@ -15,9 +15,9 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
-from lib import extract as E, lang as G          # noqa: E402
+from booktrans import extract as E, lang as G          # noqa: E402
 
 FIELDS = ("язык", "абзацев", "стихов", "заголовков", "сносок",
           "со_ссылками", "картинок", "обложка", "слов")
