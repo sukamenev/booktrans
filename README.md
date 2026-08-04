@@ -139,21 +139,56 @@ pass is skipped.
 
 ## Installation
 
-Nothing but Python 3 and an agent. Run
+Linux and macOS:
 
-```
+```bash
+git clone https://github.com/sukamenev/booktrans
+cd booktrans
 ./booktrans --check
 ```
 
-and it will name whatever is missing and print the exact command to install it
-on your system — Linux, macOS or Windows alike. Nothing is installed for you:
-a system package needs elevated rights, and a program that runs `sudo` on your
-machine unasked is not one you should trust.
+Windows — the same, but call it through Python, there is no shebang there:
 
-Optional and only for what you actually use: `poppler` (`pdftotext`,
-`pdfimages`) to read pdf and pull figures out of it, `charset-normalizer` for
-exotic txt encodings. epub and fb2 need neither. The default agent is Claude
-Code with its default model.
+```powershell
+git clone https://github.com/sukamenev/booktrans
+cd booktrans
+python booktrans --check
+```
+
+`--check` names whatever is missing and prints the exact command to install it
+on your system — apt, dnf, pacman, zypper, emerge, apk, brew, scoop, choco or
+winget, whichever is actually there. Nothing is installed for you: a system
+package needs elevated rights, and a program that runs `sudo` on your machine
+unasked is not one you should trust.
+
+**Required:** Python 3.9 or newer and the agent's CLI — that is what
+translates the book.
+
+**Optional, and only for the formats you use:** `poppler` (`pdftotext`,
+`pdfimages`) to read pdf and pull figures out of it; `charset-normalizer` for
+rare txt encodings. epub and fb2 need neither.
+
+The cleanest way to add the optional Python part, on all three systems alike,
+is [uv](https://docs.astral.sh/uv/) — it brings its own Python, so nothing has
+to be installed beforehand:
+
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
+```
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
+```
+```bash
+uv pip install charset-normalizer
+```
+
+Prefer `uv` or `pipx` over plain `pip install`: on current Linux distributions
+pip refuses with "externally managed environment", and that message explains
+nothing to someone installing their first tool.
+
+Installing in a single command — `uv tool install booktrans` — is what the
+project is heading for; it needs publishing to PyPI, which has not happened
+yet.
 
 ## Languages
 

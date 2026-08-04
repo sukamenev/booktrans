@@ -151,21 +151,55 @@ txt, на выходе готовая книга в epub, fb2, html или txt.
 
 ## Установка
 
-Ничего, кроме Python 3 и агента. Запустите
+Linux и macOS:
 
-```
+```bash
+git clone https://github.com/sukamenev/booktrans
+cd booktrans
 ./booktrans --check
 ```
 
-— он назовёт, чего не хватает, и даст готовую строку установки именно для
-вашей системы: Linux, macOS и Windows одинаково. Сам ничего не ставит:
-системный пакет требует прав, а программе, которая без спросу запускает у вас
-`sudo`, доверять не стоит.
+Windows — то же самое, но запуск через Python, шебанга там нет:
 
-Необязательное и только под то, чем пользуетесь: `poppler` (`pdftotext`,
-`pdfimages`) — чтобы читать pdf и доставать из него картинки,
-`charset-normalizer` — для редких кодировок txt. Для epub и fb2 не нужно
-ни то, ни другое. По умолчанию агент — Claude Code с моделью по умолчанию.
+```powershell
+git clone https://github.com/sukamenev/booktrans
+cd booktrans
+python booktrans --check
+```
+
+`--check` назовёт, чего не хватает, и даст готовую строку установки именно для
+вашей системы: apt, dnf, pacman, zypper, emerge, apk, brew, scoop, choco или
+winget — тот, который действительно стоит. Сам ничего не ставит: системный
+пакет требует прав, а программе, которая без спросу запускает у вас `sudo`,
+доверять не стоит.
+
+**Обязательно:** Python 3.9 или новее и CLI агента — им и переводится книга.
+
+**Необязательно и только под свои форматы:** `poppler` (`pdftotext`,
+`pdfimages`) — чтобы читать pdf и доставать из него картинки;
+`charset-normalizer` — для редких кодировок txt. Для epub и fb2 не нужно ни
+то, ни другое.
+
+Питонью часть на всех трёх системах проще всего поставить через
+[uv](https://docs.astral.sh/uv/) — он приносит с собой и Python, так что
+заранее ничего иметь не нужно:
+
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
+```
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
+```
+```bash
+uv pip install charset-normalizer
+```
+
+`uv` или `pipx` предпочтительнее простого `pip install`: на нынешних сборках
+Linux pip отказывается работать с сообщением «externally managed environment»,
+а человеку, ставящему свой первый инструмент, оно не объясняет ничего.
+
+Установка одной командой — `uv tool install booktrans` — то, к чему проект
+идёт: для неё нужна публикация в PyPI, а её пока не было.
 
 ## Что происходит
 
