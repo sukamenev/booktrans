@@ -94,6 +94,7 @@ def main():
     ap.add_argument("--only", choices=ALL_STEPS, help=T("h_only"))
     ap.add_argument("--skip", default="", help=T("h_skip"))
     ap.add_argument("--chunks", help=T("h_chunks"))
+    ap.add_argument("--force", default="", help=T("h_force"))
     # Умолчания берутся из окружения — тем же путём, что и язык: так обёртки
     # вроде bt_claude сводятся к одной строке, а вшитое предпочтение одного
     # поставщика не навязывается тому, кто пользуется другим.
@@ -378,7 +379,8 @@ def main():
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(), args.retries, log)
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
                                   args.retries, log, only_chunks,
-                                  fallback=fallback_agent())
+                                  fallback=fallback_agent(),
+                                  force=args.force.split(","))
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
         log("")
 

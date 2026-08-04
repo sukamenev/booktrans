@@ -375,6 +375,13 @@ cure it has is a fallback:
 Refused chunks are then translated and edited by Opus while everything else
 stays with Gemini — fast and four times cheaper.
 
+**Three refusals in a row stop the run.** One refusal is a contentious scene;
+three in a row mean it is no longer about the book — the model's policy
+changed, the quota ran out, the agent died. Carrying on would burn money for
+nothing. What is translated stays translated, and the next run picks it up.
+To carry on regardless: `--force translate`.
+
+
 **Opus takes on anything but is slow.** On subscription plans a hundred-chunk
 book takes some ten hours: every chunk is thought over for three to five
 minutes, and that cannot be sped up — translation is sequential by design,
@@ -503,6 +510,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --only STEP           a single step: structure|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks (for redoing)
+--force translate     do not stop on that pass whatever happens
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass
 --agent claude|cmd    agent

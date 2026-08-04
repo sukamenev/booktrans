@@ -410,7 +410,23 @@ def translate_prompt(chunk, nxt, summary, tail, terms, task):
     return "\n\n---\n\n".join(parts)
 
 
-def translate(work, chunks, agent, system, task, retries, log, only=None, fallback=None):
+# Сколько отказов подряд считать не свойством места, а поломкой. Один отказ —
+# это спорная сцена; три подряд означают, что дело уже не в книге: сменилась
+# политика модели, кончилась квота, отвалился агент. Идти дальше — жечь деньги.
+REFUSE_ROW = 3
+
+
+def _stop_row(refused, force, log):
+    refused[0] += 1
+    if refused[0] < REFUSE_ROW or "translate" in force:
+        return False
+    log("")
+    log("  " + T("refused_row", refused[0]))
+    return True
+
+
+def translate(work, chunks, agent, system, task, retries, log, only=None,
+              fallback=None, force=()):
     os.makedirs(f"{work}/tr", exist_ok=True)
     os.makedirs(f"{work}/prompts", exist_ok=True)
     sp = f"{work}/state.json"
@@ -424,6 +440,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None, fallba
                 have |= set(json.load(open(f"{work}/tr/{n}", encoding="utf-8"))["tr"])
 
     done = skipped = 0
+    refused = [0]
     for i, c in enumerate(chunks):
         idx = c["index"]
         if only and idx not in only:
@@ -461,6 +478,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None, fallba
             log(f"      {src}…")
             if fallback is None:
                 log("    " + T("refused_hint", idx))
+                if _stop_row(refused, force, log):
+                    break
                 continue
             # Подстраховка: то же задание другой модели. Отказ — свойство
             # модели, а не текста, и у другой такого запрета может не быть.
@@ -471,7 +490,10 @@ def translate(work, chunks, agent, system, task, retries, log, only=None, fallba
                     lambda o: _parse_translate(o, expected), log)
             except (Refused, RuntimeError) as e2:
                 log("    " + T("refused_both", getattr(e2, "first", e.first)))
+                if _stop_row(refused, force, log):
+                    break
                 continue
+        refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
         extra, found = extra
         summ, terms = _split_meta(extra)
         json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
