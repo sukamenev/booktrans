@@ -304,16 +304,18 @@ Optional, but markedly better with one. It may start with a header:
 
 ```markdown
 ---
-title_target: Usurpation
-author_target: Sue Burke
-series: Семиозис
+title_target: Владыка Марса
+author_target: Эдгар Райс Берроуз
+series: Барсум
 series_no: 3
-genre: sf
+genre: sf_space
 ---
 
-The planet Pax is called «Мир». Fippokat is фиппокот.
-The heroine is Аграфена, not Аграфина.
-The plant narrates in the present tense — keep it.
+Barsoom is Mars, but keep «Барсум» in the text.
+A thoat is a тот — an eight-legged riding beast, not a horse.
+The heroine is Дея Торис, not Дежа Торис.
+Leave the Martian measures (хаад, софад) as they are; do not convert
+them to kilometres.
 ```
 
 Everything after the header is free text. It **takes precedence** over the
