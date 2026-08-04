@@ -148,7 +148,7 @@
   "scout_forked": "WARNING: the reference gives two variants for {0} terms. Pick one for each in work/scout.md, or the term will drift across the book:",
   "no_summary": "WARNING: the chunk came back without a digest. Check that the SUMMARY: and TERMS: labels in the translation prompt were not renamed: without them terminology will drift across the book.",
   "refused": "REFUSED: the model stopped twice at block {0}, leaving {1} of {2} untranslated. This is not a markup failure — it is the content of this passage:",
-  "refused_hint": "Chunk skipped. Translate it with another model, naming its number:  --chunks 16 --agent claude  (what is done will not be paid for twice)",
+  "refused_hint": "Chunk skipped. Translate it with another model, naming its number:  --chunks {0} --agent claude  (what is done will not be paid for twice)",
   "h_fb_agent": "agent for chunks the main model refuses",
   "h_fb_model": "model for those chunks (defaults to the translation model)",
   "refused_retry": "trying the fallback model…",

@@ -460,7 +460,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None, fallba
             log("    " + T("refused", e.first, e.n, e.total))
             log(f"      {src}…")
             if fallback is None:
-                log("    " + T("refused_hint"))
+                log("    " + T("refused_hint", idx))
                 continue
             # Подстраховка: то же задание другой модели. Отказ — свойство
             # модели, а не текста, и у другой такого запрета может не быть.
