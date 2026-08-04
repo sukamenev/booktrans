@@ -40,6 +40,17 @@ The language each book should be translated into is recorded in the manifest
 under `переводить_на`: several of the books are Russian and exist to exercise
 the reverse direction.
 
+Books are not in the repository, and neither is the inventory: the file names
+name copyrighted books. Build the corpus with `build_corpus.py`, then create
+the inventory with
+
+```bash
+python3 tests/check.py --update
+```
+
+It writes down what was read today, and from then on guards against
+discrepancies. The shape of the file is in `manifest.json.example`.
+
 ## Provenance
 
 Books 05 and 06 come from Project Gutenberg and are in the public domain.

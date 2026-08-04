@@ -42,12 +42,25 @@ def measure(path):
 def main():
     update = "--update" in sys.argv
     mpath = os.path.join(HERE, "manifest.json")
-    man = json.load(open(mpath, encoding="utf-8"))
+    # Описи в репозитории нет: имена файлов набора называют книги, защищённые
+    # авторским правом. Первый прогон создаёт её сам.
+    if not os.path.exists(mpath):
+        if not update:
+            print("описи нет. Соберите набор (build_corpus.py) и создайте её:\n"
+                  "  python3 tests/check.py --update\n"
+                  "Устройство описи — в manifest.json.example")
+            return 1
+        man = {"_": json.load(open(mpath + ".example", encoding="utf-8"))["_"],
+               "books": {}}
+    else:
+        man = json.load(open(mpath, encoding="utf-8"))
     books = man["books"]
     bad = 0
     for path in sorted(glob.glob(os.path.join(HERE, "corpus", "*"))):
         name = os.path.basename(path)
         want = books.get(name)
+        if want is None and update:
+            books[name] = want = {}
         if want is None:
             print(f"  {name:32s} нет в описи — добавьте или удалите файл")
             bad += 1
