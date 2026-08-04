@@ -42,6 +42,38 @@ def _models(work):
                     out.add(m)
     return sorted(out)
 
+def version(code="ru"):
+    """Чем именно переведена книга — для раздела «О переводе».
+
+    Читатель, нашедший в переводе ошибку, должен понимать, к какой именно
+    сборке она относится: конвейер меняется, и «переведено BookTrans» через
+    год не значит ничего.
+
+    Установлен из индекса — номер версии. Взят из репозитория — дата
+    последнего изменения: номер там всё равно стоит от прошлого выпуска и
+    соврал бы. Нет ни того ни другого — дата самого файла, который перевод
+    и делал.
+
+    Возвращает пару: выпуск ли это (тогда номер) и что именно писать.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    if not os.path.isdir(os.path.join(os.path.dirname(os.path.dirname(here)), ".git")):
+        try:
+            from importlib.metadata import version as _v
+            return True, _v("booktrans")
+        except Exception:                             # noqa: BLE001
+            pass
+    try:
+        import subprocess
+        r = subprocess.run(["git", "-C", here, "log", "-1", "--format=%ct"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return False, lang.fmt_date(float(r.stdout.strip()), code)
+    except Exception:                                 # noqa: BLE001
+        pass
+    return False, lang.fmt_date(os.path.getmtime(os.path.join(here, "cli.py")), code)
+
+
 def about_lines(work, st, code):
     """Служебный раздел «О переводе»: заголовок и абзацы.
 
@@ -51,7 +83,10 @@ def about_lines(work, st, code):
     """
     models = _models(work)
     span = _work_span(work, code)
-    body = [st["about_made"].format(pipeline=f"{PIPELINE} ({PIPELINE_URL})")]
+    release, ver = version(code)
+    who = f"{PIPELINE} {ver} ({PIPELINE_URL})" if release \
+        else f"{PIPELINE} ({ver}, {PIPELINE_URL})"
+    body = [st["about_made"].format(pipeline=who)]
     if models:
         body.append(st["about_model"].format(models=", ".join(models)))
     if span:
