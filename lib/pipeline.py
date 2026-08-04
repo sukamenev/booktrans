@@ -891,6 +891,9 @@ def all_notes(work, order):
 
 SCOUT_WORDS = 18000     # крупный блок: на вход много, на выход мало
 SCOUT_BUDGET = 24000    # предел справочника в знаках: он идёт в КАЖДЫЙ запрос
+# Выше этого справочник пересжимается отдельным запросом: просьбу уложиться
+# в предел сведение исполняет плохо — на одной книге вышло полтора предела.
+SCOUT_MAX = int(SCOUT_BUDGET * 1.25)
 
 
 # Коды жанров fb2, которые конвейер принимает от разведки. Список нарочно
@@ -970,6 +973,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         # Готовый справочник всё равно проверяем на двоящиеся термины: он мог
         # быть собран прежней версией, а платить за разведку заново незачем.
         merged = open(out_path, encoding="utf-8").read()
+        merged = _condense_scout(merged, agent, system, retries, log, out_path)
         forked = _forked(merged, to)
         if forked:
             merged = _unfork(merged, forked, agent, system, retries, log, out_path)
@@ -1042,8 +1046,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
 
     open(out_path, "w", encoding="utf-8").write(merged)
     log("  " + T("scout_ref", out_path, len(merged)))
-    if len(merged) > SCOUT_BUDGET * 1.6:
-        log("  " + T("scout_big", out_path))
+    merged = _condense_scout(merged, agent, system, retries, log, out_path)
 
     # Двоящиеся термины ловим до перевода, а не после. Запись вида
     # «одиночка / синглтон» — это не решение, и переводчик, работая кусками,
@@ -1063,6 +1066,69 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         for _, line in forked[:8]:
             log(f"      {line}")
     return merged
+
+
+def _rows(text):
+    """Строки таблиц справочника. По ним видно, не выпало ли при сжатии
+    имя или термин: их строк должно стать не меньше."""
+    return {re.sub(r"\s+", "", line.split("|")[1])
+            for line in text.splitlines()
+            if line.startswith("|") and line.count("|") > 2 and "---" not in line}
+
+
+def _condense_scout(merged, agent, system, retries, log, out_path):
+    """Пересжать справочник, если он перерос предел.
+
+    Просьба «уложиться в столько-то знаков» стоит в промпте сведения, но
+    исполняется она плохо: на одной книге вышло полтора предела. А платится
+    справочник в каждом запросе на перевод — надбавка постоянная. Отдельный
+    запрос делает ровно одно дело и потому справляется.
+
+    Порядок, что резать, знать заранее можно: он один для всех книг.
+    Пересказ событий выбрасывается первым — сюжет конвейер и так помнит
+    отдельным конспектом, который накапливается по ходу перевода.
+    """
+    if len(merged) <= SCOUT_MAX:
+        return merged
+    log("  " + T("scout_condense", len(merged), SCOUT_BUDGET), end="")
+    ask = (
+        f"Справочник по книге вышел на {len(merged)} знаков, а уходит он в "
+        f"каждый запрос на перевод. Сожми примерно до {SCOUT_BUDGET}.\n\n"
+        "Обязано остаться:\n"
+        "- таблица имён и названий целиком, все строки до одной: ради неё "
+        "справочник и существует;\n"
+        "- таблица терминов целиком;\n"
+        "- род, склонение, обращения на «ты» и «вы»;\n"
+        "- свойства существ, вещей и мест, от которых зависит выбор слова;\n"
+        "- как говорит тот, у кого есть прямая речь;\n"
+        "- опасные места, цитаты и канонические переводы.\n\n"
+        "Резать в таком порядке:\n"
+        "1. пересказ событий и биографий — что происходит по ходу книги, "
+        "конвейер помнит отдельно, здесь это лишнее;\n"
+        "2. кандидаты в сноски — оставить слово и половину строки о том, "
+        "чем оно трудно;\n"
+        "3. пояснения длиннее строки — ужать до строки;\n"
+        "4. людей без прямой речи — до одной строки.\n\n"
+        "Заголовки разделов сохранить, порядок не менять. Ничего не "
+        "дописывать: нового сведения в сжатом справочнике появиться не "
+        "должно.\n\n---\n\n" + merged)
+    (short, _), meta, dt = _run(agent, system, ask, retries, lambda o: (o, ""), log)
+    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+    log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+
+    # Сжатие принимаем не на слово. Вычеркнуть половину имён — самый простой
+    # способ уложиться в предел, и обнаружилось бы это уже в переводе.
+    was, now = _rows(merged), _rows(short)
+    lost = was - now
+    if len(short) >= len(merged) or len(lost) > len(was) * 0.05:
+        log("  " + T("scout_condense_no", len(lost), len(was)))
+        log("  " + T("scout_big", out_path))
+        return merged
+    open(out_path, "w", encoding="utf-8").write(short)
+    log("  " + T("scout_condense_ok", len(merged), len(short)))
+    if len(short) > SCOUT_MAX:
+        log("  " + T("scout_big", out_path))
+    return short
 
 
 def _forked(merged, to):
