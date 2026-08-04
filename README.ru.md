@@ -151,20 +151,19 @@ txt, на выходе готовая книга в epub, fb2, html или txt.
 
 ## Установка
 
-Linux и macOS:
-
 ```bash
-git clone https://github.com/sukamenev/booktrans
-cd booktrans
-./booktrans --check
+uv tool install booktrans        # или: pipx install booktrans
+booktrans --check
 ```
 
-Windows — то же самое, но запуск через Python, шебанга там нет:
+Это всё: [uv](https://docs.astral.sh/uv/) приносит с собой и Python, так что
+заранее иметь ничего не нужно. Если самого uv ещё нет:
 
 ```powershell
-git clone https://github.com/sukamenev/booktrans
-cd booktrans
-python booktrans --check
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
+```
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
 ```
 
 `--check` назовёт, чего не хватает, и даст готовую строку установки именно для
@@ -174,32 +173,22 @@ winget — тот, который действительно стоит. Сам 
 доверять не стоит.
 
 **Обязательно:** Python 3.9 или новее и CLI агента — им и переводится книга.
+**Необязательно, только под свои форматы:** `poppler` (`pdftotext`,
+`pdfimages`) — чтобы читать pdf и доставать из него картинки. Для epub, fb2 и
+txt не нужно ничего.
 
-**Необязательно и только под свои форматы:** `poppler` (`pdftotext`,
-`pdfimages`) — чтобы читать pdf и доставать из него картинки;
-`charset-normalizer` — для редких кодировок txt. Для epub и fb2 не нужно ни
-то, ни другое.
+Чтобы править исходники, берите из git — тогда работает `./booktrans` прямо из
+рабочей копии, а на Windows `python booktrans`, шебанга там нет:
 
-Питонью часть на всех трёх системах проще всего поставить через
-[uv](https://docs.astral.sh/uv/) — он приносит с собой и Python, так что
-заранее ничего иметь не нужно:
-
-```powershell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
-```
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
-```
-```bash
-uv pip install charset-normalizer
+git clone https://github.com/sukamenev/booktrans
+cd booktrans
+./booktrans --check
 ```
 
-`uv` или `pipx` предпочтительнее простого `pip install`: на нынешних сборках
-Linux pip отказывается работать с сообщением «externally managed environment»,
-а человеку, ставящему свой первый инструмент, оно не объясняет ничего.
-
-Установка одной командой — `uv tool install booktrans` — то, к чему проект
-идёт: для неё нужна публикация в PyPI, а её пока не было.
+Простого `pip install` лучше избегать: на нынешних сборках Linux он
+отказывается работать с сообщением «externally managed environment», а
+человеку, ставящему свой первый инструмент, оно не объясняет ничего.
 
 ## Что происходит
 
@@ -322,6 +311,27 @@ genre: sf
 
 Прервать можно в любой момент: при следующем запуске конвейер продолжит
 с того же места, а сделанное не оплатится дважды.
+
+### Как это делается в два прогона
+
+На деле дешевле всего два запуска. Сперва вся книга через Gemini — он быстрый
+и вывозит основной объём:
+
+```bash
+./bt_agy книга.epub --to ru --jobs 5
+```
+
+Потом та же команда другим агентом — на то, за что Gemini не взялся:
+
+```bash
+./bt_claude книга.epub --to ru --jobs 5
+```
+
+Дважды не переводится ничего: сделанное запоминается по содержимому, и второй
+прогон берёт только отказные и оборванные куски. То же самое даёт
+`--fallback-agent`, но так дорогая модель не ждёт впустую весь первый проход,
+а вы успеваете посмотреть, на чём именно случился отказ, прежде чем за это
+платить.
 
 ## Модели по проходам
 

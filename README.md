@@ -139,20 +139,19 @@ pass is skipped.
 
 ## Installation
 
-Linux and macOS:
-
 ```bash
-git clone https://github.com/sukamenev/booktrans
-cd booktrans
-./booktrans --check
+uv tool install booktrans        # or: pipx install booktrans
+booktrans --check
 ```
 
-Windows — the same, but call it through Python, there is no shebang there:
+That is the whole of it: [uv](https://docs.astral.sh/uv/) brings its own
+Python, so nothing has to be installed beforehand. If you do not have uv yet:
 
 ```powershell
-git clone https://github.com/sukamenev/booktrans
-cd booktrans
-python booktrans --check
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
+```
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
 ```
 
 `--check` names whatever is missing and prints the exact command to install it
@@ -162,33 +161,23 @@ package needs elevated rights, and a program that runs `sudo` on your machine
 unasked is not one you should trust.
 
 **Required:** Python 3.9 or newer and the agent's CLI — that is what
-translates the book.
+translates the book. **Optional, only for the formats you use:** `poppler`
+(`pdftotext`, `pdfimages`) to read pdf and pull figures out of it. epub, fb2
+and txt need nothing.
 
-**Optional, and only for the formats you use:** `poppler` (`pdftotext`,
-`pdfimages`) to read pdf and pull figures out of it; `charset-normalizer` for
-rare txt encodings. epub and fb2 need neither.
+To edit the sources, take it from git instead — then `./booktrans` runs from
+the working copy, and `python booktrans` on Windows, where there is no
+shebang:
 
-The cleanest way to add the optional Python part, on all three systems alike,
-is [uv](https://docs.astral.sh/uv/) — it brings its own Python, so nothing has
-to be installed beforehand:
-
-```powershell
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
-```
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
-```
-```bash
-uv pip install charset-normalizer
+git clone https://github.com/sukamenev/booktrans
+cd booktrans
+./booktrans --check
 ```
 
-Prefer `uv` or `pipx` over plain `pip install`: on current Linux distributions
-pip refuses with "externally managed environment", and that message explains
+Plain `pip install` is worth avoiding: on current Linux distributions it
+refuses with "externally managed environment", and that message explains
 nothing to someone installing their first tool.
-
-Installing in a single command — `uv tool install booktrans` — is what the
-project is heading for; it needs publishing to PyPI, which has not happened
-yet.
 
 ## Languages
 
@@ -392,6 +381,29 @@ book; $100 or above is the sensible choice.
 
 You can interrupt at any point: the next run picks up where it stopped, and
 nothing already done is paid for twice.
+
+### The two-run way
+
+In practice the cheapest order is two runs. First the whole book through
+Gemini — it is fast and carries the bulk of the text:
+
+```bash
+./bt_agy book.epub --to ru --jobs 5
+```
+
+Then the same command with the other agent, for whatever Gemini would not
+take:
+
+```bash
+./bt_claude book.epub --to ru --jobs 5
+```
+
+Nothing is translated twice: what is done is remembered by content, and the
+second run only picks up the chunks that were refused or broke off. It is the
+same as `--fallback-agent`, only the expensive model is not held waiting
+through the whole first pass, and you get to look at what was refused before
+paying for it.
+
 
 ## Per-pass models
 
