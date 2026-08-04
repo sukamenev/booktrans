@@ -19,7 +19,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from lib import build, extract, lang, pipeline
+from lib import build, doctor, extract, lang, pipeline
 from lib.agent import make_agent
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -86,7 +86,8 @@ def main():
         description=T("h_desc"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=T("h_epilog"))
-    ap.add_argument("book", help=T("h_book"))
+    ap.add_argument("book", nargs="?", help=T("h_book"))
+    ap.add_argument("--check", action="store_true", help=T("h_check"))
     ap.add_argument("-p", "--prompt", help=T("h_prompt"))
     ap.add_argument("-pt", "--prompt-text", help=T("h_prompt_text"))
     ap.add_argument("-o", "--out", help=T("h_out"))
@@ -121,6 +122,12 @@ def main():
     ap.add_argument("--fallback-model", help=T("h_fb_model"))
     args = ap.parse_args()
 
+    if args.check:
+        T = lang.set_ui(args.ui)
+        log(T("doc_head"))
+        return 1 if doctor.check(log, args.agent) else 0
+    if not args.book:
+        ap.error(T("h_book"))
     if not os.path.exists(args.book):
         sys.exit(T("h_nofile", args.book))
 

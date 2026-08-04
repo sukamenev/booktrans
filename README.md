@@ -138,8 +138,21 @@ pass is skipped.
 
 ## Installation
 
-Nothing but Python 3 and an agent. For pdf you need `pdftotext`
-(poppler-utils). The default agent is Claude Code with its default model.
+Nothing but Python 3 and an agent. Run
+
+```
+./booktrans --check
+```
+
+and it will name whatever is missing and print the exact command to install it
+on your system — Linux, macOS or Windows alike. Nothing is installed for you:
+a system package needs elevated rights, and a program that runs `sudo` on your
+machine unasked is not one you should trust.
+
+Optional and only for what you actually use: `poppler` (`pdftotext`,
+`pdfimages`) to read pdf and pull figures out of it, `charset-normalizer` for
+exotic txt encodings. epub and fb2 need neither. The default agent is Claude
+Code with its default model.
 
 ## Languages
 
