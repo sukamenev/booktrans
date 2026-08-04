@@ -312,7 +312,7 @@ genre: sf_space
 ---
 
 Barsoom is Mars, but keep «Барсум» in the text.
-A thoat is a тот — an eight-legged riding beast, not a horse.
+A thoat is a тоат — an eight-legged riding beast, not a horse.
 The heroine is Дея Торис, not Дежа Торис.
 Leave the Martian measures (хаад, софад) as they are; do not convert
 them to kilometres.
