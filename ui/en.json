@@ -125,6 +125,7 @@
   "h_nofile": "no such file: {0}",
   "h_encoding": "input file encoding, when detection got it wrong (e.g. cp1251)",
   "locked": "STOP: a run on this book is already in progress.\n  Work directory {0} is held by process {1}.\n  Wait for it or stop it, otherwise the chunks will overwrite each other.",
+  "scout_unfork": "terms with two variants: {0} — picking one each ... ",
   "scout_forked": "WARNING: the reference gives two variants for {0} terms. Pick one for each in work/scout.md, or the term will drift across the book:",
   "no_summary": "WARNING: the chunk came back without a digest. Check that the SUMMARY: and TERMS: labels in the translation prompt were not renamed: without them terminology will drift across the book.",
   "refused": "REFUSED: the model stopped twice at block {0}, leaving {1} of {2} untranslated. This is not a markup failure — it is the content of this passage:",

@@ -967,7 +967,13 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     out_path = f"{work}/scout.md"
     if os.path.exists(out_path):
         log("  " + T("scout_done_already"))
-        return open(out_path, encoding="utf-8").read()
+        # Готовый справочник всё равно проверяем на двоящиеся термины: он мог
+        # быть собран прежней версией, а платить за разведку заново незачем.
+        merged = open(out_path, encoding="utf-8").read()
+        forked = _forked(merged, to)
+        if forked:
+            merged = _unfork(merged, forked, agent, system, retries, log, out_path)
+        return merged
 
     paras = [b for b in blocks if b["kind"] in ("p", "title")]
     parts, cur, cw = [], [], 0
@@ -1011,7 +1017,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             "Сведи их в один справочник.\n\n"
             "Требования:\n"
             "- убрать повторы; если по одному имени или термину предложены разные "
-            "варианты, выбрать один и указать его;\n"
+            "варианты, выбрать один. В столбце перевода должен стоять "
+            "**ровно один** вариант: ни косой черты, ни «или», ни скобок с "
+            "запасным словом. Косая черта законна только там, где перечень "
+            "есть и в оригинале: «duo / trio» → «дуэт / трио»;\n"
             f"- **уложиться примерно в {SCOUT_BUDGET} знаков**. Этот справочник "
             "уходит в каждый запрос на перевод, поэтому он должен быть плотным: "
             "таблицы вместо прозы, строка на сущность, никаких рассуждений и "
@@ -1042,29 +1051,101 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     # Ищем узко. Строка вида «duo / trio / quartet | дуэт / трио / квартет» —
     # это перечень, косая черта в нём законна. Раздвоение — когда в оригинале
     # термин один, а вариантов перевода несколько.
-    from .lang import SCRIPTS, script_of
-    rng = SCRIPTS.get(script_of(to) or "", "")
-    sep = re.compile(r"\s/\s|\bили\b|\bor\b")
-    forked = []
-    if rng:
-        has_target = re.compile(rf"[{rng}]")
-        inside = False
-        for line in merged.splitlines():
-            if line.startswith("#"):
-                inside = bool(re.search(r"ИМЕНА|ТЕРМИН|NAMES|TERMS", line, re.I))
-                continue
-            if not inside or line.count("|") < 3 or "---" in line:
-                continue
-            cols = [c.strip() for c in line.split("|")]
-            orig, trans = cols[1], cols[2]
-            if len(trans) > 70 or not has_target.search(trans):
-                continue
-            if len(sep.split(trans)) > len(sep.split(orig)):
-                forked.append(re.sub(r"\s+", " ", line.strip())[:88])
+    forked = _forked(merged, to)
+    if forked:
+        merged = _unfork(merged, forked, agent, system, retries, log, out_path)
+        forked = _forked(merged, to)
     if forked:
         log("  " + T("scout_forked", len(forked)))
-        for x in forked[:8]:
-            log(f"      {x}")
+        for _, line in forked[:8]:
+            log(f"      {line}")
+    return merged
+
+
+def _forked(merged, to):
+    """Строки справочника, где на один термин оригинала дано несколько
+    переводов. Возвращает пары (термин, строка целиком)."""
+    from .lang import SCRIPTS, script_of
+    rng = SCRIPTS.get(script_of(to) or "", "")
+    if not rng:
+        return []
+    has_target = re.compile(rf"[{rng}]")
+    sep = re.compile(r"\s/\s|\bили\b|\bor\b")
+    out, inside = [], False
+    for line in merged.splitlines():
+        if line.startswith("#"):
+            inside = bool(re.search(r"ИМЕНА|ТЕРМИН|NAMES|TERMS", line, re.I))
+            continue
+        if not inside or line.count("|") < 3 or "---" in line:
+            continue
+        cols = [c.strip() for c in line.split("|")]
+        orig, trans = cols[1], cols[2]
+        if len(trans) > 70 or not has_target.search(trans):
+            continue
+        if len(sep.split(trans)) > len(sep.split(orig)):
+            out.append((orig, re.sub(r"\s+", " ", line.strip())[:88]))
+    return out
+
+
+def _unfork(merged, forked, agent, system, retries, log, out_path):
+    """Выбрать по одному переводу за человека и переписать справочник.
+
+    Раздвоенная запись — не решение, а отложенный выбор, и делать его будет
+    переводчик, который видит один кусок книги вместо всей: у одного романа
+    так вышло 45 раз одно слово и 29 раз другое. Спросить модель здесь дёшево
+    (десяток строк на входе), а решение это разовое и на всю книгу.
+    """
+    log("  " + T("scout_unfork", len(forked)), end="")
+    ask = ("В справочнике по книге на один термин оригинала дано несколько "
+           "переводов. Выбери по одному — тот, что лучше ляжет в текст книги "
+           "и привычнее читателю на целевом языке.\n\n"
+           "Ответ — только строками вида `термин = выбранный перевод`, "
+           "по одной на каждый случай, без пояснений.\n\n"
+           + "\n".join(line for _, line in forked))
+    (res, _), meta, dt = _run(agent, system, ask, retries, lambda o: (o, ""), log)
+    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+    log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+
+    picks = {}
+    for line in res.splitlines():
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip().strip("`*|-— ")
+        v = v.strip().strip("`*| ")
+        if k and v:
+            picks[k.lower()] = v
+    if not picks:
+        return merged
+
+    want = {orig.lower() for orig, _ in forked}
+    out, done = [], []
+    for line in merged.splitlines():
+        cols = line.split("|")
+        if len(cols) > 3:
+            orig = cols[1].strip().lower()
+            if orig in want and orig in picks:
+                cols[2] = f" {picks[orig]} "
+                line = "|".join(cols)
+                done.append(f"{cols[1].strip()} → {picks[orig]}")
+        out.append(line)
+    if not done:
+        return merged
+    # Кроме таблицы, тот же термин поминается в справочнике прозой, и там он
+    # остаётся двойным. Переписывать прозу подстановкой опасно, поэтому выбор
+    # закрепляем отдельным разделом в конце: он короткий и старше остального.
+    out.append("")
+    out.append("## ОКОНЧАТЕЛЬНЫЙ ВЫБОР ПО ТЕРМИНАМ")
+    out.append("")
+    out.append("Ниже — термины, у которых выше по справочнику осталось "
+               "несколько вариантов перевода. Пишутся только так; всё, что "
+               "сказано о них выше, этому подчиняется.")
+    out.append("")
+    out += [f"- {x}" for x in done]
+    merged = "\n".join(out)
+    open(out_path, "w", encoding="utf-8").write(merged)
+    for x in done:
+        log(f"      {x}")
     return merged
 
 
