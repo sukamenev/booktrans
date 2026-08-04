@@ -36,6 +36,7 @@ What each part does:
 | `./bt_agy` | wrapper: translate with Gemini through Antigravity. There are also `bt_claude` and `bt_codex`, and your own takes three lines |
 | `moby-dick.epub` | the book. No output name is given, so it names itself: "Мелвилл Герман. Моби Дик.fb2" |
 | `-p instructions.md` | your instructions to the translator: what to call the characters, which terms to fix, what to leave alone |
+| `-pt "leave the names in Latin"` | the same, but as a string — a typo in a filename must not silently become an instruction |
 | `--to ru` | target language |
 | `--jobs 5` | five threads for editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
 | `--fallback-agent claude` | what to fall back on when the main model refuses a chunk |
@@ -444,6 +445,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 
 ```
 -p, --prompt FILE     translator's instructions
+-pt, --prompt-text S  the same as a string; may be combined with -p
 -o, --out FILE        output file; format follows the extension
 -w, --work DIR        work directory
 --to CODE             target language (langs/CODE.md), en by default
@@ -464,6 +466,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --retries N           attempts per chunk on a parsing failure (default 3)
 --max-wait SEC        cap on waiting for rate limits (default one day)
 --partial             assemble even with parts untranslated
+--check               check the environment and say what is missing
 ```
 
 ## Your own agent
@@ -510,6 +513,29 @@ does cost a request.
 
 To see what the editor changed: `work/ed/NNNN.json` holds the old and new
 version of every paragraph.
+
+## PDF
+
+Text comes out through `pdftotext`. Figures are pulled out too and placed by
+page: pdftotext gives no positions, but it does separate pages, so a page's
+place in the book is the fraction of characters before it, and the same
+fraction is measured off against the paragraphs. Accuracy is "the right page".
+
+Headings, initials and rules set as pictures are thrown away — what separates
+them from photographs is the short side, the aspect ratio, and repetition
+across pages. A book with more than three pictures per page is set as pictures
+or scanned, and then nothing is pulled at all.
+
+A pdf with no text layer is refused outright, with a hint to run OCR
+(`ocrmypdf in.pdf out.pdf`) — silently translating an empty book is worse.
+
+## Bibliographies
+
+A reference list is left as it stands: it is what the reader uses to find the
+sources, and a journal article's title rendered into another language only
+gets in the way. Such a block is recognised by content — three publication
+years and three entry numbers in one block — because out of a pdf the whole
+list arrives as one page-sized block.
 
 ## Layout
 

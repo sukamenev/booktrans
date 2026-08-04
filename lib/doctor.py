@@ -50,41 +50,51 @@ def _install_line(pkg):
 
 
 def check(log=print, agent="claude"):
-    """Перечислить, чего не хватает. Возвращает число недостающего."""
-    bad = 0
+    """Что есть и чего нет. Возвращает число недостающего обязательного.
 
-    def line(ok, what, why, how=""):
-        nonlocal bad
-        mark = "+" if ok else "-"
-        log(f"  {mark} {what:22s} {why}")
+    Обязательное и необязательное разведены нарочно: без агента нельзя
+    ничего, а без poppler — только читать pdf. Свалив это в один список, мы
+    отпугнули бы человека, которому нужен один epub.
+    """
+    bad = opt_bad = 0
+
+    def line(ok, what, why, how="", need=True):
+        nonlocal bad, opt_bad
+        log(f"  {'+' if ok else '-'} {what:22s} {why}")
         if not ok:
-            bad += 1
+            if need:
+                bad += 1
+            else:
+                opt_bad += 1
             if how:
                 log(f"      {T('doc_install')}: {how}")
 
+    log("  " + T("doc_need"))
     line(sys.version_info >= (3, 9), f"python {sys.version_info.major}."
          f"{sys.version_info.minor}", T("doc_python"),
          "https://www.python.org/downloads/")
-
-    poppler = shutil.which("pdftotext")
-    line(bool(poppler), "pdftotext", T("doc_pdftotext"), _install_line(POPPLER))
-    if poppler:
-        line(bool(shutil.which("pdfimages")), "pdfimages", T("doc_pdfimages"),
-             _install_line(POPPLER))
-
-    try:
-        import charset_normalizer          # noqa: F401
-        ok = True
-    except ImportError:
-        ok = False
-    line(ok, "charset-normalizer", T("doc_charset"),
-         f"{os.path.basename(sys.executable)} -m pip install charset-normalizer")
-
     who = {"claude": "claude", "agy": "agy", "codex": "codex"}.get(agent)
     if who:
         line(bool(shutil.which(who)), who, T("doc_agent", agent),
              T("doc_agent_how", agent))
 
     log("")
+    log("  " + T("doc_opt"))
+    line(bool(shutil.which("pdftotext")), "pdftotext", T("doc_pdftotext"),
+         _install_line(POPPLER), need=False)
+    line(bool(shutil.which("pdfimages")), "pdfimages", T("doc_pdfimages"),
+         _install_line(POPPLER), need=False)
+    try:
+        import charset_normalizer          # noqa: F401
+        ok = True
+    except ImportError:
+        ok = False
+    line(ok, "charset-normalizer", T("doc_charset"),
+         f"{os.path.basename(sys.executable)} -m pip install charset-normalizer",
+         need=False)
+
+    log("")
     log("  " + (T("doc_ok") if not bad else T("doc_bad", bad)))
+    if opt_bad:
+        log("  " + T("doc_opt_bad", opt_bad))
     return bad
