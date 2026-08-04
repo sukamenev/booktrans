@@ -107,6 +107,8 @@
   "h_epilog": "examples:\n  ./booktrans book.epub --to en\n  ./booktrans book.pdf -p glossary.md -o Book.fb2 --to en\n  ./booktrans book.epub --only translate --chunks 5,6,7\n  ./booktrans book.epub --agent cmd --agent-cmd 'llm -s {system}'\n\nthe instructions file (-p) may start with a header:\n  ---\n  title_target: Usurpation\n  author_target: Sue Burke\n  series: Semiosis\n  series_no: 3\n  ---\n  ...then free text: what to call the characters, which terms to fix...\n",
   "h_book": "epub, fb2, pdf or txt",
   "h_prompt": "file of instructions for the translator",
+  "h_prompt_text": "instructions for the translator as a string (may be combined with -p)",
+  "prompt_nofile": "no such instructions file: {0}. If you meant a string of instructions, the option for that is --prompt-text.",
   "h_out": "output file: fb2, epub, html or txt (next to the source by default)",
   "h_work": "working directory (<book>.work by default)",
   "h_only": "run a single step only",

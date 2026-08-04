@@ -107,6 +107,8 @@
   "h_epilog": "примеры:\n  ./booktrans book.epub\n  ./booktrans book.pdf -p glossary.md -o Книга.fb2\n  ./booktrans book.epub --only translate --chunks 5,6,7\n  ./booktrans book.epub --agent cmd --agent-cmd 'llm -s {system}'\n\nфайл указаний (-p) может начинаться с шапки:\n  ---\n  title_target: Узурпация\n  author_target: Сью Берк\n  series: Семиозис\n  series_no: 3\n  ---\n  ...дальше свободным текстом: как называть героев, какие термины принять...\n",
   "h_book": "epub, fb2, pdf или txt",
   "h_prompt": "файл указаний переводчику",
+  "h_prompt_text": "указания переводчику строкой (можно вместе с -p)",
+  "prompt_nofile": "нет файла указаний: {0}. Если это была строка указаний, ключ для неё — --prompt-text.",
   "h_out": "выходной файл: fb2, epub, html или txt (по умолчанию рядом с исходником)",
   "h_work": "рабочая папка (по умолчанию <книга>.work)",
   "h_only": "выполнить только один этап",

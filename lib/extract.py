@@ -560,6 +560,115 @@ def _fb2(path, encoding=None, ask=None):
 
 # ---------------------------------------------------------------- PDF
 
+# Отбор картинок из pdf. Пороги выведены на живой книге и нарочно грубые.
+# В ней заголовки набраны картинками («THE» 116x40, «SCIENTIST» 299x43),
+# буквицы и линейки идут вперемешку с настоящими фотографиями (99x100,
+# 120x118) — и разделяет их короткая сторона. Длинные полоски отсекает
+# пропорция: линейка 300x11 рисунком не бывает.
+PDF_MIN_SIDE = 60
+PDF_MAX_RATIO = 6
+# Больше стольких картинок на страницу — книга набрана картинками или
+# отсканирована. Вытаскивать нечего: там весь текст и есть картинка.
+PDF_MAX_PER_PAGE = 3
+# Одна и та же картинка на стольких страницах — это колонтитул, эмблема
+# издательства или рамка, а не рисунок.
+PDF_SAME_MAX = 2
+
+
+def _png_size(raw):
+    """Размер png из заголовка — чтобы не тянуть библиотеку ради двух чисел."""
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return (int.from_bytes(raw[16:20], "big"),
+                int.from_bytes(raw[20:24], "big"))
+    return 0, 0
+
+
+def _pdf_images(path, npages):
+    """Картинки книги: {номер страницы: [байты, ...]}."""
+    if not _which("pdfimages"):
+        return {}
+    r = subprocess.run(["pdfimages", "-list", path], capture_output=True, text=True)
+    rows = collections.defaultdict(list)
+    n = 0
+    for line in r.stdout.splitlines():
+        f = line.split()
+        if len(f) >= 15 and f[0].isdigit() and f[1].isdigit():
+            rows[int(f[0])].append((int(f[3]), int(f[4])))
+            n += 1
+    if not n or n > npages * PDF_MAX_PER_PAGE:
+        return {}
+
+    import hashlib
+    import tempfile
+    got = []
+    with tempfile.TemporaryDirectory() as d:
+        subprocess.run(["pdfimages", "-png", "-p", path, f"{d}/x"],
+                       capture_output=True)
+        files = collections.defaultdict(list)
+        for name in os.listdir(d):
+            m = re.match(r"x-(\d+)-(\d+)\.png$", name)
+            if m:
+                files[int(m.group(1))].append((int(m.group(2)), name))
+        for page, sizes in rows.items():
+            # Сопоставляем постранично, а не сквозной нумерацией: она у
+            # pdfimages своя, и полагаться на её совпадение с порядком в
+            # списке незачем.
+            for (w, h), (_, name) in zip(sizes, sorted(files.get(page, []))):
+                if min(w, h) < PDF_MIN_SIDE or max(w, h) > min(w, h) * PDF_MAX_RATIO:
+                    continue
+                raw = open(os.path.join(d, name), "rb").read()
+                got.append((page, hashlib.md5(raw).digest(), raw))
+
+    seen = collections.Counter(h for _, h, _ in got)
+    out = collections.defaultdict(list)
+    for page, h, raw in got:
+        if seen[h] <= PDF_SAME_MAX:
+            out[page].append(raw)
+    return dict(out)
+
+
+def _place_images(blocks, pages, imgs):
+    """Картинку ставим туда, где кончается её страница.
+
+    Мест в тексте pdftotext не даёт, но страницы отбивает подачей формы,
+    поэтому место страницы в книге — это доля знаков до неё. Ту же долю
+    отмеряем по готовым блокам. Выброшенные колонтитулы и номера страниц
+    счёт немного сдвигают, но в пределах страницы, а точнее и не нужно.
+
+    Нумерация у картинок своя (`s07.i0003`): вставка не должна сдвинуть
+    номера абзацев, иначе уже переведённая книга перестанет узнаваться.
+    """
+    total = sum(len(p) for p in pages) or 1
+    ends, acc = [], 0
+    for p in pages:
+        acc += len(p)
+        ends.append(acc / total)
+    total_b = sum(len(b["text"]) for b in blocks) or 1
+    cum, acc = [], 0
+    for b in blocks:
+        acc += len(b["text"])
+        cum.append(acc / total_b)
+
+    where = collections.defaultdict(list)
+    for page, raws in imgs.items():
+        frac = ends[min(page, len(ends)) - 1]
+        i = 0
+        while i < len(cum) and cum[i] < frac:
+            i += 1
+        where[min(i, len(blocks) - 1)].extend(raws)
+
+    out, images, k = [], {}, 0
+    for i, b in enumerate(blocks):
+        out.append(b)
+        for raw in where.get(i, []):
+            k += 1
+            sec = b["id"].split(".")[0]
+            name = f"{sec}.i{k:04d}.png"
+            out.append({"id": f"{sec}.i{k:04d}", "kind": "image", "text": name})
+            images[name] = raw
+    return out, images
+
+
 def _pdf(path):
     if not _which("pdftotext"):
         raise SystemExit("для pdf нужен pdftotext (пакет poppler-utils)")
@@ -574,7 +683,20 @@ def _pdf(path):
             f"в {os.path.basename(path)} нет текстового слоя — это скан или "
             "книга из картинок. Нужно сначала распознать текст (OCR), "
             "например: ocrmypdf исходный.pdf распознанный.pdf")
-    return _from_text(txt, os.path.splitext(os.path.basename(path))[0])
+    meta, blocks, cover, images = _from_text(
+        txt, os.path.splitext(os.path.basename(path))[0])
+    pages = r.stdout.split("\f")
+    imgs = _pdf_images(path, len(pages))
+    if imgs:
+        blocks, images = _place_images(blocks, pages, imgs)
+        # Обложкой считаем картинку с первой страницы, и только если она
+        # книжной формы. У статьи на первой странице стоит эмблема журнала
+        # поперёк листа — обложкой она не бывает.
+        first = (imgs.get(1) or [b""])[0]
+        w, h = _png_size(first)
+        if h > w * 1.2:
+            cover = cover or first
+    return meta, blocks, cover, images
 
 
 # Кодировки, в которых реально встречаются книги. Юникод первым, дальше

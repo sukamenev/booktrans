@@ -41,11 +41,19 @@ META_KEYS = {"title", "author", "title_target", "author_target", "series",
              "series_no", "year", "publisher", "isbn", "lang", "uid"}
 
 
-def read_prompt(path, log=None):
-    """Файл заказчика: необязательная шапка с метаданными + указания."""
-    if not path:
+def read_prompt(path, log=None, text=None):
+    """Указания заказчика: файл, строка или то и другое.
+
+    Строкой и файлом можно пользоваться вместе — тогда файл идёт первым.
+    Разными ключами они разведены нарочно: будь путь и текст одним ключом,
+    опечатка в имени файла молча превратилась бы в указание переводчику.
+    """
+    if not path and not text:
         return {}, ""
-    text = open(path, encoding="utf-8").read()
+    if path:
+        if not os.path.exists(path):
+            sys.exit(lang.T("prompt_nofile", path))
+        text = open(path, encoding="utf-8").read() + ("\n\n" + text if text else "")
     meta = {}
     m = re.match(r"\s*---\s*\n(.*?)\n---\s*\n", text, re.S)
     if m:
@@ -80,6 +88,7 @@ def main():
         epilog=T("h_epilog"))
     ap.add_argument("book", help=T("h_book"))
     ap.add_argument("-p", "--prompt", help=T("h_prompt"))
+    ap.add_argument("-pt", "--prompt-text", help=T("h_prompt_text"))
     ap.add_argument("-o", "--out", help=T("h_out"))
     ap.add_argument("-w", "--work", help=T("h_work"))
     ap.add_argument("--only", choices=ALL_STEPS, help=T("h_only"))
@@ -247,8 +256,8 @@ def main():
     # Указания заказчика запоминаются в рабочей папке: иначе пересборка
     # без -p молча потеряет название, автора и серию.
     saved = f"{work}/prompt_meta.json"
-    user_meta, user_text = read_prompt(args.prompt, log)
-    if args.prompt:
+    user_meta, user_text = read_prompt(args.prompt, log, args.prompt_text)
+    if args.prompt or args.prompt_text:
         json.dump({"meta": user_meta, "text": user_text},
                   open(saved, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     elif os.path.exists(saved):
