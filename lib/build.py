@@ -176,6 +176,11 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         if n:
             log("  " + lang.T("sweep_fixes", n))
 
+    # Список литературы в книгу идёт слово в слово: он не переводился и
+    # непереведённым не считается.
+    for b in blocks:
+        if b.get("asis"):
+            tr.setdefault(b["id"], b["text"])
     missing = [b["id"] for b in blocks
                if b["kind"] not in ("break", "image") and b["id"] not in tr]
     if missing and not partial:
@@ -564,7 +569,8 @@ def usage_report(work, log, T=None):
 def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
     T = T or lang.T
     src = {b["id"]: b["text"] for b in blocks
-           if b["kind"] not in ("break", "image") + HEAD_KINDS}
+           if b["kind"] not in ("break", "image") + HEAD_KINDS
+           and not b.get("asis")}
     tr, edited = all_translations(work)
     problems = 0
 

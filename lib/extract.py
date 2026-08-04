@@ -1018,6 +1018,61 @@ class BadBook(Exception):
     """Файл нечитаем: битый, обрезанный или не тот формат."""
 
 
+# Заголовок списка литературы. Языков немного нарочно: ложное срабатывание
+# оставит главу непереведённой, и это заметят не сразу.
+REFS_HEAD = re.compile(
+    r"^\W*(?:bibliograph\w*|references?|works\s+cited|literature\s+cited"
+    r"|библиограф\w*|литература|список\s+литературы|источники"
+    r"|bibliographie|literaturverzeichnis|quellen"
+    r"|bibliograf[ií]a|referencias"
+    r"|参考文献|参考書目|参考資料)\b", re.I)
+# Запись списка: номер, фамилия, год. Ищем именно так, потому что из pdf
+# библиография приходит не по записи на абзац, а целой страницей в одном
+# блоке — опознавать надо содержимое, а не разбивку.
+REFS_YEAR = re.compile(r"\b(1[6-9]\d\d|20\d\d)\b")
+REFS_ITEM = re.compile(r"(?:^|[\s;])(?:\d{1,3}[.)]|\[\d{1,3}\])\s+[A-ZА-ЯЁ]")
+
+
+def _looks_refs(text):
+    t = strip_tags(text)
+    return len(REFS_YEAR.findall(t)) >= 3 and len(REFS_ITEM.findall(t)) >= 3
+
+
+def _mark_refs(blocks):
+    """Пометить список литературы: его переводить не надо.
+
+    Библиографию в переводе принято оставлять как есть — по ней читатель
+    ищет источники, и переведённое название статьи в чужом журнале ему
+    только мешает. Модели же такой список обходится дорого, а выходит плохо:
+    сплошные сокращения и номера, из pdf ещё и с мусором распознавания.
+
+    Блок не выбрасываем, а помечаем: в книгу он попадёт слово в слово.
+    Порог высокий нарочно — три года издания и три номера записи в одном
+    блоке. Ложное срабатывание оставит непереведённую главу, а это заметят
+    не сразу.
+    """
+    n = 0
+    for i, b in enumerate(blocks):
+        if b["kind"] not in ("p", "note") or not _looks_refs(b["text"]):
+            continue
+        b["asis"] = True
+        n += 1
+        # Заголовок списка стоит перед первой записью и сам на запись не
+        # похож: его цепляем отдельно.
+        for j in (i - 1, i - 2):
+            if j < 0 or blocks[j].get("asis"):
+                continue
+            t = strip_tags(blocks[j]["text"])
+            if len(t) < 80 and REFS_HEAD.match(t):
+                blocks[j]["asis"] = True
+                n += 1
+    return n
+
+
+def strip_tags(s):
+    return re.sub(r"<[^>]+>", "", s).strip()
+
+
 def read_book(path, styles=None, encoding=None, ask=None):
     """Прочитать книгу любого поддерживаемого формата.
 
@@ -1027,7 +1082,9 @@ def read_book(path, styles=None, encoding=None, ask=None):
     """
     ext = os.path.splitext(path)[1].lower()
     try:
-        return _read_book(path, ext, styles, encoding, ask)
+        meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask)
+        _mark_refs(blocks)
+        return meta, blocks, cover, images
     except BadBook:
         raise
     except (ET.ParseError, zipfile.BadZipFile, UnicodeDecodeError, KeyError) as e:
