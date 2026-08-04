@@ -22,6 +22,7 @@ code: de
 
 str.about_title: Über diese Übersetzung
 str.about_made: Maschinelle Übersetzung, erstellt mit der Pipeline {pipeline}.
+str.about_version: Fassung vom {date}
 str.about_model: Modell: {models}.
 str.about_date: Übersetzt am: {date}.
 str.about_quality: Terminologie und Namen sind im ganzen Buch einheitlich, der Text wurde in einem eigenen Durchgang lektoriert, und Anmerkungen des Übersetzers sind ausdrücklich gekennzeichnet.

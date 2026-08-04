@@ -22,6 +22,7 @@ code: ja
 
 str.about_title: 本翻訳について
 str.about_made: 本書は翻訳パイプライン {pipeline} による機械翻訳です。
+str.about_version: {date}版
 str.about_model: モデル：{models}
 str.about_date: 翻訳日：{date}
 str.about_quality: 用語と固有名詞は全編で統一され、別途推敲の工程を経ています。訳者による注はその旨を明記しています。

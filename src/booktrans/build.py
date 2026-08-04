@@ -84,8 +84,13 @@ def about_lines(work, st, code):
     models = _models(work)
     span = _work_span(work, code)
     release, ver = version(code)
-    who = f"{PIPELINE} {ver} ({PIPELINE_URL})" if release \
-        else f"{PIPELINE} ({ver}, {PIPELINE_URL})"
+    if not release:
+        # «(5 августа 2026)» читается как дата перевода, а это дата сборки
+        # конвейера — слово нужно, и оно на языке перевода.
+        ver = st.get("about_version", "{date}").format(date=ver)
+        who = f"{PIPELINE} ({ver}, {PIPELINE_URL})"
+    else:
+        who = f"{PIPELINE} {ver} ({PIPELINE_URL})"
     body = [st["about_made"].format(pipeline=who)]
     if models:
         body.append(st["about_model"].format(models=", ".join(models)))
