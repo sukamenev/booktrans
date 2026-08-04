@@ -1,0 +1,52 @@
+# Выпуск версии: поставить тег — и всё.
+#
+#     git tag v1.0.3 && git push --tags
+#
+# Токена здесь нет и быть не должно. GitHub выдаёт этому процессу временное
+# удостоверение (OIDC), PyPI сверяет его с записью о доверенном издателе и
+# отдаёт ключ на четверть часа. Красть нечего: постоянного секрета не
+# существует ни на диске, ни в настройках репозитория.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write        # единственное право, нужное для доверенной публикации
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      # Тег и версия в pyproject.toml должны совпадать. Разойдутся — на PyPI
+      # уедет не то, что помечено тегом, и понять это потом будет неоткуда.
+      - name: Тег совпадает с версией
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          ver=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          test "$tag" = "$ver" || {
+            echo "тег $GITHUB_REF_NAME, а в pyproject.toml $ver"; exit 1; }
+
+      - run: uv build
+
+      # Промпты и правила языков — такие же части программы, как модули.
+      # Один раз они уже терялись при сборке, и обнаружилось бы это у
+      # пользователя на первом запуске. Проверяем на готовом колесе.
+      - name: Данные доехали в колесо
+        run: |
+          uv venv /tmp/v
+          VIRTUAL_ENV=/tmp/v uv pip install dist/*.whl
+          /tmp/v/bin/python - <<'PY'
+          from booktrans import lang
+          from importlib.resources import files
+          assert lang.rules("ru"), "нет правил целевого языка"
+          assert (files("booktrans") / "prompts" / "translate.md").is_file(), "нет промптов"
+          print("данные на месте")
+          PY
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
