@@ -188,6 +188,7 @@ nothing to someone installing their first tool.
 | `en` | English | `ja` | Japanese |
 | `ru` | Russian | `zh` | Chinese |
 | `de` | German | `fr` | French |
+| `es` | Spanish | | |
 
 **Interface language** — the `--ui` key: `en` (the default) and `ru`. Messages
 live in `ui/CODE.json` with identical keys; anything missing from a
