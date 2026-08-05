@@ -385,6 +385,10 @@ def main():
     def sysprompt(extra=""):
         parts = [f"Язык перевода: **{lang.lang_name(args.to)}**. Переводить на него.",
                  open(f"{HERE}/prompts/style.md", encoding="utf-8").read()]
+        # Порча от распознавания — свойство исходника, а не прохода: её видят
+        # и разведка, и перевод, и редактура, поэтому место ей в общем промпте.
+        if os.path.splitext(args.book)[1].lower() == ".pdf":
+            parts.append(open(f"{HERE}/prompts/ocr.md", encoding="utf-8").read())
         rules = lang.rules(args.to)
         if rules:
             parts.append("# Правила целевого языка\n\n" + rules)

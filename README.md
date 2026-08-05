@@ -704,6 +704,21 @@ from pages carrying photographs are shown to the markup pass marked `[фото]`
 "Courtesy of Philip Bailey" with no photograph beside it looks like junk, and
 the markup was throwing it out along with the junk.
 
+### Text that came from OCR
+
+In a pdf letters get swapped and words broken by a space: `IIc realized` for
+"He realized", `J ANUS Proj ect` for "JANUS Project", `Seduction by If` for
+"Seduction by K" — a capital K falls apart into two letters. That damage
+belongs to the source rather than to any one pass, so the instructions about
+it sit in the shared prompt and reconnaissance, translation and editing all
+see them.
+
+The rule is plain: restore what reads unambiguously, treat one name in several
+manglings as one name and hold a single spelling through the book, leave the
+illegible alone and say so in a remark. Do not guess at numbers — a digit is
+misread as easily as it is read. An invented sentence is worse than a damaged
+one: damage shows, invention does not.
+
 ## Bibliographies
 
 A reference list is left as it stands: it is what the reader uses to find the
