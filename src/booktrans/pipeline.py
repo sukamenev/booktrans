@@ -1011,8 +1011,12 @@ def format_marks(work, path, agent, task, encoding, ask, log):
         cost[0] += meta.get("cost_usd") or 0
         return out
 
+    # Оба вызова — вне перебора: внутри него `photo_pages` запускала
+    # `pdfimages` по разу на каждый кусок, и на книге в две тысячи кусков
+    # разметка «висела» минуты, не сказав ни слова.
+    with_photo = extract.photo_pages(path)
     photo = {i for i, n in enumerate(extract.piece_pages(path, encoding, ask), 1)
-             if n in extract.photo_pages(path)}
+             if n in with_photo}
     marks, names = fmt.plan(paras, run, log, photo)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))

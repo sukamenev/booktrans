@@ -7,6 +7,7 @@ kind: title | subtitle | p | break
 абзац не потерялся и не склеился.
 """
 import collections
+import functools
 import difflib
 import os
 import re
@@ -894,8 +895,14 @@ def _unglue(txt, heads):
     return txt
 
 
+@functools.lru_cache(maxsize=4)
 def _pdf_text(path):
-    """Текст pdf. Отдельно от разбора: та же выжимка нужна и разметке."""
+    """Текст pdf. Отдельно от разбора: та же выжимка нужна и разметке.
+
+    Держим в памяти: за один прогон он спрашивается трижды — разметкой,
+    номерами страниц и чтением книги, — а стоит каждый раз разбора всего
+    файла и просеивания колонтитулов.
+    """
     if not _which("pdftotext"):
         raise SystemExit("для pdf нужен pdftotext (пакет poppler-utils)")
     r = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", path, "-"],
