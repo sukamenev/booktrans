@@ -704,7 +704,7 @@ def _pdf_text(path):
     """Текст pdf. Отдельно от разбора: та же выжимка нужна и разметке."""
     if not _which("pdftotext"):
         raise SystemExit("для pdf нужен pdftotext (пакет poppler-utils)")
-    r = subprocess.run(["pdftotext", "-enc", "UTF-8", path, "-"],
+    r = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", path, "-"],
                        capture_output=True, text=True)
     if r.returncode != 0 and not r.stdout.strip():
         raise BadBook(f"pdftotext не смог прочитать {os.path.basename(path)}: "
@@ -721,7 +721,7 @@ def _pdf_text(path):
 def _pdf(path, marks=None):
     txt = _pdf_text(path)
     meta, blocks, cover, images = _from_text(
-        txt, os.path.splitext(os.path.basename(path))[0], marks)
+        txt, os.path.splitext(os.path.basename(path))[0], marks, INDENT_PDF)
     pages = txt.split("\f")
     imgs = _pdf_images(path, len(pages))
     if imgs:
@@ -951,7 +951,15 @@ def _txt(path, encoding=None, ask=None, marks=None):
                           os.path.splitext(os.path.basename(path))[0], marks)
 
 
-def _split_paragraphs(txt):
+# Доля строк с отступом, при которой отступ считается признаком начала
+# абзаца. В pdf он и есть разметка: pdftotext -layout сохраняет втяжку первой
+# строки, а пустых строк там нет вовсе — только разрывы страниц. В простом
+# тексте отступ значит что угодно, поэтому порог там строже: на одной книге
+# корпуса 28% отступов оказались не абзацами, и разбор портился.
+INDENT_TEXT, INDENT_PDF = 0.3, 0.15
+
+
+def _split_paragraphs(txt, indent_share=INDENT_TEXT):
     """Абзацы в простом тексте. Разметка бывает трёх видов, и определить её
     надо по самому файлу: пустая строка между абзацами, отступ в начале
     абзаца, либо один абзац на строку. Взять только первый вариант мало —
@@ -967,7 +975,7 @@ def _split_paragraphs(txt):
     blank = sum(1 for l in lines if not l.strip())
     indented = sum(1 for l in nonempty if re.match(r"^[ \t]{2,}\S", l))
 
-    if indented > len(nonempty) * 0.3:
+    if indented > len(nonempty) * indent_share:
         # отступом помечено начало абзаца: продолжения приклеиваем к нему
         paras, cur = [], []
         for l in lines:
@@ -1007,19 +1015,19 @@ def plain_paragraphs(path, encoding=None, ask=None):
     модели. Ровно те же куски потом получает `_from_text`."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
-        txt = _pdf_text(path)
+        txt, indent = _pdf_text(path), INDENT_PDF
     else:
         with open(path, "rb") as f:
-            txt = _decode(f.read(), encoding, ask)
+            txt, indent = _decode(f.read(), encoding, ask), INDENT_TEXT
     txt = txt.replace("\f", "\n\n")
     txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)
-    return [p for p in _split_paragraphs(txt) if p]
+    return [p for p in _split_paragraphs(txt, indent) if p]
 
 
-def _from_text(txt, title, marks=None):
+def _from_text(txt, title, marks=None, indent=INDENT_TEXT):
     txt = txt.replace("\f", "\n\n")
     txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)      # перенос по слогам
-    paras = [p for p in _split_paragraphs(txt) if p]
+    paras = [p for p in _split_paragraphs(txt, indent) if p]
 
     head = re.compile(r"^(глава|часть|chapter|part|book|kapitel|chapitre|"
                       r"capitolo|capítulo|第[一二三四五六七八九十百\d]+[章話部])"
