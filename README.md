@@ -690,6 +690,20 @@ marks it.
 
 To check the substitution without calling a model: `python3 tests/code_check.py`.
 
+**A photograph goes onto its own page.** A piece of text never spans a page —
+a form feed ends a paragraph — so every block knows which page it came from,
+and a picture lands after the last block of its own. The earlier estimate by
+share of characters missed wherever pages carry almost no text: on a live book
+the photographs from the sections after the epilogue ended up inside the
+epilogue.
+
+**A caption stays with its photograph.** A plate page is a picture and one
+short line under it; that line is never thrown away, and the picture goes
+before it. On a page of running text no rule tells a caption apart, so pieces
+from pages carrying photographs are shown to the markup pass marked `[фото]` —
+"Courtesy of Philip Bailey" with no photograph beside it looks like junk, and
+the markup was throwing it out along with the junk.
+
 ## Bibliographies
 
 A reference list is left as it stands: it is what the reader uses to find the

@@ -1010,7 +1010,9 @@ def format_marks(work, path, agent, task, encoding, ask, log):
         cost[0] += meta.get("cost_usd") or 0
         return out
 
-    marks, names = fmt.plan(paras, run, log)
+    photo = {i for i, n in enumerate(extract.piece_pages(path, encoding, ask), 1)
+             if n in extract.photo_pages(path)}
+    marks, names = fmt.plan(paras, run, log, photo)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
     cuts = _check_toc(work, paras, marks, names, log)

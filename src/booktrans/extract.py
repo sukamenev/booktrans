@@ -615,6 +615,37 @@ def _png_size(raw):
     return 0, 0
 
 
+def photo_pages(path):
+    """Страницы, на которых есть фотография. Только список, без извлечения:
+    разметке нужно знать, где они, а картинки достанутся потом.
+
+    Знать это ей надо ради подписей: строка «Courtesy of Philip Bailey» без
+    фотографии рядом выглядит мусором, и разметка выбрасывала её вместе с
+    ним.
+    """
+    if not path.lower().endswith(".pdf") or not _which("pdfimages"):
+        return set()
+    r = subprocess.run(["pdfimages", "-list", path], capture_output=True, text=True)
+    out = set()
+    for line in r.stdout.splitlines():
+        f = line.split()
+        if len(f) >= 15 and f[0].isdigit() and f[1].isdigit():
+            w, h = int(f[3]), int(f[4])
+            if min(w, h) >= PDF_MIN_SIDE and max(w, h) <= min(w, h) * PDF_MAX_RATIO:
+                out.add(int(f[0]))
+    return out
+
+
+def piece_pages(path, encoding=None, ask=None):
+    """Номер страницы у каждого куска — тот же порядок, что у
+    `plain_paragraphs`. Не pdf или разбивка разошлась — пустой список."""
+    if not path.lower().endswith(".pdf"):
+        return []
+    txt = _pdf_text(path)
+    by = _by_page(txt, INDENT_PDF)
+    return [n for _, n in by] if [p for p, _ in by] == plain_paragraphs(path) else []
+
+
 def _pdf_images(path, npages):
     """Картинки книги: {номер страницы: [байты, ...]}."""
     if not _which("pdfimages"):
@@ -660,16 +691,69 @@ def _pdf_images(path, npages):
 
 
 def _place_images(blocks, pages, imgs):
-    """Картинку ставим туда, где кончается её страница.
+    """Поставить картинки на их страницы.
 
-    Мест в тексте pdftotext не даёт, но страницы отбивает подачей формы,
-    поэтому место страницы в книге — это доля знаков до неё. Ту же долю
-    отмеряем по готовым блокам. Выброшенные колонтитулы и номера страниц
-    счёт немного сдвигают, но в пределах страницы, а точнее и не нужно.
+    Если у блоков есть номер страницы (`_page`), место точное: картинка
+    встаёт после последнего блока своей страницы. Страница со вклейкой —
+    случай особый: на ней одна короткая строка, и это подпись, поэтому
+    картинка идёт перед ней, а не после.
+
+    Номеров нет — остаётся прежняя прикидка по доле знаков. Она промахивается
+    там, где страницы почти без текста: на живой книге фотографии из разделов
+    после эпилога уезжали в сам эпилог.
 
     Нумерация у картинок своя (`s07.i0003`): вставка не должна сдвинуть
     номера абзацев, иначе уже переведённая книга перестанет узнаваться.
     """
+    if all(b.get("_page") for b in blocks if b["kind"] != "image"):
+        where = _by_page_slots(blocks, imgs)
+    else:
+        where = _by_chars_slots(blocks, pages, imgs)
+
+    out, images, k = [], {}, 0
+    for i, b in enumerate(blocks):
+        for raw in where.pop(("before", i), []):
+            k += 1
+            out.append(_img_block(b, k, raw, images))
+        out.append({x: y for x, y in b.items() if x != "_page"})
+        for raw in where.get(("after", i), []):
+            k += 1
+            out.append(_img_block(b, k, raw, images))
+    return out, images
+
+
+def _img_block(b, k, raw, images):
+    sec = b["id"].split(".")[0]
+    name = f"{sec}.i{k:04d}.png"
+    images[name] = raw
+    return {"id": f"{sec}.i{k:04d}", "kind": "image", "text": name}
+
+
+def _by_page_slots(blocks, imgs):
+    """Куда какие картинки: по странице блока."""
+    last, first, size = {}, {}, collections.defaultdict(int)
+    for i, b in enumerate(blocks):
+        n = b.get("_page")
+        if n:
+            last[n] = i
+            first.setdefault(n, i)
+            size[n] += len(b["text"])
+    where = collections.defaultdict(list)
+    for page, raws in sorted(imgs.items()):
+        if page in first and size[page] <= CAPTION_MAX:
+            where[("before", first[page])].extend(raws)   # вклейка с подписью
+        elif page in last:
+            where[("after", last[page])].extend(raws)
+        else:
+            # На странице не осталось текста вовсе — ставим после ближайшей
+            # предыдущей, у которой он есть.
+            near = max([n for n in last if n <= page], default=None)
+            where[("after", last[near] if near else len(blocks) - 1)].extend(raws)
+    return where
+
+
+def _by_chars_slots(blocks, pages, imgs):
+    """Прикидка по доле знаков — когда номеров страниц у блоков нет."""
     total = sum(len(p) for p in pages) or 1
     ends, acc = [], 0
     for p in pages:
@@ -680,25 +764,14 @@ def _place_images(blocks, pages, imgs):
     for b in blocks:
         acc += len(b["text"])
         cum.append(acc / total_b)
-
     where = collections.defaultdict(list)
-    for page, raws in imgs.items():
+    for page, raws in sorted(imgs.items()):
         frac = ends[min(page, len(ends)) - 1]
         i = 0
         while i < len(cum) and cum[i] < frac:
             i += 1
-        where[min(i, len(blocks) - 1)].extend(raws)
-
-    out, images, k = [], {}, 0
-    for i, b in enumerate(blocks):
-        out.append(b)
-        for raw in where.get(i, []):
-            k += 1
-            sec = b["id"].split(".")[0]
-            name = f"{sec}.i{k:04d}.png"
-            out.append({"id": f"{sec}.i{k:04d}", "kind": "image", "text": name})
-            images[name] = raw
-    return out, images
+        where[("after", min(i, len(blocks) - 1))].extend(raws)
+    return where
 
 
 # Колонтитул и номер страницы: сколько строк сверху и снизу смотреть и на
@@ -811,10 +884,13 @@ def _pdf_text(path):
 
 def _pdf(path, marks=None):
     txt = _pdf_text(path)
-    meta, blocks, cover, images = _from_text(
-        txt, os.path.splitext(os.path.basename(path))[0], marks, INDENT_PDF)
     pages = txt.split("\f")
+    # Картинки достаём до разбора: разметке надо знать, на каких страницах
+    # они стоят, — короткая строка на такой странице это подпись, а не мусор.
     imgs = _pdf_images(path, len(pages))
+    meta, blocks, cover, images = _from_text(
+        txt, os.path.splitext(os.path.basename(path))[0], marks, INDENT_PDF,
+        set(imgs))
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
         # Обложкой считаем картинку с первой страницы, и только если она
@@ -1050,7 +1126,25 @@ def _txt(path, encoding=None, ask=None, marks=None):
 INDENT_TEXT, INDENT_PDF = 0.3, 0.15
 
 
-def _split_paragraphs(txt, indent_share=INDENT_TEXT):
+def mode_of(txt, indent_share=INDENT_TEXT):
+    """Чем в этом тексте размечены абзацы: отступом, пустой строкой или
+    ничем. Считается по книге целиком: на отдельной странице статистика
+    другая, и разбивка вышла бы иной — а куски у разметки и у сборки обязаны
+    совпадать до одного."""
+    lines = txt.replace("\r\n", "\n").replace("\r", "\n").strip("\n").split("\n")
+    nonempty = [l for l in lines if l.strip()]
+    if not nonempty:
+        return "line"
+    # пустые строки считаем только внутри текста: завершающий перевод строки
+    # есть почти всегда и порог бы сбивал
+    blank = sum(1 for l in lines if not l.strip())
+    indented = sum(1 for l in nonempty if re.match(r"^[ \t]{2,}\S", l))
+    if indented > len(nonempty) * indent_share:
+        return "indent"
+    return "blank" if blank > len(nonempty) * 0.15 else "line"
+
+
+def _split_paragraphs(txt, indent_share=INDENT_TEXT, mode=None):
     """Абзацы в простом тексте. Разметка бывает трёх видов, и определить её
     надо по самому файлу: пустая строка между абзацами, отступ в начале
     абзаца, либо один абзац на строку. Взять только первый вариант мало —
@@ -1060,13 +1154,9 @@ def _split_paragraphs(txt, indent_share=INDENT_TEXT):
     nonempty = [l for l in lines if l.strip()]
     if not nonempty:
         return []
+    mode = mode or mode_of(txt, indent_share)
 
-    # пустые строки считаем только внутри текста: завершающий перевод строки
-    # есть почти всегда и порог бы сбивал
-    blank = sum(1 for l in lines if not l.strip())
-    indented = sum(1 for l in nonempty if re.match(r"^[ \t]{2,}\S", l))
-
-    if indented > len(nonempty) * indent_share:
+    if mode == "indent":
         # отступом помечено начало абзаца: продолжения приклеиваем к нему.
         # Пустая строка тоже кончает абзац — иначе кусок без единого отступа
         # (хвалебные отзывы в начале книги, выходные данные) слипается в один
@@ -1088,7 +1178,7 @@ def _split_paragraphs(txt, indent_share=INDENT_TEXT):
             paras.append(" ".join(cur))
         return paras
 
-    if blank > len(nonempty) * 0.15:
+    if mode == "blank":
         # абзацы отбиты пустой строкой; внутри абзаца строки склеиваем
         return [" ".join(p.split()) for p in re.split(r"\n\s*\n", txt) if p.strip()]
 
@@ -1122,10 +1212,46 @@ def plain_paragraphs(path, encoding=None, ask=None):
     return [p for p in _split_paragraphs(txt, indent) if p]
 
 
-def _from_text(txt, title, marks=None, indent=INDENT_TEXT):
+# Страница, на которой стоит одна короткая строка и картинка, — это вклейка,
+# а строка на ней — подпись под фотографией.
+CAPTION_MAX = 200
+
+
+def _by_page(txt, indent):
+    """Куски с номером страницы, на которой они стоят, или None.
+
+    Кусок страницу не пересекает: подача формы становится пустой строкой, а
+    она кончает абзац. Значит номер страницы у каждого куска известен точно —
+    и картинку можно поставить на её место, а не на глазок по доле знаков.
+
+    Разбивка обязана совпасть с обычной, иначе пометки разметки съедут; не
+    совпала — работаем без номеров страниц, как раньше.
+    """
+    out, mode = [], mode_of(txt.replace("\f", "\n\n"), indent)
+    for n, page in enumerate(txt.split("\f"), 1):
+        page = re.sub(r"(\w)-\n(\w)", r"\1\2", page)
+        out += [(p, n) for p in _split_paragraphs(page, indent, mode) if p]
+    return out
+
+
+def _from_text(txt, title, marks=None, indent=INDENT_TEXT, imgs=()):
+    raw = txt
     txt = txt.replace("\f", "\n\n")
     txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)      # перенос по слогам
     paras = [p for p in _split_paragraphs(txt, indent) if p]
+    by_page = _by_page(raw, indent)
+    pages = [n for _, n in by_page] if [p for p, _ in by_page] == paras else []
+
+    # Подпись под фотографией разметка порой принимает за мусор или за строку
+    # оглавления и выбрасывает вместе с ним. Строка на странице со вклейкой —
+    # это подпись, и терять её нельзя.
+    if pages and marks:
+        text_of = collections.defaultdict(int)
+        for p, n in by_page:
+            text_of[n] += len(p)
+        for i, n in enumerate(pages, 1):
+            if n in imgs and text_of[n] <= CAPTION_MAX and marks.get(i) in ("skip", "toc"):
+                marks[i] = "p"
 
     head = re.compile(r"^(глава|часть|chapter|part|book|kapitel|chapitre|"
                       r"capitolo|capítulo|第[一二三四五六七八九十百\d]+[章話部])"
@@ -1155,19 +1281,23 @@ def _from_text(txt, title, marks=None, indent=INDENT_TEXT):
         from .format import apply as _apply
         marked = _apply(paras, marks)
     else:
-        marked = [(("title" if looks_like_title(p) else "p"), p) for p in paras
+        marked = [(("title" if looks_like_title(p) else "p"), p, i)
+                  for i, p in enumerate(paras, 1)
                   if not (pagenum.match(p) or p in running)]
 
     blocks, sec, n = [], 1, 0
-    for kind, p in marked:
+    for kind, p, at in marked:
         is_head = kind == "title"
         if is_head:
             sec += 1
             n = 0
         n += 1
-        blocks.append({"id": f"s{sec:02d}.b{n:04d}",
-                       "kind": kind if kind in ("title", "verse", "code") else "p",
-                       "text": p})
+        blk = {"id": f"s{sec:02d}.b{n:04d}",
+               "kind": kind if kind in ("title", "verse", "code") else "p",
+               "text": p}
+        if pages:
+            blk["_page"] = pages[at - 1]
+        blocks.append(blk)
     return {"title": title}, blocks, None, {}
 
 

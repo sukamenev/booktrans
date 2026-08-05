@@ -21,11 +21,11 @@ SAME = 0.8          # с какого сходства строки считаю
 TITLE_MAX = 200     # длиннее — это абзац, а не заголовок
 
 
-def _show(i, p):
+def _show(i, p, photo=False):
     p = re.sub(r"\s+", " ", p).strip()
     if len(p) > HEAD + TAIL + 3:
         p = p[:HEAD] + " … " + p[-TAIL:]
-    return f"{i} {p}"
+    return f"{i} {'[фото] ' if photo else ''}{p}"
 
 
 def _parse(out, lo, hi):
@@ -62,14 +62,18 @@ def _toc_lines(out):
     return got
 
 
-def plan(paras, run, log):
+def plan(paras, run, log, photo=()):
     """Пометки для каждого куска и названия глав из оглавления.
+
+    `photo` — номера кусков, стоящих на странице с фотографией: подпись под
+    ней без этого выглядит мусором.
 
     `run` — вызов модели: (prompt) → текст."""
     marks, toc = {}, []
     for lo in range(0, len(paras), WINDOW):
         part = paras[lo:lo + WINDOW]
-        body = "\n".join(_show(lo + i + 1, p) for i, p in enumerate(part))
+        body = "\n".join(_show(lo + i + 1, p, lo + i + 1 in photo)
+                         for i, p in enumerate(part))
         out = run(body)
         marks.update(_parse(out, lo + 1, lo + len(part)))
         toc += [s for s in _toc_lines(out) if s not in toc]
@@ -201,8 +205,8 @@ def reconcile(paras, marks, names=()):
             "lost": [t for t in toc if t not in found], "names": list(toc)}
 
 
-def _split(p, spans):
-    """Разрезать кусок по местам, найденным в оглавлении: [(вид, текст), ...].
+def _split(p, spans, no):
+    """Разрезать кусок по местам, найденным в оглавлении: [(вид, текст, кусок), ...].
 
     Заголовок главы бывает влит в абзац страницы и отдельной строкой не
     существует вовсе — искать его нечего, надо резать. Колонтитул с тем же
@@ -214,20 +218,23 @@ def _split(p, spans):
             continue
         head = p[at:a].strip()
         if head:
-            out.append(("p", head))
+            out.append(("p", head, no))
         if kind == "title":
             # Номер страницы прилипает к названию вплотную: «From Physics to
-            # Biology 53».
-            out.append(("title", re.sub(r"\s+\d{1,4}$", "", p[a:b].strip())))
+            # Biology       53».
+            out.append(("title", re.sub(r"\s+\d{1,4}$", "", p[a:b].strip()), no))
         at = b
     tail = p[at:].strip()
     if tail:
-        out.append(("p", tail))
+        out.append(("p", tail, no))
     return out
 
 
 def apply(paras, marks, cuts=None):
-    """Склеить и разметить по пометкам: [(вид, текст), ...].
+    """Склеить и разметить по пометкам: [(вид, текст, номер куска), ...].
+
+    Номер куска — того, с которого блок начался. По нему потом узнаётся
+    страница, на которой блок стоит, а по ней — куда встаёт картинка.
 
     Разрезы (места, где заголовок влит в абзац) приходят либо отдельно, либо
     под ключом `cuts` в самих пометках — так они переживают перезапуск, не
@@ -238,24 +245,21 @@ def apply(paras, marks, cuts=None):
         if kind in ("skip", "toc"):
             continue
         if i in cuts:
-            out += _split(p, cuts[i])
+            out += _split(p, cuts[i], i)
             continue
-        # Продолжение приклеивается только к прозе. К заголовку — никогда:
-        # на одной книге за заголовком шло оборванное слово, помеченное `+`,
-        # за ним следующее, и в заголовок уехала глава целиком — 22 261 знак.
-        # `+t` ставит только сверка с оглавлением: там известно, что это
-        # продолжение названия главы. `+` от модели к заголовку не клеится
-        # никогда — так глава уезжала в заголовок целиком.
         # `+t` — продолжение названия: вторая строка разорванного заголовка,
         # подзаголовок, имя автора под ним. Длина ограничена: заголовок,
         # доросший до абзаца, разрезал бы книгу не там.
         if kind == "+t" and out and out[-1][0] == "title" \
                 and len(out[-1][1]) + len(p) <= TITLE_MAX:
-            out[-1] = (out[-1][0], out[-1][1] + " " + p)
+            out[-1] = (out[-1][0], out[-1][1] + " " + p, out[-1][2])
             continue
+        # Продолжение приклеивается только к прозе. К заголовку — никогда:
+        # на одной книге за заголовком шло оборванное слово, помеченное `+`,
+        # за ним следующее, и в заголовок уехала глава целиком — 22 261 знак.
         if kind == "+" and out and out[-1][0] == "p":
             sep = "" if out[-1][1].endswith("-") else " "
-            out[-1] = (out[-1][0], out[-1][1].rstrip("-") + sep + p)
+            out[-1] = (out[-1][0], out[-1][1].rstrip("-") + sep + p, out[-1][2])
             continue
         # Заголовок длиной в абзац — это не заголовок: по нему режется книга,
         # и целая глава ушла бы в оглавление.
@@ -265,8 +269,9 @@ def apply(paras, marks, cuts=None):
             # Колонтитул несёт номер страницы в той же строке: «From Physics
             # to Biology       53».
             p = re.sub(r"\s{2,}\d{1,4}\s*$", "", p)
-        out.append(("p" if kind == "+" else kind, p))
+        out.append(("p" if kind == "+" else kind, p, i))
     return out
+
 
 
 PROSE = 60          # заголовок длиннее — скорее всего строка прозы
