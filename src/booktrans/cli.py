@@ -68,6 +68,25 @@ def read_prompt(path, log=None, text=None):
     return meta, text.strip()
 
 
+def _chunks(s):
+    """Номера кусков: 5,6,7 и диапазоны 41-93.
+
+    Диапазон нужен, чтобы обойти упрямый кусок: перевод последователен и
+    после трёх отказов подряд встаёт, а перечислять полсотни номеров через
+    запятую никто не станет. Названные явно — это осознанный пропуск, а не
+    молчаливая дыра.
+    """
+    out = set()
+    for part in s.split(","):
+        part = part.strip()
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out |= set(range(int(a), int(b) + 1))
+        elif part:
+            out.add(int(part))
+    return out
+
+
 def main():
     # Язык справки выбирается до разбора ключей: argparse печатает её сам,
     # и к этому мигу --ui уже должен быть известен.
@@ -94,7 +113,6 @@ def main():
     ap.add_argument("--only", choices=ALL_STEPS, help=T("h_only"))
     ap.add_argument("--skip", default="", help=T("h_skip"))
     ap.add_argument("--chunks", help=T("h_chunks"))
-    ap.add_argument("--force", default="", help=T("h_force"))
     # Умолчания берутся из окружения — тем же путём, что и язык: так обёртки
     # вроде bt_claude сводятся к одной строке, а вшитое предпочтение одного
     # поставщика не навязывается тому, кто пользуется другим.
@@ -116,6 +134,7 @@ def main():
     ap.add_argument("--to", default=os.environ.get("BT_TO", "en"), help=T("h_to"))
     ap.add_argument("--ui", default=ui, help=T("h_ui"))
     ap.add_argument("--force-translate", action="store_true", help=T("h_force_lang"))
+    ap.add_argument("--force-editing", action="store_true", help=T("h_force_edit"))
     ap.add_argument("--no-headings", action="store_true", help=T("h_nohead"))
     ap.add_argument("--partial", action="store_true", help=T("h_partial"))
     ap.add_argument("--encoding", help=T("h_encoding"))
@@ -169,7 +188,7 @@ def main():
     open(lock, "w").write(f"{os.getpid()} {' '.join(sys.argv[1:])}")
     atexit.register(lambda: os.path.exists(lock) and os.unlink(lock))
     steps = [args.only] if args.only else [s for s in STEPS if s not in args.skip.split(",")]
-    only_chunks = {int(x) for x in args.chunks.split(",")} if args.chunks else None
+    only_chunks = _chunks(args.chunks) if args.chunks else None
 
     # Разметка — работа опознавательная, а не сочинительная: берём самую
     # дешёвую модель поставщика и низкое усилие. У agy усилие вшито в имя
@@ -404,8 +423,7 @@ def main():
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(), args.retries, log)
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
                                   args.retries, log, only_chunks,
-                                  fallback=fallback_agent(),
-                                  force=args.force.split(","))
+                                  fallback=fallback_agent())
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
         log("")
 
@@ -415,7 +433,7 @@ def main():
         d, s, t = pipeline.edit(work, chunks, agent_for("editor"), sysprompt(), task("edit"),
                                 args.retries, log, only_chunks, args.jobs,
                                 fallback=fallback_agent(),
-                                force=args.force.split(","))
+                                force=args.force_editing)
         log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
         log("")
 

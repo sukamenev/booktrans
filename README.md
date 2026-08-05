@@ -381,8 +381,18 @@ stays with Gemini — fast and four times cheaper.
 **Three refusals in a row stop the run.** One refusal is a contentious scene;
 three in a row mean it is no longer about the book — the model's policy
 changed, the quota ran out, the agent died. Carrying on would burn money for
-nothing. What is done stays done, and the next run picks it up. To carry on
-regardless: `--force translate`, `--force edit`, or both separated by a comma.
+nothing. What is done stays done, and the next run picks it up.
+
+**Only editing can be forced** — with `--force-editing`. A chunk the editor
+would not touch stays translated and readable, merely unpolished. Translation
+is another matter: a refusal leaves a hole in the book, and the next chunk
+also loses the tail of the previous one and its line of the digest, so
+carrying on blind damages what does get translated. If the stubborn chunks
+are to wait, name the rest yourself — `--chunks` takes ranges:
+
+```bash
+./booktrans book.epub --only translate --chunks 41-93
+```
 
 Each pass counts on its own. On the editing pass a refusal does not look like
 one: the model reaches the contentious passage, stops without a word, and the
@@ -519,8 +529,8 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --encoding NAME       input encoding, when detection got it wrong
 --only STEP           a single step: structure|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
---chunks 5,6,7        only these chunks (for redoing)
---force PASSES       do not stop on these whatever happens: translate,edit
+--chunks 5,6,7        only these chunks; a range works too: 41-93
+--force-editing       keep editing past three refusals in a row
 --formatter ID        model that marks up pdf and txt
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass

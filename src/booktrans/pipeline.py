@@ -430,17 +430,25 @@ def _save(path, obj):
     os.replace(tmp, path)
 
 
-def _stop_row(refused, force, log, what="translate"):
+def _stop_row(refused, log, force=False, what="translate"):
+    """Три отказа подряд.
+
+    Продавить можно только редактуру. Отказ в переводе оставляет в книге
+    дыру, а следующий кусок вдобавок лишается хвоста предыдущего и строки
+    конспекта — идти дальше вслепую значит портить и то, что переводится.
+    Непроредактированный кусок остаётся переведённым и читаемым.
+    """
     refused[0] += 1
-    if refused[0] < REFUSE_ROW or what in force:
+    if refused[0] < REFUSE_ROW or force:
         return False
     log("")
-    log("  " + T("refused_row", refused[0], what))
+    log("  " + T("refused_row", refused[0]))
+    log("  " + T("refused_row_" + what))
     return True
 
 
 def translate(work, chunks, agent, system, task, retries, log, only=None,
-              fallback=None, force=()):
+              fallback=None):
     os.makedirs(f"{work}/tr", exist_ok=True)
     os.makedirs(f"{work}/prompts", exist_ok=True)
     sp = f"{work}/state.json"
@@ -492,7 +500,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             log(f"      {src}…")
             if fallback is None:
                 log("    " + T("refused_hint", idx))
-                if _stop_row(refused, force, log):
+                if _stop_row(refused, log):
                     break
                 continue
             # Подстраховка: то же задание другой модели. Отказ — свойство
@@ -504,7 +512,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                     lambda o: _parse_translate(o, expected), log)
             except (Refused, RuntimeError) as e2:
                 log("    " + T("refused_both", getattr(e2, "first", e.first)))
-                if _stop_row(refused, force, log):
+                if _stop_row(refused, log):
                     break
                 continue
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
@@ -553,7 +561,7 @@ def _split_meta(extra):
 # ---------------------------------------------------------------- редактура
 
 def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
-         fallback=None, force=()):
+         fallback=None, force=False):
     os.makedirs(f"{work}/ed", exist_ok=True)
     now = getattr(agent, "model", None) or ""
 
@@ -749,7 +757,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 # Три оборванных куска подряд — дело уже не в книге, как и при
                 # переводе. При jobs>1 запущенные куски доработают: счёт идёт
                 # по приходящим ответам, а не по очереди.
-                halt[0] = _stop_row(refused, force, log, "edit")
+                halt[0] = _stop_row(refused, log, force, "edit")
             else:
                 refused[0] = 0
 
