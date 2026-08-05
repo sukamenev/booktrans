@@ -104,6 +104,56 @@ def _chunks(s):
     return out
 
 
+AGENTS = ("claude", "agy", "codex", "cmd")
+# Проходы опознавательные, а не сочинительные: разобрать вёрстку и увидеть
+# порчу распознавания умеет и самая дешёвая модель поставщика.
+CHEAP_ROLES = ("formatter", "ocrfixer")
+# У claude усилие — отдельный ключ, у agy оно вшито в имя модели.
+CHEAP_EFFORT = {"claude": "low"}
+# Ключ `--agent` — это, по сути, имя набора умолчаний: какими моделями делать
+# проходы у этого поставщика. Названная явно модель сильнее набора, набор
+# сильнее умолчания самого агента. Затем он и нужен: `--agent agy` работает
+# без обёрток и без десятка ключей в командной строке.
+PRESETS = {
+    "agy": {
+        # Отказ — свойство модели, а не текста, поэтому за Gemini встаёт
+        # Claude, а за ним модель другого происхождения, с другими запретами.
+        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium",
+        "formatter": "gemini-3.6-flash-low,claude-sonnet-4-6",
+        "ocrfixer": "gemini-3.6-flash-low,claude-sonnet-4-6",
+    },
+    "claude": {
+        "formatter": "claude-sonnet-5",
+        "ocrfixer": "claude-sonnet-5",
+    },
+}
+
+
+def _chain(s, agent=None):
+    """Цепочка прохода: [(агент, модель), …].
+
+    Первая модель делает работу, следующие подхватывают её отказ. Пишутся в
+    один ключ через запятую, потому что проходов много и на каждый заводить
+    второй ключ — это `--translator-fallback`, `--editor-fallback` и так далее
+    без конца:
+
+        --editor gemini-3.1-pro-high,claude-opus-4-6-thinking
+
+    Через двоеточие перед моделью называется агент, если запасная модель не у
+    того поставщика, что основная. Без двоеточия берётся агент из `--agent`:
+
+        --editor gemini-3.1-pro-high,claude:claude-opus-5
+    """
+    out = []
+    for part in (s or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, _, model = part.rpartition(":")
+        out.append((name.strip() or agent, model.strip()))
+    return out
+
+
 def main():
     # Язык справки выбирается до разбора ключей: argparse печатает её сам,
     # и к этому мигу --ui уже должен быть известен.
@@ -134,7 +184,7 @@ def main():
     # вроде bt_claude сводятся к одной строке, а вшитое предпочтение одного
     # поставщика не навязывается тому, кто пользуется другим.
     ap.add_argument("--agent", default=os.environ.get("BT_AGENT", "claude"),
-                    choices=("claude", "agy", "codex", "cmd"))
+                    choices=AGENTS)
     ap.add_argument("--agent-cmd", help=T("h_agentcmd"))
     ap.add_argument("--model", default=os.environ.get("BT_MODEL"), help=T("h_model"))
     ap.add_argument("--effort", choices=("low", "medium", "high"), help="Effort level (low, medium, high)")
@@ -182,11 +232,14 @@ def main():
     # У agy усилие задаётся либо суффиксом в имени модели, либо ключом
     # --effort, и вместе они не работают. Отвергнуть это надо сейчас, а не
     # на середине книги невнятной ошибкой из чужой программы.
-    for m in (args.model, args.translator, args.scout, args.editor,
-              args.formatter, args.ocrfixer, args.fallback_model):
-        if args.agent == "agy" and args.effort and m \
-                and re.search(r"-(low|medium|high)$", m):
-            sys.exit(T("effort_clash", m, args.effort))
+    for key in (args.model, args.translator, args.scout, args.editor,
+                args.formatter, args.ocrfixer, args.fallback_model):
+        for name, m in _chain(key, args.agent):
+            if name not in AGENTS:
+                sys.exit(T("bad_agent", name, ", ".join(AGENTS)))
+            if name == "agy" and args.effort \
+                    and re.search(r"-(low|medium|high)$", m):
+                sys.exit(T("effort_clash", m, args.effort))
     T = lang.set_ui(args.ui)
     if args.to not in lang.available_langs():
         sys.exit(f"нет правил для языка {args.to!r}; есть: "
@@ -215,39 +268,52 @@ def main():
     steps = [args.only] if args.only else [s for s in STEPS if s not in args.skip.split(",")]
     only_chunks = _chunks(args.chunks) if args.chunks else None
 
-    # Разметка — работа опознавательная, а не сочинительная: берём самую
-    # дешёвую модель поставщика и низкое усилие. У agy усилие вшито в имя
-    # модели, и отдельным ключом его туда передавать нельзя.
-    CHEAP = {"claude": ("claude-sonnet-5", "low"),
-             "agy": ("gemini-3.6-flash-low", None)}
+    def _make(name, model, effort=None):
+        return make_agent(name, model, args.agent_cmd, wait=args.wait,
+                          max_wait=args.max_wait, log=log,
+                          effort=args.effort if effort is None else effort)
+
+    def chain_for(role=None):
+        """Все модели прохода: первая работает, следующие подхватывают отказ.
+
+        Цепочка пишется в тот же ключ через запятую — `--translator
+        gemini-3.1-pro-high,claude-opus-4-6-thinking`, — поэтому ключей вида
+        `--translator-fallback` не нужно ни одного: сколько бы ни было
+        проходов, ключ у каждого остаётся один.
+
+        Отказ — свойство модели, а не текста, и у следующей такого запрета
+        может не быть. Порядок значим: первая модель делает всю книгу, до
+        второй доходят единицы кусков.
+        """
+        named = getattr(args, role, None) if role else None
+        preset = PRESETS.get(args.agent, {})
+        # Разметка и корректура — работа опознавательная, а не сочинительная,
+        # и обеим хватает самой дешёвой модели поставщика. Дорогую `--model`
+        # на них не переносим: назвать её для них можно только явно.
+        cheap = role in CHEAP_ROLES and not named
+        s = named or (preset.get(role) if cheap else None) \
+            or args.model or preset.get("model")
+        eff = CHEAP_EFFORT.get(args.agent) if cheap else None
+        pairs = _chain(s, args.agent)
+        out = [_make(a, m, eff if a == args.agent else None) for a, m in pairs] \
+            or [_make(args.agent, None)]
+        # Старые ключи `--fallback-agent/--fallback-model` — последнее звено
+        # любой цепочки. Они появились раньше цепочек и делают то же самое;
+        # `--editor модель,claude:другая` выражает это короче.
+        if args.fallback_agent or args.fallback_model:
+            out += [_make(a, m) for a, m in
+                    (_chain(args.fallback_model, args.fallback_agent or args.agent)
+                     or _chain(args.translator or args.model,
+                               args.fallback_agent or args.agent))]
+        return out
 
     def agent_for(role=None):
-        """Своя модель на проход: у разметки, разведки, перевода и редактуры
-        разные требования, и платить за все одинаково незачем."""
-        # Разметка и корректура — работа опознавательная, а не сочинительная,
-        # и обеим хватает самой дешёвой модели поставщика.
-        if role in ("formatter", "ocrfixer") \
-                and not getattr(args, role) and args.agent in CHEAP:
-            m, eff = CHEAP[args.agent]
-            return make_agent(args.agent, m, args.agent_cmd, wait=args.wait,
-                              max_wait=args.max_wait, log=log, effort=eff)
-        m = (getattr(args, role, None) if role else None) or args.model
-        return make_agent(args.agent, m, args.agent_cmd,
-                          wait=args.wait, max_wait=args.max_wait, log=log, effort=args.effort)
+        """Основная модель прохода — первая в цепочке."""
+        return chain_for(role)[0]
 
-    def fallback_agent():
-        """Кем переводить кусок, от которого основная модель отказалась.
-
-        Задан хоть один из двух ключей — подстраховка включена: недостающее
-        берётся от основного прохода. Не задано ничего — отказной кусок
-        просто пропускается, как и раньше.
-        """
-        if not (args.fallback_agent or args.fallback_model):
-            return None
-        return make_agent(args.fallback_agent or args.agent,
-                          args.fallback_model or args.translator or args.model,
-                          args.agent_cmd, wait=args.wait, max_wait=args.max_wait,
-                          log=log, effort=args.effort)
+    def backup_for(role=None):
+        """Кому отдавать кусок, от которого основная модель отказалась."""
+        return chain_for(role)[1:]
 
     agent = agent_for()
     os.makedirs(f"{work}/prompts", exist_ok=True)
@@ -316,7 +382,7 @@ def main():
                 log("")
             marks = pipeline.format_marks(
                 work, args.book, agent_for("formatter"), task("format"),
-                args.encoding, ask_model, log)
+                args.encoding, ask_model, log, backup_for("formatter"))
         pipeline.note_source(work, reader={
             ".pdf": "pdftotext + pdfimages (poppler)"}.get(
                 os.path.splitext(args.book)[1].lower(), ""))
@@ -452,7 +518,8 @@ def main():
             log("")
             log(f"=== {n}. {T('step_ocrfix')} ===")
             pipeline.fix_ocr(work, blocks, agent_for("ocrfixer"), sysprompt(),
-                               task("ocrfix"), args.retries, log)
+                               task("ocrfix"), args.retries, log,
+                               fallback=backup_for("ocrfixer"))
             log("")
         pipeline.apply_fixes(work, blocks, log)
 
@@ -481,7 +548,7 @@ def main():
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(), args.retries, log)
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
                                   args.retries, log, only_chunks,
-                                  fallback=fallback_agent())
+                                  fallback=backup_for("translator"))
         # Листинги в перевод не идут, но комментарии в них — проза, и
         # читателю нужны они, а не английский подстрочник в коде.
         if args.code == "comments" and any(b["kind"] == "code" for b in blocks):
@@ -495,7 +562,7 @@ def main():
         log(f"=== {n}. {T('step_edit')} ===")
         d, s, t = pipeline.edit(work, chunks, agent_for("editor"), sysprompt(), task("edit"),
                                 args.retries, log, only_chunks, args.jobs,
-                                fallback=fallback_agent(),
+                                fallback=backup_for("editor"),
                                 force=args.force_editing)
         log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
 

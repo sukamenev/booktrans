@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # BookTrans с умолчаниями для агента «agy».
-# Всё остальное — как у booktrans; любой явный ключ сильнее умолчания:
-#   ./bt_agy книга.epub --to de --model другая-модель
+# Какими моделями он работает — записано в наборе PRESETS["agy"]: цепочка
+# Gemini → Claude → gpt-oss на смысловых проходах, дешёвая Flash с Sonnet за
+# спиной на разметке и правке распознавания. Любой явный ключ сильнее набора:
+#   ./bt_agy книга.epub --to de --editor gemini-3.1-pro-high,claude:claude-opus-5
 export BT_AGENT="agy"
-export BT_MODEL="gemini-3.1-pro-high"
-# Куски, от которых Gemini отказалась, доводит Opus: у него другие рамки.
-export BT_FALLBACK_AGENT="claude"
-export BT_FALLBACK_MODEL="claude-opus-5"
 exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"

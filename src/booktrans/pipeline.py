@@ -440,6 +440,18 @@ def _save(path, obj):
     os.replace(tmp, path)
 
 
+def _backups(fallback):
+    """Запасные модели списком.
+
+    Проходы получают цепочку: первая модель делает книгу, до второй доходят
+    единицы кусков, до третьей — считанные. Одиночную модель принимаем тоже:
+    так подстраховка задавалась раньше.
+    """
+    if not fallback:
+        return []
+    return list(fallback) if isinstance(fallback, (list, tuple)) else [fallback]
+
+
 def _stop_row(refused, log, force=False, what="translate"):
     """Три отказа подряд.
 
@@ -548,23 +560,26 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             log("")
             log("    " + T("refused", e.first, e.n, e.total))
             log(f"      {src}…")
-            if fallback is None:
-                log("    " + T("refused_hint", idx))
+            # Подстраховка: то же задание следующей модели цепочки. Отказ —
+            # свойство модели, а не текста, и у следующей такого запрета может
+            # не быть. Идём по цепочке до первой, которая возьмётся.
+            backups = _backups(fallback)
+            got, last = None, e.first
+            for fb in backups:
+                log("    " + T("refused_retry", getattr(fb, "model", "?")))
+                try:
+                    got = _run(fb, system, prompt, retries,
+                               lambda o: _parse_translate(o, expected), log)
+                    break
+                except (Refused, RuntimeError) as e2:
+                    last = getattr(e2, "first", last)
+            if got is None:
+                log("    " + (T("refused_both", last) if backups
+                              else T("refused_hint", idx)))
                 if _stop_row(refused, log):
                     break
                 continue
-            # Подстраховка: то же задание другой модели. Отказ — свойство
-            # модели, а не текста, и у другой такого запрета может не быть.
-            log("    " + T("refused_retry"))
-            try:
-                (res, extra), meta, dt = _run(
-                    fallback, system, prompt, retries,
-                    lambda o: _parse_translate(o, expected), log)
-            except (Refused, RuntimeError) as e2:
-                log("    " + T("refused_both", getattr(e2, "first", e.first)))
-                if _stop_row(refused, log):
-                    break
-                continue
+            (res, extra), meta, dt = got
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
         extra, found = extra
         res, n_grew = _regrow(agent, system, task, translatable(c["blocks"]),
@@ -694,8 +709,9 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # основная модель дала 2 правки из 41, и обе в первых двух абзацах.
         mine = agent
         by = whose.get(ids[0], "")
-        if fallback is not None and by and by == getattr(fallback, "model", None):
-            mine = fallback
+        if by:
+            mine = next((f for f in _backups(fallback)
+                         if by == getattr(f, "model", None)), mine)
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_start", f"{len(draft):3d}"))
         # при jobs>1 предыдущий кусок может быть ещё не отредактирован —
@@ -778,15 +794,20 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             mine, system, prompt, retries,
             lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
         stopped = _stopped(res, ids)
-        if stopped and fallback is not None and mine is not fallback:
-            # Оборвалась правка — передаём кусок запасной модели, как и при
-            # отказе перевода. Иначе кусок остался бы наполовину нетронутым,
-            # а при следующем запуске зачёлся бы готовым: файл-то записан.
+        for fb in _backups(fallback):
+            # Оборвалась правка — передаём кусок следующей модели цепочки, как
+            # и при отказе перевода. Иначе кусок остался бы наполовину
+            # нетронутым, а при следующем запуске зачёлся бы готовым: файл-то
+            # записан.
+            if not stopped:
+                break
+            if fb is mine:
+                continue          # этой моделью кусок только что и правился
             with lock:
                 log("    " + T("edit_stopped", stopped, len(ids)))
-                log("    " + T("refused_retry"))
+                log("    " + T("refused_retry", getattr(fb, "model", "?")))
             (res2, notes2), meta2, dt2 = _run(
-                fallback, system, prompt, retries,
+                fb, system, prompt, retries,
                 lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
             if len(res2) > len(res):
                 res, notes, meta, dt = res2, notes2, meta2, dt2
@@ -992,7 +1013,7 @@ def all_notes(work, order):
     return merged
 
 
-def format_marks(work, path, agent, task, encoding, ask, log):
+def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
     """Разметка книги без разметки. Считается один раз и лежит в работе."""
     from . import extract, format as fmt
     p = f"{work}/marks.json"
@@ -1006,8 +1027,13 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     t = time.time()
     cost = [0.0]
 
-    def run(body):
-        out, meta = agent.run("", task + "\n\n---\n\n" + body)
+    who = [agent] + _backups(fallback)
+
+    def run(body, k=0):
+        if k:
+            log("")
+            log("  " + T("refused_retry", getattr(who[k], "model", "?")), end="")
+        out, meta = who[k].run("", task + "\n\n---\n\n" + body)
         cost[0] += meta.get("cost_usd") or 0
         return out
 
@@ -1017,7 +1043,7 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     with_photo = extract.photo_pages(path)
     photo = {i for i, n in enumerate(extract.piece_pages(path, encoding, ask), 1)
              if n in with_photo}
-    marks, names = fmt.plan(paras, run, log, photo)
+    marks, names = fmt.plan(paras, run, log, photo, tries=len(who))
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
     cuts = _check_toc(work, paras, marks, names, log)
@@ -1187,7 +1213,7 @@ def _parse_fix(out, allowed):
     return got
 
 
-def fix_ocr(work, blocks, agent, system, task, retries, log):
+def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
     """Правка порчи распознавания — в оригинале, до перевода.
 
     Иначе переводчик делает две работы разом: разбирает порчу и переводит.
@@ -1214,10 +1240,18 @@ def fix_ocr(work, blocks, agent, system, task, retries, log):
         log(f"{w}/{len(parts)} ", end="")
         ids = {b["id"] for b in part}
         body = "\n\n".join(f"<<<F {b['id']}>>>\n{strip(b['text'])}" for b in part)
-        try:
-            (got, _), meta, _ = _run(agent, system, task + "\n\n---\n\n" + body,
-                                     retries, lambda o: (_parse_fix(o, ids), ""), log)
-        except (Refused, RuntimeError, Fatal):
+        got = None
+        for k, who in enumerate([agent] + _backups(fallback)):
+            if k:
+                log("")
+                log("  " + T("refused_retry", getattr(who, "model", "?")), end="")
+            try:
+                (got, _), meta, _ = _run(who, system, task + "\n\n---\n\n" + body,
+                                         retries, lambda o: (_parse_fix(o, ids), ""), log)
+                break
+            except (Refused, RuntimeError, Fatal):
+                pass
+        if got is None:
             log("")
             log("  " + T("fix_failed", len(part)))
             continue

@@ -21,32 +21,51 @@ With translator's instructions:
 ./booktrans book.epub -p instructions.md --to de -o Buch.epub
 ```
 
-And here is the full arrangement with a fallback — how one translates a long
-novel:
+And here is the full arrangement — how one translates a long novel:
 
 ```bash
-./bt_agy moby-dick.epub -p instructions.md --to ru --jobs 5 \
-    --fallback-agent claude --fallback-model claude-opus-5
+./booktrans moby-dick.epub -p instructions.md --to ru --agent agy --jobs 5
 ```
 
 What each part does:
 
 | | |
 |---|---|
-| `./bt_agy` | wrapper: translate with Gemini through Antigravity. There are also `bt_claude` and `bt_codex`, and your own takes three lines |
 | `moby-dick.epub` | the book. No output name is given, so it names itself: "Мелвилл Герман. Моби Дик.fb2" |
 | `-p instructions.md` | your instructions to the translator: what to call the characters, which terms to fix, what to leave alone |
 | `-pt "leave the names in Latin"` | the same, but as a string — a typo in a filename must not silently become an instruction |
 | `--to ru` | target language |
+| `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, and `cmd` for a CLI of your own |
 | `--jobs 5` | five threads for editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
-| `--fallback-agent claude` | what to fall back on when the main model refuses a chunk |
-| `--fallback-model claude-opus-5` | and with which model |
+
+**`--agent` names a set of defaults**, not just a program: each agent carries
+which model runs which pass and what backs it up. The line above is therefore
+complete — there is nothing to add to it. The wrappers `./bt_agy`,
+`./bt_claude` and `./bt_codex` do nothing beyond that key, they are merely
+shorter; your own takes two lines.
 
 The fallback deserves a word. Models sometimes **refuse silently**: they stop
 mid-sentence on certain passages and say nothing. The pipeline recognises this,
-shows the paragraph where it stalled, and hands the chunk to the fallback
-model. That model then edits it too: if one model would not translate a
+shows the paragraph where it stalled, and hands the chunk to the next model in
+the chain. That model then edits it too: if one model would not translate a
 passage, it will not edit it either.
+
+A pass takes its models as a **comma-separated chain**: the first does the
+book, the rest pick up what it refuses. A refusal is a property of the model,
+not of the text, which is why agy puts Claude behind Gemini and, behind Claude,
+a model of a different lineage with different limits:
+
+```bash
+./booktrans book.epub --agent agy \
+    --translator gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium
+```
+
+A fallback may live with another provider — then its agent goes before a colon.
+No separate key is needed for any of it:
+
+```bash
+./booktrans book.epub --agent agy --editor gemini-3.1-pro-high,claude:claude-opus-5
+```
 
 **`booktrans_ru`** is the same program with Russian defaults — Russian
 interface, Russian as the target language:
@@ -372,13 +391,14 @@ though the cause is the content. The pipeline recognises this, but the only
 cure it has is a fallback:
 
 ```bash
-./bt_agy book.epub      # the wrapper already falls back to Opus
+./booktrans book.epub --agent agy    # the chain is already in the agent's set
 ./booktrans book.epub --agent agy \
-    --fallback-agent claude --fallback-model claude-opus-5   # the same by hand
+    --translator gemini-3.1-pro-high,claude-opus-4-6-thinking   # the same by hand
 ```
 
 Refused chunks are then translated and edited by Opus while everything else
-stays with Gemini — fast and four times cheaper.
+stays with Gemini — fast and four times cheaper. Opus is called through agy
+here; to reach it through another agent, write `claude:claude-opus-5`.
 
 **A paragraph whose length parted company with the original is asked for
 again.** Parsing the answer checks that every block is present, not what is
@@ -436,7 +456,7 @@ take:
 
 Nothing is translated twice: what is done is remembered by content, and the
 second run only picks up the chunks that were refused or broke off. It is the
-same as `--fallback-agent`, only the expensive model is not held waiting
+same as a chain of models in one run, only the expensive model is not held waiting
 through the whole first pass, and you get to look at what was refused before
 paying for it.
 
@@ -446,6 +466,25 @@ paying for it.
 ```bash
 ./booktrans book.epub --translator opus --editor sonnet --jobs 3
 ```
+
+Every pass has one key, and that key may hold several models — comma-separated,
+the second picking up what the first refuses. That is why there is no
+`--translator-fallback` and never will be: there are five passes, and a second
+key for each would double their number.
+
+| key | pass |
+|---|---|
+| `--scout` | reconnaissance: the reference about the book |
+| `--translator` | translation |
+| `--editor` | editing and footnotes |
+| `--formatter` | markup detection in pdf and txt |
+| `--ocrfixer` | repairing OCR damage |
+| `--model` | every pass at once, save the last two |
+
+Name nothing and the agent's set applies (`PRESETS` in `cli.py`): with agy the
+meaning-bearing passes run Gemini with Claude and gpt-oss behind it, while
+markup and OCR repair run a cheap Flash with Sonnet behind it. What you name
+explicitly always beats the set.
 
 Translation carries the literary quality and the responsibility for meaning;
 editing is more mechanical, and its every change is visible in `--diff` and
