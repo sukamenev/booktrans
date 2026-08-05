@@ -1183,7 +1183,7 @@ def _parse_fix(out, allowed):
     return got
 
 
-def proofread(work, blocks, agent, system, task, retries, log):
+def fix_ocr(work, blocks, agent, system, task, retries, log):
     """Правка порчи распознавания — в оригинале, до перевода.
 
     Иначе переводчик делает две работы разом: разбирает порчу и переводит.

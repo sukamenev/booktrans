@@ -543,7 +543,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --force-editing       keep editing past three refusals in a row
 --code asis           leave the comments in listings alone too
 --formatter ID        model that marks up pdf and txt
---proofreader ID      model that corrects recognition damage
+--ocrfixer ID         model that repairs recognition damage in the original
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass
 --agent claude|cmd    agent
@@ -749,8 +749,8 @@ Seduction by If → Seduction by K   accepted
 thou art        → you are          refused: that is editing the author
 ```
 
-The proofreader runs on the cheapest model the agent has, as the markup pass
-does: this is recognition, not composition. `--proofreader ID` picks another.
+It runs on the cheapest model the agent has, as the markup pass does: this is
+recognition, not composition. `--ocrfixer ID` picks another.
 
 `book.json` is left untouched — the original stands there as it is, so what
 was corrected is always visible; the corrections live in `work/fix.json` and

@@ -126,8 +126,8 @@ def main():
     ap.add_argument("--editor", help=T("h_editor"))
     ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
                     help=T("h_formatter"))
-    ap.add_argument("--proofreader", default=os.environ.get("BT_PROOFREADER"),
-                    help=T("h_proofreader"))
+    ap.add_argument("--ocrfixer", default=os.environ.get("BT_OCRFIXER"),
+                    help=T("h_ocrfixer"))
     ap.add_argument("--retries", type=int, default=5)
     ap.add_argument("--wait", type=int, default=900, help=T("h_wait"))
     ap.add_argument("--max-wait", type=int, default=86400, help=T("h_maxwait"))
@@ -162,7 +162,7 @@ def main():
     # --effort, и вместе они не работают. Отвергнуть это надо сейчас, а не
     # на середине книги невнятной ошибкой из чужой программы.
     for m in (args.model, args.translator, args.scout, args.editor,
-              args.formatter, args.proofreader, args.fallback_model):
+              args.formatter, args.ocrfixer, args.fallback_model):
         if args.agent == "agy" and args.effort and m \
                 and re.search(r"-(low|medium|high)$", m):
             sys.exit(T("effort_clash", m, args.effort))
@@ -205,7 +205,7 @@ def main():
         разные требования, и платить за все одинаково незачем."""
         # Разметка и корректура — работа опознавательная, а не сочинительная,
         # и обеим хватает самой дешёвой модели поставщика.
-        if role in ("formatter", "proofreader") \
+        if role in ("formatter", "ocrfixer") \
                 and not getattr(args, role) and args.agent in CHEAP:
             m, eff = CHEAP[args.agent]
             return make_agent(args.agent, m, args.agent_cmd, wait=args.wait,
@@ -422,7 +422,7 @@ def main():
         if "fix" in steps:
             n += 1
             log(f"=== {n}. {T('step_fix')} ===")
-            pipeline.proofread(work, blocks, agent_for("proofreader"), sysprompt(),
+            pipeline.fix_ocr(work, blocks, agent_for("ocrfixer"), sysprompt(),
                                task("fix"), args.retries, log)
             log("")
         pipeline.apply_fixes(work, blocks, log)

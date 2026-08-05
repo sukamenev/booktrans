@@ -134,7 +134,7 @@
   "h_scout": "reconnaissance model (defaults to --model)",
   "h_translator": "translation model (defaults to --model)",
   "h_editor": "editing and notes model (defaults to --model)",
-  "h_proofreader": "model for the proofreader that corrects recognition damage (defaults to the cheapest the agent has)",
+  "h_ocrfixer": "model that repairs recognition damage in the original (defaults to the cheapest the agent has)",
   "h_formatter": "model for marking up pdf and txt (by default the cheapest one the chosen agent has)",
   "code_known": "listings already processed: {0} (delete work/code.json to redo)",
   "code_start": "translating comments in listings: {0} ... ",
