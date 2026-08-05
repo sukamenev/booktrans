@@ -312,11 +312,14 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         if n:
             log("  " + lang.T("sweep_fixes", n))
 
-    # Список литературы в книгу идёт слово в слово: он не переводился и
-    # непереведённым не считается.
+    # Список литературы и листинги в книгу идут как есть: они не переводились
+    # и непереведёнными не считаются. В листинге переведены комментарии — их
+    # ставит на место code.swap, кода не касаясь.
+    cp = f"{work}/code.json"
+    listings = json.load(open(cp, encoding="utf-8")) if os.path.exists(cp) else {}
     for b in blocks:
         if b.get("asis"):
-            tr.setdefault(b["id"], b["text"])
+            tr.setdefault(b["id"], listings.get(b["id"], b["text"]))
     missing = [b["id"] for b in blocks
                if b["kind"] not in ("break", "image") and b["id"] not in tr]
     if missing and not partial:
@@ -466,6 +469,16 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
                 w("<poem><stanza>")
                 in_poem = True
             w(f"<v>{esc(text, b.get('links'), notes_map)}</v>")
+        elif b["kind"] == "code":
+            # В fb2 нет <pre>: листинг идёт строкой на абзац, а отступ держится
+            # неразрывными пробелами — обычные читалка схлопнет.
+            close_poem()
+            if not open_sec:
+                w("<section>")
+                open_sec = True
+            for line in text.splitlines() or [""]:
+                pre = len(line) - len(line.lstrip(" "))
+                w(f"<p><code>{' ' * pre}{esc(line.strip())}</code></p>")
         elif b["kind"] == "break":
             if in_poem:
                 w("</stanza><stanza>")       # пустая строка делит строфы

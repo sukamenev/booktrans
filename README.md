@@ -75,6 +75,8 @@ translation, adds footnotes and assembles the file.
 - **renders verse as verse**, quotes canonical texts from recognised
   translations;
 - **carries over** images, links, front and back matter, publication data;
+- **leaves code alone** in programming books, but translates the comments
+  inside it;
 - **resumes** after any failure and **waits** for rate limits to recover;
 - **reports spending** by pass and model;
 - **works with any agent**, Claude Code by default;
@@ -531,6 +533,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
 --force-editing       keep editing past three refusals in a row
+--code asis           leave the comments in listings alone too
 --formatter ID        model that marks up pdf and txt
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass
@@ -641,6 +644,37 @@ mangles a running head differently every time. Numbered chapters ("Chapter 1",
 alone. Every other mismatch is merely reported — what to do about it is a
 human's call. The parsed contents are kept in `work/toc.json`.
 
+
+## Listings in programming books
+
+Code is not translated: names, indentation and string literals stay as they
+are. `print("Hello")` cannot be translated — two paragraphs down the book
+shows what it prints, and the correspondence would fall apart.
+
+Comments are translated: they are prose written for a human, and in a textbook
+half the explanation lives in them.
+
+A model finds them — comment markers run into the hundreds across languages
+(`#`, `//`, `%`, `;`, `!`, `(* *)`), and no parser covers that. **But the
+model does not do the substitution; the program does**: the fragment the model
+names must be found in the line it names, and exactly that fragment is
+replaced. One character off and the line stays as it was. Where the comment
+marker is one we do know, what the model named is checked against it too, so a
+string literal cannot pass for a comment.
+
+```
+translating comments in listings: 34 ... in 41 s [gemini-3.1-pro-high]
+comments translated: 96 across 34 listings
+```
+
+`--code asis` leaves listings entirely alone — for readers who go through the
+book with the author's repository open beside them.
+
+A listing is recognised from the markup: `<pre>` in epub, `<p><code>` in fb2.
+In pdf and txt there is no markup, and the same pass that looks for headings
+marks it.
+
+To check the substitution without calling a model: `python3 tests/code_check.py`.
 
 ## Bibliographies
 

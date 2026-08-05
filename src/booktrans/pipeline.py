@@ -992,6 +992,81 @@ def _few(names, n=3):
     return head + (T("and_more", len(names) - n) if len(names) > n else "")
 
 
+CODE_LINES = 300        # строк листинга в одном запросе
+
+
+def _parse_code(out, allowed):
+    """Записи <<<C номер строка>>> из ответа: {номер листинга: [(строка, ориг, пер)]}."""
+    got = {}
+    for m in re.finditer(r"<<<C\s+(\S+?)\s+(\d+)>>>\s*ORIG:\s*(.*?)\n\s*TR:\s*(.*?)(?=<<<|\Z)",
+                         out, re.S):
+        bid, no, orig, tr = m.groups()
+        if bid in allowed:
+            got.setdefault(bid, []).append((int(no), orig.strip(), tr.strip()))
+    return got
+
+
+def code_comments(work, blocks, agent, system, task, retries, log):
+    """Перевод комментариев в листингах. Код остаётся байт в байт.
+
+    Комментарии ищет модель — знаков комментария у языков сотни, разбором их
+    не покрыть. Но подставляет перевод не она: программа берёт названный ею
+    кусок, находит его в названной строке и меняет ровно его (см. code.py).
+    Не сошлось — строка остаётся как была.
+
+    Готовое лежит в `work/code.json`, поэтому повтор прогона переводит
+    только новые листинги.
+    """
+    from . import code as C
+    p = f"{work}/code.json"
+    done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    todo = [b for b in blocks if b["kind"] == "code" and b["id"] not in done]
+    if not todo:
+        if done:
+            log("  " + T("code_known", len(done)))
+        return done
+    log("  " + T("code_start", len(todo)), end="")
+    t, cost, n = time.time(), 0.0, 0
+    for part in _by_lines(todo, CODE_LINES):
+        ids = {b["id"] for b in part}
+        body = "\n\n".join(
+            f"<<<CODE {b['id']}>>>\n" +
+            "\n".join(f"{k}| {l}" for k, l in enumerate(b["text"].split("\n"), 1))
+            for b in part)
+        try:
+            (got, _), meta, _ = _run(agent, system, task + "\n\n---\n\n" + body,
+                                     retries, lambda o: (_parse_code(o, ids), ""), log)
+        except (Refused, RuntimeError):
+            # Комментарии — не та потеря, ради которой стоит валить прогон:
+            # непереведённый останется на языке оригинала, и это видно.
+            log("")
+            log("  " + T("code_failed", len(part)))
+            continue
+        cost += meta.get("cost_usd") or 0
+        for b in part:
+            text, k = C.splice(b["text"], got.get(b["id"], []))
+            done[b["id"]] = text
+            n += k
+    _save(p, done)
+    log(T("took", f"{time.time() - t:.0f}",
+          f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
+    log("  " + T("code_done", n, len(todo)))
+    return done
+
+
+def _by_lines(blocks, limit):
+    """Листинги пачками: длинный уходит один, короткие — вместе."""
+    out, cur, k = [], [], 0
+    for b in blocks:
+        m = b["text"].count("\n") + 1
+        if cur and k + m > limit:
+            out.append(cur)
+            cur, k = [], 0
+        cur.append(b)
+        k += m
+    return out + ([cur] if cur else [])
+
+
 def note_source(work, **kw):
     """Чем читали и чем размечали книгу — для раздела в её конце."""
     p = f"{work}/source.json"

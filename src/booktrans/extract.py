@@ -194,6 +194,26 @@ def _inner(el, keep=KEEP_INLINE, note=False):
     return txt, links
 
 
+CODE_ONLY = re.compile(r"^<code>.*</code>$", re.S)
+
+
+def _pre_text(el):
+    """Текст листинга. Переводы строк и отступы сохраняются: в книге по
+    программированию они и есть смысл, а `_inner` схлопывает их в пробел."""
+    out = []
+
+    def walk(node):
+        if node.text:
+            out.append(node.text)
+        for ch in node:
+            walk(ch)
+            if ch.tail:
+                out.append(ch.tail)
+
+    walk(el)
+    return "".join(out).strip("\n").rstrip()
+
+
 def _is_container(el):
     """Является ли div структурным контейнером, а не абзацем текста.
     Если внутри есть другие блочные элементы, значит это обёртка.
@@ -362,6 +382,13 @@ def _epub(path, styles=None, encoding=None, ask=None):
                 if text:
                     got.append(("note", text, links, el.get("id") or ""))
                 continue
+            if tag == "pre":
+                # Листинг. Раньше сюда не заглядывали вовсе, и в книге по
+                # программированию пропадал весь код до единой строки.
+                t = _pre_text(el)
+                if t:
+                    got.append(("code", t, [], ""))
+                continue
             if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
                 continue
             if _is_container(el):
@@ -517,7 +544,11 @@ def _fb2(path, encoding=None, ask=None):
                         blocks.append(("title", t, lk, ""))
                 else:
                     t, lk = _inner(el)
-                    if t:
+                    if CODE_ONLY.match(t or ""):
+                        # Листинг в fb2 верстают как <p><code>строка</code></p>;
+                        # читаем сырым текстом, иначе пропадут отступы.
+                        blocks.append(("code", _pre_text(el), [], ""))
+                    elif t:
                         blocks.append(("subtitle" if tag in ("subtitle", "text-author")
                                        else "p", t, lk, note_anchor[0]))
 
@@ -1029,7 +1060,7 @@ def _from_text(txt, title, marks=None):
             n = 0
         n += 1
         blocks.append({"id": f"s{sec:02d}.b{n:04d}",
-                       "kind": kind if kind in ("title", "verse") else "p",
+                       "kind": kind if kind in ("title", "verse", "code") else "p",
                        "text": p})
     return {"title": title}, blocks, None, {}
 
@@ -1111,6 +1142,9 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None):
     try:
         meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks)
         _mark_refs(blocks)
+        for b in blocks:
+            if b["kind"] == "code":
+                b["asis"] = True      # код в перевод не идёт; см. code.py
         return meta, blocks, cover, images
     except BadBook:
         raise

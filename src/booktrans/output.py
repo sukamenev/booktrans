@@ -63,6 +63,8 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None):
             out += ["", "* * *", ""]
         elif kind == "verse":
             out.append("    " + _plain(text))
+        elif kind == "code":
+            out += ["    " + l for l in text.splitlines()] + [""]
         elif kind == "image":
             out.append("[" + st.get("illustration", "иллюстрация: {alt}").format(alt=text) + "]")
         else:
@@ -88,6 +90,9 @@ h1{font-size:1.6em;margin:2.5em 0 .3em;font-weight:normal;letter-spacing:.05em}
 h2{font-size:1em;color:#666;font-weight:normal;margin:.2em 0 1.5em;font-style:italic}
 p{margin:0 0 .9em;text-align:justify;hyphens:auto}
 p.v{margin:0 0 .1em 2em;text-align:left;font-style:italic;text-indent:-1em}
+pre{font:.85em/1.4 'DejaVu Sans Mono',Consolas,monospace;background:#f4f4f0;
+border-left:3px solid #ddd;padding:.6em .8em;margin:1.2em 0;overflow-x:auto;
+white-space:pre-wrap;word-wrap:break-word}
 img{max-width:100%;height:auto;display:block;margin:1.5em auto}
 hr{border:0;text-align:center;margin:2em 0}hr:after{content:'* * *';color:#999}
 sup a{text-decoration:none;color:#06c;font-size:.75em}
@@ -121,6 +126,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
             o.append(f'<img src="data:{_mime(text)};base64,{data}" alt="">')
         elif kind == "verse":
             o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
+        elif kind == "code":
+            o.append(f"<pre>{escape(text)}</pre>")
         elif kind == "p":
             mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">[{nums[bid]}]</a></sup>'
                     if bid in nums else "")
@@ -182,6 +189,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
                 o.append(f'<img src="img/{escape(text)}" alt=""/>')
             elif kind == "verse":
                 o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
+            elif kind == "code":
+                o.append(f"<pre>{escape(text)}</pre>")
             elif kind == "p":
                 mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">[{nums[bid]}]</a></sup>'
                         if bid in nums else "")

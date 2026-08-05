@@ -138,6 +138,8 @@ def main():
     ap.add_argument("--no-headings", action="store_true", help=T("h_nohead"))
     ap.add_argument("--partial", action="store_true", help=T("h_partial"))
     ap.add_argument("--encoding", help=T("h_encoding"))
+    ap.add_argument("--code", choices=("comments", "asis"), default="comments",
+                    help=T("h_code"))
     ap.add_argument("--fallback-agent", choices=("claude", "cmd", "agy"),
                     default=os.environ.get("BT_FALLBACK_AGENT"),
                     help=T("h_fb_agent"))
@@ -424,6 +426,11 @@ def main():
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
                                   args.retries, log, only_chunks,
                                   fallback=fallback_agent())
+        # Листинги в перевод не идут, но комментарии в них — проза, и
+        # читателю нужны они, а не английский подстрочник в коде.
+        if args.code == "comments" and any(b["kind"] == "code" for b in blocks):
+            pipeline.code_comments(work, blocks, agent_for("translator"),
+                                   sysprompt(), task("code"), args.retries, log)
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
         log("")
 
