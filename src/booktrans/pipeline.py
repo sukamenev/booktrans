@@ -417,12 +417,25 @@ def translate_prompt(chunk, nxt, summary, tail, terms, task):
 REFUSE_ROW = 3
 
 
-def _stop_row(refused, force, log):
+def _save(path, obj):
+    """Записать файл куска целиком или никак.
+
+    При `--jobs > 1` соседний поток читает хвост предыдущего куска ровно
+    тогда, когда этот его пишет, и половина файла — это разбор json с
+    ошибкой и падение всего прохода. Подмена готового файла атомарна.
+    """
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+
+
+def _stop_row(refused, force, log, what="translate"):
     refused[0] += 1
-    if refused[0] < REFUSE_ROW or "translate" in force:
+    if refused[0] < REFUSE_ROW or what in force:
         return False
     log("")
-    log("  " + T("refused_row", refused[0]))
+    log("  " + T("refused_row", refused[0], what))
     return True
 
 
@@ -497,9 +510,9 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
         extra, found = extra
         summ, terms = _split_meta(extra)
-        json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
-                   "footnotes": found, "tr": res},
-                  open(out_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        _save(out_path, {"index": idx, "model": meta["model"],
+                         "cost_usd": meta["cost_usd"],
+                         "footnotes": found, "tr": res})
         # Пустой конспект — признак сломанного протокола, а не молчания
         # модели: значит, служебные ярлыки в ответе не совпали с теми, что
         # ищет разборщик. Молча это не проходит, потому что конспект и список
@@ -540,7 +553,7 @@ def _split_meta(extra):
 # ---------------------------------------------------------------- редактура
 
 def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
-         fallback=None):
+         fallback=None, force=()):
     os.makedirs(f"{work}/ed", exist_ok=True)
     now = getattr(agent, "model", None) or ""
 
@@ -600,10 +613,11 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
 
     n_all = len(chunks)
     by_index = {c["index"]: c for c in chunks}
+    refused, halt = [0], [False]
 
     def one(c):
         nonlocal done, total
-        if STOP.is_set():
+        if STOP.is_set() or halt[0]:
             return
         idx = c["index"]
         who = (c["label"] or "—")[:24]
@@ -722,8 +736,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             # Помечаем в файле: предупреждение в выводе живёт до конца
             # прогона, а кусок надо будет перередактировать и завтра.
             out["stopped_at"] = stopped
-        json.dump(out, open(out_path, "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=1)
+        _save(out_path, out)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         with lock:
             done += 1
@@ -733,6 +746,12 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                     f"{dt:.0f}", f"{meta['model']}{cost}"))
             if stopped:
                 log("    " + T("edit_stopped", stopped, len(ids)))
+                # Три оборванных куска подряд — дело уже не в книге, как и при
+                # переводе. При jobs>1 запущенные куски доработают: счёт идёт
+                # по приходящим ответам, а не по очереди.
+                halt[0] = _stop_row(refused, force, log, "edit")
+            else:
+                refused[0] = 0
 
     if jobs > 1 and len(todo) > 1:
         log("  " + T("in_threads", jobs))
@@ -854,9 +873,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
             return items, ""
 
         (items, _), meta, dt = _run(agent, system, prompt, retries, parse_notes, log)
-        json.dump({"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
-                   "notes": items}, open(out_path, "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=1)
+        _save(out_path, {"index": idx, "model": meta["model"],
+                         "cost_usd": meta["cost_usd"], "notes": items})
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         with lock:
             done += 1

@@ -381,8 +381,12 @@ stays with Gemini — fast and four times cheaper.
 **Three refusals in a row stop the run.** One refusal is a contentious scene;
 three in a row mean it is no longer about the book — the model's policy
 changed, the quota ran out, the agent died. Carrying on would burn money for
-nothing. What is translated stays translated, and the next run picks it up.
-To carry on regardless: `--force translate`.
+nothing. What is done stays done, and the next run picks it up. To carry on
+regardless: `--force translate`, `--force edit`, or both separated by a comma.
+
+Each pass counts on its own. On the editing pass a refusal does not look like
+one: the model reaches the contentious passage, stops without a word, and the
+chunk looks fully reviewed. It is told apart by where the last fix stands.
 
 
 **Opus takes on anything but is slow.** On subscription plans a hundred-chunk
@@ -516,7 +520,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --only STEP           a single step: structure|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks (for redoing)
---force translate     do not stop on that pass whatever happens
+--force PASSES       do not stop on these whatever happens: translate,edit
 --formatter ID        model that marks up pdf and txt
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass

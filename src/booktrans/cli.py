@@ -115,7 +115,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=1, help=T("h_jobs"))
     ap.add_argument("--to", default=os.environ.get("BT_TO", "en"), help=T("h_to"))
     ap.add_argument("--ui", default=ui, help=T("h_ui"))
-    ap.add_argument("--force-translate", action="store_true", help=T("h_force"))
+    ap.add_argument("--force-translate", action="store_true", help=T("h_force_lang"))
     ap.add_argument("--no-headings", action="store_true", help=T("h_nohead"))
     ap.add_argument("--partial", action="store_true", help=T("h_partial"))
     ap.add_argument("--encoding", help=T("h_encoding"))
@@ -414,7 +414,8 @@ def main():
         log(f"=== {n}. {T('step_edit')} ===")
         d, s, t = pipeline.edit(work, chunks, agent_for("editor"), sysprompt(), task("edit"),
                                 args.retries, log, only_chunks, args.jobs,
-                                fallback=fallback_agent())
+                                fallback=fallback_agent(),
+                                force=args.force.split(","))
         log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
         log("")
 
