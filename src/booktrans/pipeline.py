@@ -934,12 +934,36 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     marks = fmt.plan(paras, run, log)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
+    _check_toc(work, paras, marks, log)
     kinds = collections.Counter(marks.values())
     log("  " + T("marks_done", kinds.get("title", 0), kinds.get("skip", 0),
                  kinds.get("+", 0)))
     json.dump(marks, open(p, "w", encoding="utf-8"), ensure_ascii=False)
     note_source(work, formatter=getattr(agent, "model", None) or "?")
     return marks
+
+
+def _check_toc(work, paras, marks, log):
+    """Сверка с оглавлением. Оно у книги одно, и обмануться ему негде: главу,
+    которой там нет, придумала разметка, а названную и не найденную — потеряла.
+    """
+    from . import format as fmt
+    r = fmt.reconcile(paras, marks)
+    if not r["toc"]:
+        return
+    json.dump(r["names"], open(f"{work}/toc.json", "w", encoding="utf-8"),
+              ensure_ascii=False, indent=1)
+    log("  " + T("toc_found", r["toc"], r["toc"] - len(r["lost"]), r["added"]))
+    if r["lost"]:
+        log("  " + T("toc_lost", _few(r["lost"])))
+    if r["dropped"]:
+        log("  " + T("toc_dropped", _few(r["dropped"])))
+
+
+def _few(names, n=3):
+    """Первые несколько названий, остальные числом."""
+    head = ", ".join(T("quoted", s) for s in names[:n])
+    return head + (T("and_more", len(names) - n) if len(names) > n else "")
 
 
 def note_source(work, **kw):

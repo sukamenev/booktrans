@@ -79,7 +79,7 @@ translation, adds footnotes and assembles the file.
 - **reports spending** by pass and model;
 - **works with any agent**, Claude Code by default;
 - **translates into any language** that has a rules file in `langs/`
-  (Russian, English, German, French, Japanese and Chinese ship with it);
+  (Russian, English, German, Spanish, French, Japanese and Chinese ship with it);
 - **speaks any interface language** that has a file in `ui/`.
 
 What it does **not** do: replace a human translator. Before your first run,
@@ -608,6 +608,24 @@ characters to 915.
 
 It runs once and is kept in `work/marks.json`. The model is the cheapest the
 chosen agent has; `--formatter ID` picks another.
+
+**The table of contents checks the markup.** It is the one place where the book
+itself lists its chapters, so its lines get a mark of their own: they never
+reach the translation and serve instead as the list of what must be found.
+
+```
+contents: 31 chapters, 28 found in the text, 4 restored from it
+not found in the text: “The Tank”, “Isolation”, “Dolphins”
+dropped from headings as a running head: “THE SCIENTIST”
+```
+
+A chapter named in the contents but not marked where it stands is restored. A
+heading that repeats through the book and is absent from the contents is a
+running head and is dropped; near-identical lines count as one, because OCR
+mangles a running head differently every time. Numbered chapters ("Chapter 1",
+"Chapter 2") also look alike but differ only in their digits, and are left
+alone. Every other mismatch is merely reported — what to do about it is a
+human's call. The parsed contents are kept in `work/toc.json`.
 
 
 ## Bibliographies
