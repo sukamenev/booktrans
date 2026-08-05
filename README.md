@@ -53,11 +53,13 @@ passage, it will not edit it either.
 A pass takes its models as a **comma-separated chain**: the first does the
 book, the rest pick up what it refuses. A refusal is a property of the model,
 not of the text, which is why agy puts Claude behind Gemini and, behind Claude,
-a model of a different lineage with different limits:
+a model of a different lineage with different limits. That much is in the set
+already; you write a chain by hand only to get a different one — say, to
+translate with Opus from the start and keep Gemini behind it:
 
 ```bash
 ./booktrans book.epub --agent agy \
-    --translator gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium
+    --translator claude-opus-4-6-thinking,gemini-3.1-pro-high
 ```
 
 A fallback may live with another provider — then its agent goes before a colon.
