@@ -1069,6 +1069,9 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         merged = findings[0] if findings else ""
 
     open(out_path, "w", encoding="utf-8").write(merged)
+    # Модель разведки нигде больше не записана, а в книге её надо назвать.
+    json.dump({"model": meta.get("model")},
+              open(f"{work}/scout.json", "w", encoding="utf-8"), ensure_ascii=False)
     log("  " + T("scout_ref", out_path, len(merged)))
     merged = _condense_scout(merged, agent, system, retries, log, out_path)
 

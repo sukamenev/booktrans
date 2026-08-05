@@ -22,7 +22,6 @@ code: zh
 str.about_title: 关于本译本
 str.about_made: 本书由翻译流水线 {pipeline} 机器翻译而成。
 str.about_version: {date}版本
-str.about_model: 模型：{models}
 str.about_date: 翻译日期：{date}
 str.about_quality: 全书术语与专名保持一致，文本另经一道润色工序，译者注均已明确标注。
 str.about_caveat: 这是一份不错的初稿，而非人工译者的作品：长对话、文字游戏和作者的节奏可能有所折损。
@@ -36,3 +35,11 @@ str.untitled: 书
 str.translator: 机器翻译
 str.about_notes: 注释与说明同样由机器生成，可能存在不确切之处，偶尔也会出现明显错误：日期、人名和出处请自行核对。
 str.about_disclaimer: 本译本按现状提供，不作任何担保。流水线的作者与运行者均不对使用本文所产生的任何后果承担责任，包括依据表达不准确的内容所作出的判断。
+str.details_title: 翻译详情
+str.details_scout: 通读侦查：{models}。
+str.details_translate: 翻译：{models}。
+str.details_edit: 文字润色：{models}。
+str.details_all: 全书
+str.details_chapters: 第 {chapters} 章
+str.details_partly: 部分：第 {chapters} 章
+str.details_caveat: 手工改动未记录于此；同一片段两次润色的，标出后一次。

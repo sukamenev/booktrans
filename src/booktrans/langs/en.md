@@ -43,7 +43,6 @@ itself does so.
 str.about_title: About this translation
 str.about_made: Machine translation produced by the {pipeline} pipeline.
 str.about_version: version of {date}
-str.about_model: Model: {models}.
 str.about_date: Translated: {date}.
 str.about_quality: Terminology and names are kept consistent throughout, the text went through a separate editing pass, and the translator's footnotes are marked explicitly.
 str.about_caveat: This is a good draft, not the work of a human translator: long dialogue, wordplay and the author's rhythm may suffer.
@@ -58,3 +57,11 @@ str.untitled: Book
 str.translator: machine translation
 str.about_notes: The footnotes and explanations are machine-made as well. They may contain inaccuracies and occasionally outright errors: dates, names and source references are worth checking yourself.
 str.about_disclaimer: This translation is provided as is, without warranty of any kind. Neither the author of the pipeline nor whoever ran it accepts liability for any consequences of using this text, including decisions taken on the basis of a meaning conveyed inaccurately.
+str.details_title: Translation details
+str.details_scout: Reconnaissance pass: {models}.
+str.details_translate: Translation: {models}.
+str.details_edit: Literary editing: {models}.
+str.details_all: the whole book
+str.details_chapters: chapters {chapters}
+str.details_partly: in part {chapters}
+str.details_caveat: Changes made by hand are not shown here; where a chunk was edited twice, the later editor is the one named.

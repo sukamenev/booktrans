@@ -23,7 +23,6 @@ code: ja
 str.about_title: 本翻訳について
 str.about_made: 本書は翻訳パイプライン {pipeline} による機械翻訳です。
 str.about_version: {date}版
-str.about_model: モデル：{models}
 str.about_date: 翻訳日：{date}
 str.about_quality: 用語と固有名詞は全編で統一され、別途推敲の工程を経ています。訳者による注はその旨を明記しています。
 str.about_caveat: これは優れた下訳であり、人間の翻訳者の仕事ではありません。長い会話、言葉遊び、原文の律動には不備が残る場合があります。
@@ -37,3 +36,11 @@ str.untitled: 書籍
 str.translator: 機械翻訳
 str.about_notes: 注や解説も機械が作成したものです。不正確な記述や、まれに明白な誤りが含まれることがあります。日付・人名・出典はご自身でお確かめください。
 str.about_disclaimer: 本翻訳は現状のまま提供され、いかなる保証もありません。パイプラインの作成者も、それを実行した者も、本文の利用によって生じたいかなる結果についても責任を負いません。不正確に伝えられた内容に基づく判断についても同様です。
+str.details_title: 翻訳の詳細
+str.details_scout: 下読み: {models}。
+str.details_translate: 翻訳: {models}。
+str.details_edit: 文章の推敲: {models}。
+str.details_all: 全篇
+str.details_chapters: 第{chapters}章
+str.details_partly: 一部: 第{chapters}章
+str.details_caveat: 手作業による修正はここに記していません。同じ箇所を二度推敲した場合は、後の担当を示しています。

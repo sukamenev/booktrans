@@ -74,6 +74,98 @@ def version(code="ru"):
     return False, lang.fmt_date(os.path.getmtime(os.path.join(here, "cli.py")), code)
 
 
+def _ranges(nums):
+    """1,2,3,7 → «1–3, 7»."""
+    out, nums = [], sorted(nums)
+    i = 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1:
+            j += 1
+        out.append(str(nums[i]) if j == i else f"{nums[i]}–{nums[j]}")
+        i = j + 1
+    return ", ".join(out)
+
+
+def _chapter_of(blocks):
+    """Идентификатор блока → номер главы. Главой считаем заголовок верхнего
+    уровня; всё до первого заголовка относим к нулевой, служебной."""
+    out, n = {}, 0
+    for b in blocks:
+        if b["kind"] == "title":
+            n += 1
+        out[b["id"]] = n
+    return out
+
+
+def _pass_models(work, sub, key, chapter):
+    """Какие главы какой моделью пройдены: {модель: {глава: сколько блоков}}."""
+    out, total = {}, {}
+    d = os.path.join(work, sub)
+    if not os.path.isdir(d):
+        return out, total
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".json"):
+            continue
+        x = json.load(open(os.path.join(d, n), encoding="utf-8"))
+        model = x.get("model") or "?"
+        ids = x.get(key) or []
+        if isinstance(ids, dict):
+            ids = list(ids)
+        for i in ids:
+            ch = chapter.get(i)
+            if ch:
+                out.setdefault(model, {}).setdefault(ch, 0)
+                out[model][ch] += 1
+                total[ch] = total.get(ch, 0) + 1
+    return out, total
+
+
+def _pass_line(work, sub, key, chapter, st, label):
+    """Строка вида «Перевод: opus — главы 1–15; gemini — глава 16 (частично)»."""
+    by, total = _pass_models(work, sub, key, chapter)
+    if not by:
+        return ""
+    if len(by) == 1:
+        return label.format(models=f"{next(iter(by))} ({st['details_all']})")
+    parts = []
+    for model, chs in sorted(by.items()):
+        whole = [c for c, k in chs.items() if k == total[c]]
+        part = [c for c in chs if c not in whole]
+        bits = []
+        if whole:
+            bits.append(st["details_chapters"].format(chapters=_ranges(whole)))
+        if part:
+            bits.append(st["details_partly"].format(chapters=_ranges(part)))
+        parts.append(f"{model} — {', '.join(bits)}")
+    return label.format(models="; ".join(parts))
+
+
+def details_lines(work, st, blocks):
+    """Раздел «Детали перевода» в конце книги.
+
+    Читателю эти сведения в начале книги не нужны, а тому, кто найдёт в
+    переводе огрех, нужны обязательно: по ним видно, какая модель делала
+    именно это место.
+    """
+    chapter = _chapter_of(blocks)
+    body = []
+    p = os.path.join(work, "scout.json")
+    if os.path.exists(p):
+        m = json.load(open(p, encoding="utf-8")).get("model")
+        if m:
+            body.append(st["details_scout"].format(models=m))
+    for sub, key, name in (("tr", "tr", "details_translate"),
+                           ("ed", "blocks", "details_edit")):
+        line = _pass_line(work, sub, key, chapter, st, st[name])
+        if line:
+            body.append(line)
+    if not body:
+        return "", []
+    body.append(st["details_caveat"])
+    return st["details_title"], body
+
+
 def about_lines(work, st, code):
     """Служебный раздел «О переводе»: заголовок и абзацы.
 
@@ -81,7 +173,6 @@ def about_lines(work, st, code):
     epub или txt имеет такое же право знать, чем и когда переведена книга,
     как читатель fb2.
     """
-    models = _models(work)
     span = _work_span(work, code)
     release, ver = version(code)
     if not release:
@@ -92,8 +183,6 @@ def about_lines(work, st, code):
     else:
         who = f"{PIPELINE} {ver} ({PIPELINE_URL})"
     body = [st["about_made"].format(pipeline=who)]
-    if models:
-        body.append(st["about_model"].format(models=", ".join(models)))
     if span:
         body.append(st["about_date"].format(date=span))
     body += [st["about_quality"], st["about_caveat"],
@@ -269,6 +358,10 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         items += [("p", t, f"_about{i}", None) for i, t in enumerate(body)]
         items += [(b["kind"], tr.get(b["id"], ""), b["id"], b.get("links"))
                   for b in blocks]
+        dhead, dbody = details_lines(work, st, blocks)
+        if dhead:
+            items += [("title", dhead, "_details", None)]
+            items += [("p", t, f"_details{i}", None) for i, t in enumerate(dbody)]
         kw = {"cover": cover} if ext == ".epub" else {}
         output.WRITERS[ext](dest, meta, items, notes, images or {},
                             st.get("note_prefix", NOTE_PREFIX).rstrip() + " ",
@@ -393,6 +486,16 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             w(f"<p>{esc(text, b.get('links'), notes_map)}{a}</p>")
     close_poem()
     if open_sec:
+        w("</section>")
+
+    # --- детали перевода: в конце, а не в начале. Читателю они не нужны,
+    # а тому, кто ищет, чья работа перед ним, нужны обязательно.
+    dhead, dbody = details_lines(work, st, blocks)
+    if dhead:
+        w("<section>")
+        w(f"<title><p>{esc(dhead)}</p></title>")
+        for line in dbody:
+            w(f"<p>{esc(line)}</p>")
         w("</section>")
     w("</body>")
 

@@ -23,7 +23,6 @@ code: de
 str.about_title: Über diese Übersetzung
 str.about_made: Maschinelle Übersetzung, erstellt mit der Pipeline {pipeline}.
 str.about_version: Fassung vom {date}
-str.about_model: Modell: {models}.
 str.about_date: Übersetzt am: {date}.
 str.about_quality: Terminologie und Namen sind im ganzen Buch einheitlich, der Text wurde in einem eigenen Durchgang lektoriert, und Anmerkungen des Übersetzers sind ausdrücklich gekennzeichnet.
 str.about_caveat: Das ist ein guter Rohentwurf, aber nicht die Arbeit eines menschlichen Übersetzers: bei langen Dialogen, Wortspielen und dem Rhythmus des Autors sind Mängel möglich.
@@ -38,3 +37,11 @@ str.untitled: Buch
 str.translator: maschinelle Übersetzung
 str.about_notes: Auch die Anmerkungen und Erläuterungen stammen von der Maschine. Sie können ungenau sein und gelegentlich schlicht falsch: Daten, Namen und Quellenangaben sollte man selbst nachprüfen.
 str.about_disclaimer: Diese Übersetzung wird ohne jede Gewähr bereitgestellt. Weder der Urheber der Pipeline noch derjenige, der sie ausgeführt hat, haftet für Folgen der Nutzung dieses Textes, einschließlich Entscheidungen, die auf ungenau wiedergegebenem Sinn beruhen.
+str.details_title: Angaben zur Übersetzung
+str.details_scout: Erkundungsdurchgang: {models}.
+str.details_translate: Übersetzung: {models}.
+str.details_edit: Literarische Redaktion: {models}.
+str.details_all: das ganze Buch
+str.details_chapters: Kapitel {chapters}
+str.details_partly: teilweise {chapters}
+str.details_caveat: Von Hand vorgenommene Änderungen sind hier nicht verzeichnet; wurde ein Abschnitt zweimal redigiert, steht die spätere Redaktion.

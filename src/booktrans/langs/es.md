@@ -41,7 +41,6 @@ code: es
 str.about_title: Sobre esta traducción
 str.about_made: Traducción automática realizada con la canalización {pipeline}.
 str.about_version: versión del {date}
-str.about_model: Modelo: {models}.
 str.about_date: Traducido el: {date}.
 str.about_quality: La terminología y los nombres se mantienen uniformes en todo el libro, el texto ha pasado por una revisión literaria aparte y las notas del traductor van marcadas de forma explícita.
 str.about_caveat: Es un buen borrador, no el trabajo de un traductor humano: en los diálogos largos, los juegos de palabras y el ritmo del autor caben deslices.
@@ -56,3 +55,11 @@ str.untitled: Libro
 str.translator: traducción automática
 str.about_notes: Las notas y las aclaraciones también son obra de la máquina. Pueden contener imprecisiones y, a veces, errores lisos y llanos: conviene comprobar por cuenta propia fechas, nombres y referencias a las fuentes.
 str.about_disclaimer: La traducción se ofrece tal cual, sin garantía de ninguna clase. Ni el autor de la canalización ni quien la ejecutó responden de las consecuencias del uso de este texto, incluidas las decisiones tomadas sobre un sentido transmitido de forma inexacta.
+str.details_title: Detalles de la traducción
+str.details_scout: Pasada de reconocimiento: {models}.
+str.details_translate: Traducción: {models}.
+str.details_edit: Revisión literaria: {models}.
+str.details_all: el libro entero
+str.details_chapters: capítulos {chapters}
+str.details_partly: en parte {chapters}
+str.details_caveat: Las correcciones hechas a mano no constan aquí; si un fragmento se revisó dos veces, se nombra al último revisor.

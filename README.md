@@ -435,7 +435,10 @@ reversible. That is where a cheaper model is worth trying first.
 - **publication data** — publisher, year, original title, ISBN;
 - **translator's footnotes**, explicitly marked as such;
 - **an "About this translation" section** at the front: which pipeline, which
-  model, on what date.
+  build of it, on what date;
+- **a "Translation details" section** at the back: which model did the
+  reconnaissance, the translation and the editing, and over which chapters —
+  in ranges, and only when more than one model was involved.
 
 What does not: tables of contents, newsletter advertising, watermarks from
 pirated files.
