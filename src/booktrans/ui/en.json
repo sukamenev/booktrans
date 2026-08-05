@@ -1,5 +1,6 @@
 {
   "_comment": "Interface messages. To add a language, copy this file under a new code and translate the values. Do not change the keys. {} is a placeholder.",
+  "tagline": "whole book translation",
   "reading": "reading {}",
   "images": "images in text: {}",
   "cleaned": "removed: {} watermarks, {} boilerplate pages",

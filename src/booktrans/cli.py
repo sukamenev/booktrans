@@ -148,6 +148,10 @@ def main():
     ap.add_argument("--fallback-model", default=os.environ.get("BT_FALLBACK_MODEL"),
                     help=T("h_fb_model"))
     args = ap.parse_args()
+    T = lang.set_ui(args.ui)
+    log("")
+    log(build.banner(args.ui))
+    log("")
 
     if args.check:
         T = lang.set_ui(args.ui)
@@ -286,6 +290,11 @@ def main():
         # спрашиваем модель, один раз на книгу.
         marks = None
         if os.path.splitext(args.book)[1].lower() in (".pdf", ".txt", ".md"):
+            # Разметка идёт и без этапа structure — книгу всё равно надо
+            # прочесть, — так что заголовок печатает она сама.
+            if "structure" not in steps:
+                log(f"=== {T('step_structure')} ===")
+                log("")
             marks = pipeline.format_marks(
                 work, args.book, agent_for("formatter"), task("format"),
                 args.encoding, ask_model, log)

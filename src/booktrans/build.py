@@ -74,6 +74,35 @@ def version(code="ru"):
     return False, lang.fmt_date(os.path.getmtime(os.path.join(here, "cli.py")), code)
 
 
+def release_version():
+    """Номер выпуска — из индекса, а нет его, так из pyproject рабочей копии."""
+    try:
+        from importlib.metadata import version as _v
+        return _v("booktrans")
+    except Exception:                                 # noqa: BLE001
+        pass
+    p = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))), "pyproject.toml")
+    try:
+        m = re.search(r'^version\s*=\s*"([^"]+)"', open(p, encoding="utf-8").read(), re.M)
+        return m.group(1) if m else "?"
+    except OSError:
+        return "?"
+
+
+def banner(code="ru"):
+    """Строка, какой конвейер представляется при запуске.
+
+    Номер выпуска и, если работаем из репозитория, дата сборки: по ней видно,
+    что это не выпущенная версия, а рабочая копия.
+    """
+    out = f"{PIPELINE} {release_version()}"
+    release, ver = version(code)
+    if not release:
+        out += f" ({ver})"
+    return out + " — " + lang.T("tagline")
+
+
 def _ranges(nums):
     """1,2,3,7 → «1–3, 7»."""
     out, nums = [], sorted(nums)
