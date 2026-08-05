@@ -247,7 +247,7 @@ class Truncated(ValueError):
 
 def _run(agent, system, prompt, retries, parse_fn, log):
     cur = prompt
-    stops = []
+    stops, last = [], None
     for attempt in range(1, retries + 1):
         if STOP.is_set():
             raise KeyboardInterrupt
@@ -256,13 +256,17 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             out, meta = agent.run(system, cur)
             return parse_fn(out), meta, time.time() - t0
         except Truncated as e:
-            stops.append(e.first)
             log("\n    " + T("retry", attempt, e))
             # Оборвалось дважды на одном и том же месте — дело не в
             # случайности и не в размере куска: модель не хочет переводить
             # именно это. Дальнейшие попытки бесполезны и стоят денег.
-            if len(stops) >= 2 and stops[-1] == stops[-2]:
+            # Подряд они идти не обязаны: на живой книге модель вставала на
+            # b0038, b0034, b0002, b0034, b0038 — пять раз об одно и то же,
+            # и ни разу дважды кряду.
+            if e.first in stops:
                 raise Refused(e.first, e.n, e.total) from None
+            stops.append(e.first)
+            last = e
             cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
                             "Верни РОВНО требуемые идентификаторы, каждый один раз.")
         except Fatal:
@@ -271,6 +275,11 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             log("\n    " + T("retry", attempt, e))
             cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
                             "Верни РОВНО требуемые идентификаторы, каждый один раз.")
+    if last is not None:
+        # Кусок обрывался до последней попытки — это отказ, а не сбой связи.
+        # Через Refused его подхватит запасная модель; RuntimeError валил
+        # весь прогон, и подстраховка, ради которой её и задают, не звалась.
+        raise Refused(last.first, last.n, last.total) from None
     raise RuntimeError("исчерпаны попытки")
 
 
