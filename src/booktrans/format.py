@@ -70,10 +70,14 @@ def plan(paras, run, log, photo=()):
 
     `run` — вызов модели: (prompt) → текст."""
     marks, toc = {}, []
-    for lo in range(0, len(paras), WINDOW):
+    n = (len(paras) + WINDOW - 1) // WINDOW
+    for w, lo in enumerate(range(0, len(paras), WINDOW), 1):
         part = paras[lo:lo + WINDOW]
         body = "\n".join(_show(lo + i + 1, p, lo + i + 1 in photo)
                          for i, p in enumerate(part))
+        # Окон бывает десяток, по семь-восемь секунд каждое, и всё это время
+        # конвейер молчал — со стороны неотличимо от зависания.
+        log(f"{w}/{n} ", end="")
         out = run(body)
         marks.update(_parse(out, lo + 1, lo + len(part)))
         toc += [s for s in _toc_lines(out) if s not in toc]
