@@ -83,3 +83,5 @@ str.details_all: вся книга
 str.details_chapters: главы {chapters}
 str.details_partly: частично {chapters}
 str.details_caveat: Правки, внесённые вручную, здесь не отражены; если кусок редактировался дважды, назван последний из редакторов.
+str.details_reader: Исходный файл прочитан: {reader}.
+str.details_format: Разметка текста без разметки: {models}.

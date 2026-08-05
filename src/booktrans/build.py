@@ -150,6 +150,13 @@ def details_lines(work, st, blocks):
     """
     chapter = _chapter_of(blocks)
     body = []
+    p = os.path.join(work, "source.json")
+    if os.path.exists(p):
+        src = json.load(open(p, encoding="utf-8"))
+        if src.get("reader"):
+            body.append(st["details_reader"].format(reader=src["reader"]))
+        if src.get("formatter"):
+            body.append(st["details_format"].format(models=src["formatter"]))
     p = os.path.join(work, "scout.json")
     if os.path.exists(p):
         m = json.load(open(p, encoding="utf-8")).get("model")

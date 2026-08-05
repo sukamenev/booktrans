@@ -938,7 +938,16 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     log("  " + T("marks_done", kinds.get("title", 0), kinds.get("skip", 0),
                  kinds.get("+", 0)))
     json.dump(marks, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    note_source(work, formatter=getattr(agent, "model", None) or "?")
     return marks
+
+
+def note_source(work, **kw):
+    """Чем читали и чем размечали книгу — для раздела в её конце."""
+    p = f"{work}/source.json"
+    was = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    was.update({k: v for k, v in kw.items() if v})
+    json.dump(was, open(p, "w", encoding="utf-8"), ensure_ascii=False)
 
 
 # ---------------------------------------------------------------- разведка

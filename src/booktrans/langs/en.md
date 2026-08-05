@@ -65,3 +65,5 @@ str.details_all: the whole book
 str.details_chapters: chapters {chapters}
 str.details_partly: in part {chapters}
 str.details_caveat: Changes made by hand are not shown here; where a chunk was edited twice, the later editor is the one named.
+str.details_reader: The source file was read with: {reader}.
+str.details_format: Marking up the unmarked text: {models}.

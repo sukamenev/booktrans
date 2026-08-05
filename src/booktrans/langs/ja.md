@@ -44,3 +44,5 @@ str.details_all: 全篇
 str.details_chapters: 第{chapters}章
 str.details_partly: 一部: 第{chapters}章
 str.details_caveat: 手作業による修正はここに記していません。同じ箇所を二度推敲した場合は、後の担当を示しています。
+str.details_reader: 原本の読み取り: {reader}。
+str.details_format: 構造のない本文の構造付け: {models}。

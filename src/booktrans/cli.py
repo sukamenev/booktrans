@@ -261,6 +261,9 @@ def main():
             marks = pipeline.format_marks(
                 work, args.book, agent_for("formatter"), task("format"),
                 args.encoding, ask_model, log)
+        pipeline.note_source(work, reader={
+            ".pdf": "pdftotext + pdfimages (poppler)"}.get(
+                os.path.splitext(args.book)[1].lower(), ""))
         log("  " + T("reading", args.book))
         try:
             meta, blocks, cover, images = extract.read_book(
