@@ -25,7 +25,7 @@ str.about_made: Maschinelle Übersetzung, erstellt mit der Pipeline {pipeline}.
 str.about_version: Fassung vom {date}
 str.about_date: Übersetzt am: {date}.
 str.about_quality: Terminologie und Namen sind im ganzen Buch einheitlich, der Text wurde in einem eigenen Durchgang lektoriert, und Anmerkungen des Übersetzers sind ausdrücklich gekennzeichnet.
-str.about_caveat: Das ist ein guter Rohentwurf, aber nicht die Arbeit eines menschlichen Übersetzers: bei langen Dialogen, Wortspielen und dem Rhythmus des Autors sind Mängel möglich.
+str.about_caveat: Bei langen Dialogen, Wortspielen und dem Rhythmus des Autors sind Mängel möglich.
 str.note_prefix: Anm. d. Übers.:
 str.date_fmt: {d}. {month} {y}
 str.months: Januar,Februar,März,April,Mai,Juni,Juli,August,September,Oktober,November,Dezember

@@ -43,7 +43,7 @@ str.about_made: Traducción automática realizada con la canalización {pipeline
 str.about_version: versión del {date}
 str.about_date: Traducido el: {date}.
 str.about_quality: La terminología y los nombres se mantienen uniformes en todo el libro, el texto ha pasado por una revisión literaria aparte y las notas del traductor van marcadas de forma explícita.
-str.about_caveat: Es un buen borrador, no el trabajo de un traductor humano: en los diálogos largos, los juegos de palabras y el ritmo del autor caben deslices.
+str.about_caveat: En los diálogos largos, los juegos de palabras y el ritmo del autor caben deslices.
 str.note_prefix: N. del T.:
 str.date_fmt: {d} de {month} de {y}
 str.months: enero,febrero,marzo,abril,mayo,junio,julio,agosto,septiembre,octubre,noviembre,diciembre

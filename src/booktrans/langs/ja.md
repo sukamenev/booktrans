@@ -25,7 +25,7 @@ str.about_made: 本書は翻訳パイプライン {pipeline} による機械翻�
 str.about_version: {date}版
 str.about_date: 翻訳日：{date}
 str.about_quality: 用語と固有名詞は全編で統一され、別途推敲の工程を経ています。訳者による注はその旨を明記しています。
-str.about_caveat: これは優れた下訳であり、人間の翻訳者の仕事ではありません。長い会話、言葉遊び、原文の律動には不備が残る場合があります。
+str.about_caveat: 長い会話、言葉遊び、原文の律動には不備が残る場合があります。
 str.note_prefix: 訳注：
 str.date_fmt: {y}年{m}月{d}日
 str.notes_title: 注
