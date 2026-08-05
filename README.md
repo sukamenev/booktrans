@@ -653,11 +653,32 @@ mangles a running head differently every time. Numbered chapters ("Chapter 1",
 alone. Every other mismatch is merely reported — what to do about it is a
 human's call. The parsed contents are kept in `work/toc.json`.
 
+What makes a line a running head is repetition, and repetition comes in two
+kinds. The book's title stands on every verso, so a share of the pages gives it
+away. A chapter's running head stands only on that chapter's pages — four to
+six times in a three-hundred-page book — and no share will ever catch it; what
+does catch it is that the pages run close together: 43, 44, 48, 50. Both are
+counted, otherwise chapter running heads reach the translation and wedge
+themselves into the middle of a sentence. A line of the contents looks exactly
+like a running head (title, gap, page number), but a page carrying many such
+lines is left alone: the contents is where the book names its own chapters, and
+nothing there can be spared.
+
 A running head is also taken out where it has been glued into the middle of
 a line: in a book set without leading it lands on the same line as the text
 and stands at no edge at all. Only what the rule above already recognised is
 removed, and only where the typesetting leaves a gap of whitespace around
 it — "The Scientist" inside a sentence of the author's is left alone.
+
+**A paragraph torn apart by the end of a page is glued back together.** The
+page break splits it at a hyphen ("lis-" / "tened") or simply mid-sentence
+("hooked a compass" / "needle"), and the translator was handed half a sentence
+at a time: on a live book 217 paragraphs out of 1733 were broken that way. The
+model has a mark for this but does not always place it, whereas the machine
+signal is the more reliable one: a hyphenated word or a break with no
+punctuation, followed by a lowercase letter. An uppercase letter means a new
+paragraph, hyphen or no hyphen. Verse and code listings are never glued.
+To check: `python3 tests/glue_check.py`.
 
 
 ## Listings in programming books
@@ -761,9 +782,16 @@ are applied on reading. To check the filter without calling a model:
 
 A reference list is left as it stands: it is what the reader uses to find the
 sources, and a journal article's title rendered into another language only
-gets in the way. Such a block is recognised by content — three publication
-years and three entry numbers in one block — because out of a pdf the whole
-list arrives as one page-sized block.
+gets in the way.
+
+It is recognised not by a single entry but by a run of them: the numbers climb,
+1, 2, 3 — prose never does that. Runs broken apart by a mangled digit are
+stitched back together, since between two confirmed stretches of a list there
+can be nothing but the list. A numbered run without publication years is not
+taken for one. The older rule still stands alongside it, for books where the
+whole bibliography arrives as one page-sized block: three years and three entry
+numbers inside it. To check the picking without calling a model:
+`python3 tests/refs_check.py`.
 
 ## Layout
 

@@ -638,6 +638,23 @@ def _nums(t, group=True):
     return Counter(re.findall(r"\d+", t))
 
 
+def _ocr_digit(s, n):
+    """Пропавшая цифра — это порча распознавания, а не потеря в переводе.
+
+    В распознанном тексте цифра стоит на месте буквы: «1 have attended» — это
+    I, «World War 11» — II, «5t. Paul» — St. Переводчик читает их верно и в
+    перевод цифру не несёт, а проверка считала это ошибкой. На живой книге из
+    девяноста таких сообщений верным не оказалось ни одного, и раздел, всегда
+    красный, перестают читать вовсе.
+
+    Спрашиваем только у распознанных книг: в набранной цифра стоит там, где
+    её поставил автор, и пропасть ей не с чего.
+    """
+    if re.search(rf"[^\W\d_]{re.escape(n)}|{re.escape(n)}[^\W\d_]", s):
+        return True          # приклеена к букве: 5t. Paul, fun7ishing, l3
+    return len(n) <= 2       # одиночная на месте буквы: 1, 11, 5
+
+
 def _more(log, n, T):
     """Сколько осталось за кадром. Молчаливый обрыв списка читается как
     «это всё», и человек проверяет восемь строк вместо двадцати двух."""
@@ -812,7 +829,7 @@ def _script_of_text(texts):
     return best if most >= 200 else None
 
 
-def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
+def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     T = T or lang.T
     src = {b["id"]: b["text"] for b in blocks
            if b["kind"] not in ("break", "image") + HEAD_KINDS
@@ -829,7 +846,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
         log("   " + T("qa1_ok", len(src)) + (T("qa1_edited", edited) if edited else ""))
 
     log(T("qa2"))
-    lost = []
+    lost, junk, gained = [], set(), []
     for i, s in src.items():
         if i not in tr:
             continue
@@ -838,16 +855,34 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
         # не видно, поэтому число считаем уцелевшим, если оно нашлось хоть при
         # одном из двух.
         a, b = _nums(s), _nums(tr[i]) | _nums(tr[i], group=False)
-        if a - b:
-            lost.append((i, sorted(a - b)))
+        bad = sorted(a - b)
+        if ocr:
+            junk |= {i for x in bad if _ocr_digit(s, x)}
+            bad = [x for x in bad if not _ocr_digit(s, x)]
+        if bad:
+            lost.append((i, bad))
+        # Обратная сторона: цифра, которой в оригинале не было. Сверить её не
+        # с чем — ни оригинала, ни источника у машины нет, — а появиться она
+        # может и от правки распознанной даты, и от пересчёта в другие
+        # единицы. Поэтому не ошибка, а строка «посмотрите глазами».
+        new = sorted(_nums(tr[i]) - (a | _nums(s, group=False)))
+        if new:
+            gained.append((i, new))
     if lost:
         problems += len(lost)
         log("   " + T("qa2_bad", len(lost)))
         for i, x in lost[:8]:
             log(f"     {i}  {x}")
         _more(log, len(lost) - 8, T)
-    else:
+    elif not junk:
         log("   " + T("qa2_ok"))
+    if junk:
+        log("   " + T("qa2_ocr", len(junk)))
+    if gained:
+        log("   " + T("qa2_new", len(gained)))
+        for i, x in gained[:5]:
+            log(f"     {i}  {x}")
+        _more(log, len(gained) - 5, T)
 
     log(T("qa3"))
     # Отклонение считаем от собственной середины книги, а не от готовых

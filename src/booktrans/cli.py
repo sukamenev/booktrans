@@ -524,7 +524,7 @@ def main():
         n += 1
         log("")
         log(f"=== {n}. {T('step_qa')} ===")
-        build.qa(work, blocks, log, T, meta.get("lang"), args.to)
+        build.qa(work, blocks, log, T, meta.get("lang"), args.to, bool(made_by_ocr))
         build.unfinished_edits(work, log, T)
         build.review_report(work, log)
         build.sources_report(work, log)

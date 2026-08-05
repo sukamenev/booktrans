@@ -624,6 +624,7 @@ OCR_MADE = re.compile(
     r"|cuneiform|acrobat capture|paperport|kofax|nuance|iris ?ocr", re.I)
 
 
+@functools.lru_cache(maxsize=8)
 def ocr_made(path):
     """Сделан ли текстовый слой pdf распознаванием.
 
@@ -814,13 +815,70 @@ HEAD_LINES, HEAD_SHARE, HEAD_MIN = 2, 0.15, 4
 # Порог тут почти формальный — строка текста в вёрстке короче, и отсекает
 # её не длина, а повторяемость.
 HEAD_MAX = 120
+# Через сколько страниц колонтитул повторяется. Доли по книге мало: название
+# книги стоит на каждом обороте и порог берёт, а колонтитул главы — только на
+# её страницах, четыре-шесть раз на книгу в триста страниц, и не берёт. Зато
+# он идёт подряд: 43, 44, 48, 50 — а строка, случайно повторившаяся в разных
+# концах книги, так не ложится.
+HEAD_GAP = 5
+HEAD_NEAR = 0.8    # с какого сходства искажённые колонтитулы считаются одним
+# Строка оглавления: название, провал вёрстки, номер страницы. Ключ у неё тот
+# же, что у колонтитула (цифры из ключа выброшены), и под правило она попадает
+# наравне с ним. Но оглавление — единственное место, где книга сама называет
+# свои главы, и терять из него строки нельзя. Отличается оно тем, что таких
+# строк на странице много.
+TOC_LINE = re.compile(r"\S[ \t]{2,}\d{1,4}[ \t]*$")
+TOC_PAGE = 5
 
 
 def _running_key(s):
     return re.sub(r"\W+", "", re.sub(r"\d+", "", s), flags=re.U).lower()
 
 
-def _strip_running(txt):
+def _head_often(cand, at, pages, dirty):
+    """Какие из строк по краям страниц — колонтитулы.
+
+    Служебной строку делает повтор, но повтор бывает двух видов: сквозной
+    (название книги на каждом обороте) и местный (колонтитул главы на её
+    десяти страницах). Считали только первый, поэтому колонтитулы глав
+    доходили до перевода и вклинивались в середину фразы.
+
+    В распознанном тексте колонтитул искажён каждый раз по-своему, и ни один
+    из вариантов сам по себе до порога не дотягивает: «...the Human Mind» —
+    трижды, «...the Iltunan Mind» — однажды. Поэтому у грязной книги близкие
+    строки сначала сводятся в одну. Сводим только вокруг тех, что встретились
+    хотя бы дважды: перебирать все строки книги против всех — это минуты.
+    """
+    if dirty:
+        seeds = sorted((k for k, n in cand.items() if k and n >= 2),
+                       key=lambda k: -cand[k])
+        seen = set(seeds)
+        for k in list(cand):
+            if not k or k in seen:
+                continue
+            for s in seeds:
+                if abs(len(k) - len(s)) <= max(4, len(s) // 4) \
+                        and difflib.SequenceMatcher(None, k, s).ratio() >= HEAD_NEAR:
+                    cand[s] += cand.pop(k)
+                    at[s] = sorted(at[s] + at.pop(k))
+                    break
+
+    need = max(HEAD_MIN, pages * HEAD_SHARE)
+    often = set()
+    for k, n in cand.items():
+        if not k:
+            continue
+        if n >= need:
+            often.add(k)
+            continue
+        if n >= HEAD_MIN:
+            gaps = sorted(b - a for a, b in zip(at[k], at[k][1:]))
+            if gaps[len(gaps) // 2] <= HEAD_GAP:
+                often.add(k)
+    return often
+
+
+def _strip_running(txt, dirty=False):
     """Снять колонтитулы и номера страниц.
 
     Делаем это до разбора на абзацы, а не пометками модели. Причина простая:
@@ -844,23 +902,25 @@ def _strip_running(txt):
     pages = txt.split("\f")
     if len(pages) < 5:
         return txt
-    cand, gone = collections.Counter(), set()
-    for p in pages:
+    toc = [sum(bool(TOC_LINE.search(l)) for l in p.split("\n")) >= TOC_PAGE
+           for p in pages]
+    cand, at, gone = collections.Counter(), collections.defaultdict(list), set()
+    for k, p in enumerate(pages):
         lines = [l.strip() for l in p.split("\n") if l.strip()]
         for l in lines[:HEAD_LINES] + lines[-HEAD_LINES:]:
-            if len(l) <= HEAD_MAX:
+            if len(l) <= HEAD_MAX and not (toc[k] and TOC_LINE.search(l)):
                 cand[_running_key(l)] += 1
-    need = max(HEAD_MIN, len(pages) * HEAD_SHARE)
-    often = {k for k, n in cand.items() if k and n >= need}
+                at[_running_key(l)].append(k)
+    often = _head_often(cand, at, len(pages), dirty)
 
     out = []
-    for p in pages:
+    for pg, p in enumerate(pages):
         lines = p.split("\n")
         idx = [i for i, l in enumerate(lines) if l.strip()]
         drop = set()
         for i in idx[:HEAD_LINES] + idx[-HEAD_LINES:]:
             s = lines[i].strip()
-            if len(s) > HEAD_MAX:
+            if len(s) > HEAD_MAX or (toc[pg] and TOC_LINE.search(s)):
                 continue
             k = _running_key(s)
             if not k:
@@ -910,7 +970,10 @@ def _pdf_text(path):
     if r.returncode != 0 and not r.stdout.strip():
         raise BadBook(f"pdftotext не смог прочитать {os.path.basename(path)}: "
                       + (r.stderr.strip().splitlines() or ["неизвестная ошибка"])[-1])
-    txt = _strip_running(_unspace(_fix_mojibake(r.stdout)))
+    # Pdf от программы распознавания считаем грязным весь, без разбора: чистый
+    # текстовый слой она не делает, а мерить порчу по самому тексту нечем —
+    # имена собственные шумят сильнее ошибок (см. ocr_made).
+    txt = _strip_running(_unspace(_fix_mojibake(r.stdout)), dirty=bool(ocr_made(path)))
     if not txt.strip():
         raise BadBook(
             f"в {os.path.basename(path)} нет текстового слоя — это скан или "
@@ -1362,11 +1425,71 @@ REFS_HEAD = re.compile(
 # блоке — опознавать надо содержимое, а не разбивку.
 REFS_YEAR = re.compile(r"\b(1[6-9]\d\d|20\d\d)\b")
 REFS_ITEM = re.compile(r"(?:^|[\s;])(?:\d{1,3}[.)]|\[\d{1,3}\])\s+[A-ZА-ЯЁ]")
+# Тот же номер записи, но с числом наружу: по нему список ищется рядом блоков.
+REFS_NUM = re.compile(r"(?:^|[\s;(\[])(\d{1,3})[.)]\s+[A-ZА-ЯЁ]")
+REFS_RUN = 5        # столько записей подряд — уже список, а не перечисление
+REFS_STEP = 8       # на столько номер может прыгнуть: часть цифр битая
+REFS_HOLE = 40      # столько блоков между рядами ещё считаем тем же списком
+REFS_TAIL = 2       # столько строк добираем после последней записи
 
 
 def _looks_refs(text):
     t = strip_tags(text)
     return len(REFS_YEAR.findall(t)) >= 3 and len(REFS_ITEM.findall(t)) >= 3
+
+
+def _refs_span(blocks):
+    """Границы списка литературы, когда он разбит по записи (или строке) на блок.
+
+    Раньше список опознавался по одному блоку: из pdf он приходил страницей
+    целиком, и трёх годов с тремя номерами в этом блоке хватало. После того
+    как абзацы стали разбираться по-настоящему, запись занимает свой блок —
+    и правило замолчало: на живой книге из 329 блоков библиографии `asis`
+    получил ровно один, а остальные 328 переводились и правились впустую.
+
+    Признак списка — не отдельная запись, а их ряд: номера идут вверх, 1, 2,
+    3… В прозе так не бывает. Ряды рвутся там, где распознавание испортило
+    цифру, поэтому близкие ряды сшиваем: между двумя подтверждёнными кусками
+    списка ничего кроме списка быть не может.
+    """
+    seq = [(i, int(m.group(1)))
+           for i, b in enumerate(blocks) if b["kind"] in ("p", "note")
+           for m in REFS_NUM.finditer(" ".join(strip_tags(b["text"]).split()))]
+    runs, cur = [], []
+    for i, n in seq:
+        if cur and n > cur[-1][1] and n - cur[-1][1] <= REFS_STEP \
+                and i - cur[-1][0] <= REFS_HOLE:
+            cur.append((i, n))
+            continue
+        # Ряд из одного блока — это перечисление внутри абзаца («(1) … (2) …»),
+        # а не список литературы: он обязан занимать несколько блоков.
+        if len(cur) >= REFS_RUN and cur[-1][0] > cur[0][0]:
+            runs.append((cur[0][0], cur[-1][0]))
+        cur = [(i, n)]
+    if len(cur) >= REFS_RUN and cur[-1][0] > cur[0][0]:
+        runs.append((cur[0][0], cur[-1][0]))
+
+    out = []
+    for lo, hi in runs:
+        if out and lo - out[-1][1] <= REFS_HOLE:
+            out[-1] = (out[-1][0], hi)
+        else:
+            out.append((lo, hi))
+    spans = []
+    for lo, hi in out:
+        text = " ".join(strip_tags(b["text"]) for b in blocks[lo:hi + 1])
+        if len(set(REFS_YEAR.findall(text))) < 3:
+            continue        # список без годов издания — скорее всего не он
+        # Последняя запись дочитывается по строчной букве: продолжение строки
+        # с неё и начинается, а следующий раздел — с прописной.
+        end = hi
+        while hi + 1 < len(blocks) and hi + 1 - end <= REFS_TAIL:
+            t = strip_tags(blocks[hi + 1]["text"])
+            if blocks[hi + 1]["kind"] not in ("p", "note") or not t[:1].islower():
+                break
+            hi += 1
+        spans.append((lo, hi))
+    return spans
 
 
 def _mark_refs(blocks):
@@ -1378,13 +1501,18 @@ def _mark_refs(blocks):
     сплошные сокращения и номера, из pdf ещё и с мусором распознавания.
 
     Блок не выбрасываем, а помечаем: в книгу он попадёт слово в слово.
-    Порог высокий нарочно — три года издания и три номера записи в одном
-    блоке. Ложное срабатывание оставит непереведённую главу, а это заметят
-    не сразу.
+    Ищем двумя способами — рядом блоков с растущими номерами записей
+    (`_refs_span`) и по одному блоку, когда весь список пришёл страницей
+    целиком. Пороги высокие нарочно: ложное срабатывание оставит
+    непереведённую главу, а это заметят не сразу.
     """
-    n = 0
+    n, run = 0, set()
+    for lo, hi in _refs_span(blocks):
+        run |= set(range(lo, hi + 1))
     for i, b in enumerate(blocks):
-        if b["kind"] not in ("p", "note") or not _looks_refs(b["text"]):
+        if b["kind"] not in ("p", "note") or b.get("asis"):
+            continue
+        if not (_looks_refs(b["text"]) or i in run):
             continue
         b["asis"] = True
         n += 1

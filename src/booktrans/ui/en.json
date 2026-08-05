@@ -82,6 +82,8 @@
   "qa2": "2. NUMBERS  (digits in the source must stay digits)",
   "qa2_bad": "ERROR: digits gone — blocks: {0} (spelled out?)",
   "qa2_ok": "all digits present",
+  "qa2_ocr": "a digit standing for a letter (1 for I, 5 for S) — OCR damage, not counted: blocks {0}",
+  "qa2_new": "digits that were not in the source appeared in the translation — blocks: {0} (nothing to check them against, take a look)",
   "qa3": "3. PARAGRAPH LENGTH  (an outlier betrays an omission)",
   "qa3_mid": "usual length ratio for this book: {0}",
   "qa3_bad": "suspicious: {0} (often false alarms)",
