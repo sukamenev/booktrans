@@ -745,6 +745,22 @@ def usage_report(work, log, T=None):
     log("  " + T("usage_note_sub"))
 
 
+def _script_of_text(texts):
+    """Какой письменностью написан оригинал, если язык книги не указан.
+
+    В pdf его нет почти никогда, и проверка на непереведённые куски молча
+    пропускалась: «пропущено — оригинал и перевод пишутся одной
+    письменностью (?)». Считать буквы дешевле и вернее, чем гадать.
+    """
+    best, most = None, 0
+    joined = " ".join(list(texts)[:400])
+    for name, rng in lang.SCRIPTS.items():
+        n = len(re.findall(f"[{rng}]", joined))
+        if n > most:
+            best, most = name, n
+    return best if most >= 200 else None
+
+
 def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
     T = T or lang.T
     src = {b["id"]: b["text"] for b in blocks
@@ -808,7 +824,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
     # Ищем в переводе куски, написанные письменностью оригинала. Если
     # оригинал и перевод пишутся одинаково (немецкий → французский),
     # искать нечего — проверку пропускаем, а не выдаём книгу целиком.
-    ssc, tsc = lang.script_of(src_lang), lang.script_of(to)
+    ssc, tsc = lang.script_of(src_lang) or _script_of_text(src.values()), lang.script_of(to)
     if ssc and tsc and ssc != tsc:
         rng = lang.SCRIPTS[ssc]
         pat = re.compile(rf"[{rng}]{{4,}}")
@@ -823,15 +839,16 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru"):
     else:
         log("   " + T("qa4_skip", ssc or "?"))
 
-    log(T("qa5"))
+    # Раздела нет вовсе, когда нет правил: строка «правил нет» в каждом
+    # прогоне ничего не проверяет и читается как замечание. Про terms.json
+    # сказано в README, там ему и место.
     rules = {}
     tp = f"{work}/terms.json"
     if os.path.exists(tp):
         rules = {k: v for k, v in json.load(open(tp, encoding="utf-8")).items()
                  if not k.startswith("_")}
-    if not rules:
-        log("   " + T("qa5_none"))
-    else:
+    if rules:
+        log(T("qa5"))
         for en, ru in rules.items():
             ids = [i for i, s in src.items() if re.search(re.escape(en), s, re.I)]
             bad = [i for i in ids if i in tr and not re.search(ru, tr[i], re.I)]
