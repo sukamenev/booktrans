@@ -382,7 +382,7 @@ def main():
     log("  " + T("workdir", work))
     log("")
 
-    made_by_ocr = extract.ocr_made(args.book)
+    made_by_ocr = pipeline.ocr_check(work, args.book, agent_for("formatter"), log)
     if made_by_ocr:
         log("  " + T("ocr_made", made_by_ocr))
 

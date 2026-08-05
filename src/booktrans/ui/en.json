@@ -142,6 +142,7 @@
   "code_done": "comments translated: {0} across {1} listings",
   "regrown": "paragraphs re-asked for a length that did not match: {0}",
   "ocr_made": "the pdf text layer came from OCR ({0}) — the passes are warned of the damage",
+  "ocr_seen": "recognition damage shows in the text: {0}",
   "marks_known": "text already marked up (delete work/marks.json to redo)",
   "marks_start": "marking up the text: {0} pieces ... ",
   "marks_done": "headings {0}, running heads and numbers dropped {1}, breaks joined {2}",

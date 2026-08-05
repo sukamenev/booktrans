@@ -710,7 +710,11 @@ Whether the text was recognised is asked of the file itself: an OCR program
 signs the metadata ("OmniPage 11 http://www.scansoft.com") while a typesetter
 names itself otherwise ("Acrobat Distiller"). The text will not tell you — on a
 live book the share of broken words came out lower in the scanned one than in a
-clean epub.
+clean epub. There are many OCR programs, but they sign themselves alike, and a
+dozen of the commonest are covered by a list, which costs nothing. With no
+signature the pipeline shows a model a piece of the text and asks outright: it
+knows the damage at a glance. Asked once per book, the answer kept in
+`work/source.json`.
 
 In a pdf letters get swapped and words broken by a space: `IIc realized` for
 "He realized", `J ANUS Proj ect` for "JANUS Project", `Seduction by If` for

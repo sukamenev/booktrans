@@ -1141,6 +1141,51 @@ def _by_lines(blocks, limit):
     return out + ([cur] if cur else [])
 
 
+OCR_SAMPLE = 3000       # знаков текста, по которым видно, распознан ли он
+
+
+def ocr_check(work, path, agent, log):
+    """Распознан ли текстовый слой pdf. Возвращает, чем именно, или пустое.
+
+    Сперва метаданные: программ распознавания много, но подписываются они
+    одинаково, и десяток самых ходовых закрыт списком — это бесплатно.
+    Подписи нет — спрашиваем модель, показав ей кусок текста: порчу она
+    узнаёт с одного взгляда, а нам гадать по числам не вышло.
+
+    Спрашиваем один раз на книгу: ответ ложится в `work/source.json`.
+    """
+    from . import extract
+    made = extract.ocr_made(path)
+    if made:
+        return made
+    if not path.lower().endswith(".pdf"):
+        return ""
+    p = f"{work}/source.json"
+    was = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    if "ocr" in was:
+        # «нет» вместо пустой строки: note_source пустых значений не хранит,
+        # а различать «спрашивали, не распознан» и «не спрашивали» надо.
+        return "" if was["ocr"] == "нет" else was["ocr"]
+    txt = extract._pdf_text(path)
+    lo = len(txt) // 3
+    sample = txt[lo:lo + OCR_SAMPLE]
+    ask = ("Перед тобой кусок текста из книги. Скажи, распознан ли он машиной "
+           "с бумаги или набран начисто.\n\nПризнаки распознавания: перепутанные "
+           "буквы («IIc» вместо «He»), слова, разорванные пробелом («Proj ect»), "
+           "цифры вместо букв («SCIENT15T»), мусорные знаки внутри слов.\n\n"
+           "Ответь первым словом РАСПОЗНАН или НАБРАН, дальше — до пяти примеров "
+           "порчи, если она есть.\n\n---\n\n" + sample)
+    try:
+        out, _ = agent.run("", ask)
+    except Exception:                                  # noqa: BLE001
+        return ""
+    made = "по тексту" if re.match(r"\W*РАСПОЗНАН", out.strip(), re.I) else ""
+    note_source(work, ocr=made or "нет")
+    if made:
+        log("  " + T("ocr_seen", " ".join(out.split()[1:12])))
+    return made
+
+
 def note_source(work, **kw):
     """Чем читали и чем размечали книгу — для раздела в её конце."""
     p = f"{work}/source.json"
