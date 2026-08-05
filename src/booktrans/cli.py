@@ -169,16 +169,19 @@ def main():
     steps = [args.only] if args.only else [s for s in STEPS if s not in args.skip.split(",")]
     only_chunks = {int(x) for x in args.chunks.split(",")} if args.chunks else None
 
-    CHEAP = {"claude": "claude-sonnet-5", "agy": "gemini-3.1-flash"}
+    # Разметка — работа опознавательная, а не сочинительная: берём самую
+    # дешёвую модель поставщика и низкое усилие. У agy усилие вшито в имя
+    # модели, и отдельным ключом его туда передавать нельзя.
+    CHEAP = {"claude": ("claude-sonnet-5", "low"),
+             "agy": ("gemini-3.6-flash-low", None)}
 
     def agent_for(role=None):
-        if role == "formatter" and not args.formatter:
-            m = CHEAP.get(args.agent)
-            if m:
-                return make_agent(args.agent, m, args.agent_cmd, wait=args.wait,
-                                  max_wait=args.max_wait, log=log, effort="low")
-        """Своя модель на проход: у разведки, перевода и редактуры разные
-        требования, и платить за все одинаково незачем."""
+        """Своя модель на проход: у разметки, разведки, перевода и редактуры
+        разные требования, и платить за все одинаково незачем."""
+        if role == "formatter" and not args.formatter and args.agent in CHEAP:
+            m, eff = CHEAP[args.agent]
+            return make_agent(args.agent, m, args.agent_cmd, wait=args.wait,
+                              max_wait=args.max_wait, log=log, effort=eff)
         m = (getattr(args, role, None) if role else None) or args.model
         return make_agent(args.agent, m, args.agent_cmd,
                           wait=args.wait, max_wait=args.max_wait, log=log, effort=args.effort)
