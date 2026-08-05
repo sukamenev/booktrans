@@ -456,6 +456,46 @@ def _stop_row(refused, log, force=False, what="translate"):
     return True
 
 
+# Перевод короче этой доли оригинала или длиннее этой — потеря или чужой
+# текст. Порог мягкий: на коротких строках отношение шумит, поэтому есть и
+# нижняя граница длины.
+LOSS_LOW, LOSS_HIGH, LOSS_MIN = 0.5, 2.5, 60
+
+
+def _regrow(agent, system, task, blocks, res, retries, log):
+    """Переспросить блоки, чья длина разошлась с оригиналом.
+
+    Разбор следит только за тем, чтобы идентификаторы были на месте, а что
+    внутри них — нет. На живой книге из восьми подозрительных абзацев все
+    четыре проверенных оказались испорчены: два обрезаны на полуслове, в
+    третьем от записи осталась строка, в четвёртом стоял текст соседнего.
+    """
+    src = {b["id"]: b["text"] for b in blocks if b["id"] in res}
+    off = lambda i, v: len(strip(v)) / max(len(strip(src[i])), 1)   # noqa: E731
+    bad = [i for i, v in res.items()
+           if i in src and len(strip(src[i])) >= LOSS_MIN
+           and not LOSS_LOW <= off(i, v) <= LOSS_HIGH]
+    if not bad:
+        return res, 0
+    body = "\n\n".join(f"<<<P {i}>>>\n{src[i]}" for i in bad)
+    prompt = (task + "\n\n---\n\nЭти абзацы уже переводились, и перевод вышел "
+              "заметно короче или длиннее оригинала: часть текста потерялась "
+              "или попала чужая. Переведи их заново, целиком, ничего не "
+              "пропуская и не добавляя от себя.\n\n" + body)
+    try:
+        (again, _), _, _ = _run(agent, system, prompt, retries,
+                                lambda o: parse_blocks(o, expected=bad), log)
+    except (Refused, RuntimeError, Fatal):
+        return res, 0
+    # Берём новое только там, где оно ближе к длине оригинала: переспрос
+    # тоже может выйти хуже, и молча заменять им готовое незачем.
+    n = 0
+    for i in bad:
+        if again.get(i) and abs(off(i, again[i]) - 1) < abs(off(i, res[i]) - 1):
+            res[i], n = again[i], n + 1
+    return res, n
+
+
 def translate(work, chunks, agent, system, task, retries, log, only=None,
               fallback=None):
     os.makedirs(f"{work}/tr", exist_ok=True)
@@ -526,6 +566,10 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 continue
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
         extra, found = extra
+        res, n_grew = _regrow(agent, system, task, translatable(c["blocks"]),
+                              res, retries, log)
+        if n_grew:
+            log("\n    " + T("regrown", n_grew))
         summ, terms = _split_meta(extra)
         _save(out_path, {"index": idx, "model": meta["model"],
                          "cost_usd": meta["cost_usd"],

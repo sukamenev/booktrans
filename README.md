@@ -380,6 +380,14 @@ cure it has is a fallback:
 Refused chunks are then translated and edited by Opus while everything else
 stays with Gemini — fast and four times cheaper.
 
+**A paragraph whose length parted company with the original is asked for
+again.** Parsing the answer checks that every block is present, not what is
+inside it: the model returns the right id with the text under it cut off
+mid-word. A translation shorter than half the original or longer than two and
+a half times goes back for a second attempt of its own, and the new text is
+kept only if it lands closer to the original's length. On a book of 1454
+paragraphs about eight are asked again.
+
 **Three refusals in a row stop the run.** One refusal is a contentious scene;
 three in a row mean it is no longer about the book — the model's policy
 changed, the quota ran out, the agent died. Carrying on would burn money for
@@ -643,6 +651,12 @@ mangles a running head differently every time. Numbered chapters ("Chapter 1",
 "Chapter 2") also look alike but differ only in their digits, and are left
 alone. Every other mismatch is merely reported — what to do about it is a
 human's call. The parsed contents are kept in `work/toc.json`.
+
+A running head is also taken out where it has been glued into the middle of
+a line: in a book set without leading it lands on the same line as the text
+and stands at no edge at all. Only what the rule above already recognised is
+removed, and only where the typesetting leaves a gap of whitespace around
+it — "The Scientist" inside a sentence of the author's is left alone.
 
 
 ## Listings in programming books

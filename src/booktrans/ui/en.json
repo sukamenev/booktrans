@@ -140,6 +140,7 @@
   "code_failed": "listings not processed: {0} — their comments stay in the source language",
   "h_code": "what to do with listings: comments — translate the comments in them (default), asis — leave them alone",
   "code_done": "comments translated: {0} across {1} listings",
+  "regrown": "paragraphs re-asked for a length that did not match: {0}",
   "marks_known": "text already marked up (delete work/marks.json to redo)",
   "marks_start": "marking up the text: {0} pieces ... ",
   "marks_done": "headings {0}, running heads and numbers dropped {1}, breaks joined {2}",

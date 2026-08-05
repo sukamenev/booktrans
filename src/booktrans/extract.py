@@ -740,7 +740,7 @@ def _strip_running(txt):
     pages = txt.split("\f")
     if len(pages) < 5:
         return txt
-    cand = collections.Counter()
+    cand, gone = collections.Counter(), set()
     for p in pages:
         lines = [l.strip() for l in p.split("\n") if l.strip()]
         for l in lines[:HEAD_LINES] + lines[-HEAD_LINES:]:
@@ -764,8 +764,31 @@ def _strip_running(txt):
             elif k in often or any(difflib.SequenceMatcher(None, k, o).ratio() > 0.8
                                    for o in often):
                 drop.add(i)
+        gone |= {lines[i].strip() for i in drop}
         out.append("\n".join(l for i, l in enumerate(lines) if i not in drop))
-    return "\f".join(out)
+    return _unglue("\f".join(out), gone)
+
+
+def _unglue(txt, heads):
+    """Убрать колонтитулы, влипшие в середину строки.
+
+    Колонтитул стоит не только с краю страницы: у книги без отбивок он
+    попадает в ту же строку, что и текст, и тогда с краю его нет. В
+    переведённой книге он вклинивался в середину фразы, и редактор вычищал
+    его руками — а платили за него дважды, переводом и редактурой.
+
+    Убираем только то, что уже опознано как колонтитул выше, и только когда
+    вокруг него пробельный провал вёрстки: `pdftotext -layout` отбивает
+    колонтитул от текста, а слова той же фразы — одним пробелом. Так «The
+    Scientist» в авторской фразе остаётся нетронутым.
+    """
+    for s in sorted(heads, key=len, reverse=True):
+        if len(s) < 6 or not re.search(r"[^\W\d_]", s):
+            continue
+        e = re.escape(s)
+        txt = re.sub(rf"[ \t]{{2,}}{e}(?=[ \t]{{2,}}|$)", " ", txt, flags=re.M)
+        txt = re.sub(rf"^[ \t]*{e}[ \t]{{2,}}", "", txt, flags=re.M)
+    return txt
 
 
 def _pdf_text(path):
