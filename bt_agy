@@ -4,4 +4,7 @@
 #   ./bt_agy книга.epub --to de --model другая-модель
 export BT_AGENT="agy"
 export BT_MODEL="gemini-3.1-pro-high"
+# Куски, от которых Gemini отказалась, доводит Opus: у него другие рамки.
+export BT_FALLBACK_AGENT="claude"
+export BT_FALLBACK_MODEL="claude-opus-5"
 exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"

@@ -120,8 +120,10 @@ def main():
     ap.add_argument("--partial", action="store_true", help=T("h_partial"))
     ap.add_argument("--encoding", help=T("h_encoding"))
     ap.add_argument("--fallback-agent", choices=("claude", "cmd", "agy"),
+                    default=os.environ.get("BT_FALLBACK_AGENT"),
                     help=T("h_fb_agent"))
-    ap.add_argument("--fallback-model", help=T("h_fb_model"))
+    ap.add_argument("--fallback-model", default=os.environ.get("BT_FALLBACK_MODEL"),
+                    help=T("h_fb_model"))
     args = ap.parse_args()
 
     if args.check:

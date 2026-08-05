@@ -370,7 +370,9 @@ though the cause is the content. The pipeline recognises this, but the only
 cure it has is a fallback:
 
 ```bash
-./bt_agy book.epub --fallback-agent claude --fallback-model claude-opus-5
+./bt_agy book.epub      # the wrapper already falls back to Opus
+./booktrans book.epub --agent agy \
+    --fallback-agent claude --fallback-model claude-opus-5   # the same by hand
 ```
 
 Refused chunks are then translated and edited by Opus while everything else

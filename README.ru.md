@@ -298,7 +298,9 @@ Thoat — тоат, восьминогое ездовое животное; не
 может только подстраховкой:
 
 ```bash
-./bt_agy книга.epub --fallback-agent claude --fallback-model claude-opus-5
+./bt_agy книга.epub     # подстраховка Опусом уже прописана в обёртке
+./booktrans книга.epub --agent agy \
+    --fallback-agent claude --fallback-model claude-opus-5   # то же вручную
 ```
 
 Тогда отказные куски переведёт и отредактирует Опус, а всё остальное
