@@ -106,6 +106,8 @@ def main():
     ap.add_argument("--scout", help=T("h_scout"))
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
+    ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
+                    help=T("h_formatter"))
     ap.add_argument("--retries", type=int, default=5)
     ap.add_argument("--wait", type=int, default=900, help=T("h_wait"))
     ap.add_argument("--max-wait", type=int, default=86400, help=T("h_maxwait"))
@@ -167,7 +169,14 @@ def main():
     steps = [args.only] if args.only else [s for s in STEPS if s not in args.skip.split(",")]
     only_chunks = {int(x) for x in args.chunks.split(",")} if args.chunks else None
 
+    CHEAP = {"claude": "claude-sonnet-5", "agy": "gemini-3.1-flash"}
+
     def agent_for(role=None):
+        if role == "formatter" and not args.formatter:
+            m = CHEAP.get(args.agent)
+            if m:
+                return make_agent(args.agent, m, args.agent_cmd, wait=args.wait,
+                                  max_wait=args.max_wait, log=log, effort="low")
         """Своя модель на проход: у разведки, перевода и редактуры разные
         требования, и платить за все одинаково незачем."""
         m = (getattr(args, role, None) if role else None) or args.model
@@ -241,10 +250,18 @@ def main():
             styles_map = {k: v for k, v in
                           json.load(open(f"{work}/structure.json", encoding="utf-8")).items()
                           if not k.startswith("_")}
+        # pdf и txt приходят без разметки вовсе: абзацы рвутся посреди фразы,
+        # колонтитулы неотличимы от заголовков. Правилами это не выводится —
+        # спрашиваем модель, один раз на книгу.
+        marks = None
+        if os.path.splitext(args.book)[1].lower() in (".pdf", ".txt", ".md"):
+            marks = pipeline.format_marks(
+                work, args.book, agent_for("formatter"), task("format"),
+                args.encoding, ask_model, log)
         log("  " + T("reading", args.book))
         try:
             meta, blocks, cover, images = extract.read_book(
-                args.book, styles_map, args.encoding, ask_model)
+                args.book, styles_map, args.encoding, ask_model, marks)
         except extract.BadBook as e:
             sys.exit(f"\n  {e}")
         json.dump({"meta": meta, "blocks": blocks}, open(bp, "w", encoding="utf-8"),

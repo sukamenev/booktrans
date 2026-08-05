@@ -669,7 +669,8 @@ def _place_images(blocks, pages, imgs):
     return out, images
 
 
-def _pdf(path):
+def _pdf_text(path):
+    """Текст pdf. Отдельно от разбора: та же выжимка нужна и разметке."""
     if not _which("pdftotext"):
         raise SystemExit("для pdf нужен pdftotext (пакет poppler-utils)")
     r = subprocess.run(["pdftotext", "-enc", "UTF-8", path, "-"],
@@ -683,9 +684,14 @@ def _pdf(path):
             f"в {os.path.basename(path)} нет текстового слоя — это скан или "
             "книга из картинок. Нужно сначала распознать текст (OCR), "
             "например: ocrmypdf исходный.pdf распознанный.pdf")
+    return txt
+
+
+def _pdf(path, marks=None):
+    txt = _pdf_text(path)
     meta, blocks, cover, images = _from_text(
-        txt, os.path.splitext(os.path.basename(path))[0])
-    pages = r.stdout.split("\f")
+        txt, os.path.splitext(os.path.basename(path))[0], marks)
+    pages = txt.split("\f")
     imgs = _pdf_images(path, len(pages))
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
@@ -908,10 +914,10 @@ def _fix_mojibake(text):
     return best if best_cyr > len(sample) * 0.25 else text
 
 
-def _txt(path, encoding=None, ask=None):
+def _txt(path, encoding=None, ask=None, marks=None):
     with open(path, "rb") as f:
         return _from_text(_decode(f.read(), encoding, ask),
-                          os.path.splitext(os.path.basename(path))[0])
+                          os.path.splitext(os.path.basename(path))[0], marks)
 
 
 def _split_paragraphs(txt):
@@ -965,7 +971,21 @@ def _unspace(text):
     return SPACED.sub(join, text)
 
 
-def _from_text(txt, title):
+def plain_paragraphs(path, encoding=None, ask=None):
+    """Куски книги до всякой разметки — то, что показывается размечающей
+    модели. Ровно те же куски потом получает `_from_text`."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".pdf":
+        txt = _pdf_text(path)
+    else:
+        with open(path, "rb") as f:
+            txt = _decode(f.read(), encoding, ask)
+    txt = txt.replace("\f", "\n\n")
+    txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)
+    return [p for p in _split_paragraphs(txt) if p]
+
+
+def _from_text(txt, title, marks=None):
     txt = txt.replace("\f", "\n\n")
     txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)      # перенос по слогам
     paras = [p for p in _split_paragraphs(txt) if p]
@@ -993,17 +1013,24 @@ def _from_text(txt, title):
     cand = collections.Counter(p for p in paras if looks_like_title(p))
     running = {p for p, n in cand.items() if n > 3}
 
+    # Разметка от модели сильнее правил: она видела книгу, а правила — нет.
+    if marks:
+        from .format import apply as _apply
+        marked = _apply(paras, marks)
+    else:
+        marked = [(("title" if looks_like_title(p) else "p"), p) for p in paras
+                  if not (pagenum.match(p) or p in running)]
+
     blocks, sec, n = [], 1, 0
-    for p in paras:
-        if pagenum.match(p) or p in running:
-            continue                       # колонтитул или номер страницы
-        is_head = looks_like_title(p)
+    for kind, p in marked:
+        is_head = kind == "title"
         if is_head:
             sec += 1
             n = 0
         n += 1
         blocks.append({"id": f"s{sec:02d}.b{n:04d}",
-                       "kind": "title" if is_head else "p", "text": p})
+                       "kind": kind if kind in ("title", "verse") else "p",
+                       "text": p})
     return {"title": title}, blocks, None, {}
 
 
@@ -1073,7 +1100,7 @@ def strip_tags(s):
     return re.sub(r"<[^>]+>", "", s).strip()
 
 
-def read_book(path, styles=None, encoding=None, ask=None):
+def read_book(path, styles=None, encoding=None, ask=None, marks=None):
     """Прочитать книгу любого поддерживаемого формата.
 
     `encoding` — если человек указал кодировку руками; `ask` — вызов модели,
@@ -1082,7 +1109,7 @@ def read_book(path, styles=None, encoding=None, ask=None):
     """
     ext = os.path.splitext(path)[1].lower()
     try:
-        meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask)
+        meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks)
         _mark_refs(blocks)
         return meta, blocks, cover, images
     except BadBook:
@@ -1094,13 +1121,13 @@ def read_book(path, styles=None, encoding=None, ask=None):
                       f"Проверьте: file {path!r}") from None
 
 
-def _read_book(path, ext, styles=None, encoding=None, ask=None):
+def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None):
     if ext == ".epub":
         return _epub(path, styles, encoding, ask)
     if ext == ".fb2":
         return _fb2(path, encoding, ask)
     if ext == ".pdf":
-        return _pdf(path)
+        return _pdf(path, marks)
     if ext in (".txt", ".md"):
-        return _txt(path, encoding, ask)
+        return _txt(path, encoding, ask, marks)
     raise SystemExit(f"не умею читать {ext}; поддерживаются epub, fb2, pdf, txt")

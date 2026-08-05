@@ -1,4 +1,5 @@
 """Нарезка, перевод, редактура. Все проходы возобновляемые."""
+import collections
 import concurrent.futures as cf
 import json
 import os
@@ -909,6 +910,35 @@ def all_notes(work, order):
         merged[bid] = {"text": " ".join(i["text"] for i in got[bid]),
                        "source_only": False}
     return merged
+
+
+def format_marks(work, path, agent, task, encoding, ask, log):
+    """Разметка книги без разметки. Считается один раз и лежит в работе."""
+    from . import extract, format as fmt
+    p = f"{work}/marks.json"
+    if os.path.exists(p):
+        log("  " + T("marks_known"))
+        return {int(k): v for k, v in json.load(open(p, encoding="utf-8")).items()}
+    paras = extract.plain_paragraphs(path, encoding, ask)
+    if not paras:
+        return None
+    log("  " + T("marks_start", len(paras)), end="")
+    t = time.time()
+    cost = [0.0]
+
+    def run(body):
+        out, meta = agent.run("", task + "\n\n---\n\n" + body)
+        cost[0] += meta.get("cost_usd") or 0
+        return out
+
+    marks = fmt.plan(paras, run, log)
+    log(T("took", f"{time.time() - t:.0f}",
+          f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
+    kinds = collections.Counter(marks.values())
+    log("  " + T("marks_done", kinds.get("title", 0), kinds.get("skip", 0),
+                 kinds.get("+", 0)))
+    json.dump(marks, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    return marks
 
 
 # ---------------------------------------------------------------- разведка

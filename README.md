@@ -515,6 +515,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks (for redoing)
 --force translate     do not stop on that pass whatever happens
+--formatter ID        model that marks up pdf and txt
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass
 --agent claude|cmd    agent
@@ -589,6 +590,23 @@ or scanned, and then nothing is pulled at all.
 
 A pdf with no text layer is refused outright, with a hint to run OCR
 (`ocrmypdf in.pdf out.pdf`) — silently translating an empty book is worse.
+
+### Marking up pdf and txt
+
+These formats carry no markup at all: paragraphs break mid-sentence, running
+heads are indistinguishable from chapter titles. On one book the running head
+"THE SCIENTIST" came out of OCR fifteen different ways, all fifteen became
+chapters, and not one real title was found.
+
+So the pieces are numbered and shown to a model, which sends back marks only —
+the text itself never passes through it and cannot be altered. Measured on
+forty pages of that book: six real chapter titles found, seventy-six running
+heads and page numbers dropped, and the median paragraph went from 75
+characters to 915.
+
+It runs once and is kept in `work/marks.json`. The model is the cheapest the
+chosen agent has; `--formatter ID` picks another.
+
 
 ## Bibliographies
 
