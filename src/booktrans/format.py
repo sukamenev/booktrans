@@ -156,14 +156,17 @@ def reconcile(paras, marks, names=()):
     keys = [_key(p) for p in paras]
     seen = collections.Counter(keys)
 
-    # Глава названа в оглавлении, а на своём месте не отмечена — поднимаем.
-    # Только редкую строку: то, что повторяется по всей книге, — колонтитул,
-    # даже если оглавление его называет.
-    added = 0
-    for i, k in enumerate(keys, 1):
-        if k in named and seen[k] <= RUN and marks.get(i) not in ("title", "toc", "+"):
-            marks[i] = "title"
-            added += 1
+    if names:
+        added, found = _by_contents(paras, keys, marks, names)
+    else:
+        # Глава названа в оглавлении, а на своём месте не отмечена — поднимаем.
+        # Только редкую строку: то, что повторяется по всей книге, —
+        # колонтитул, даже если оглавление его называет.
+        added, found = 0, set()
+        for i, k in enumerate(keys, 1):
+            if k in named and seen[k] <= RUN and marks.get(i) not in ("title", "toc", "+"):
+                marks[i] = "title"
+                added += 1
 
     # Обратный случай: одинаковых заголовков в книге не бывает. Повтор, которого
     # нет в оглавлении, — колонтитул. Пронумерованные главы («Глава 1», «Глава 2»)
@@ -181,8 +184,9 @@ def reconcile(paras, marks, names=()):
                 marks[i] = "skip"
             dropped.append(_title(paras[ids[0] - 1]))
 
-    found = {named[keys[i - 1]] for i in marks
-             if marks[i] == "title" and keys[i - 1] in named}
+    if not names:
+        found = {named[keys[i - 1]] for i in marks
+                 if marks[i] == "title" and keys[i - 1] in named}
     return {"toc": len(toc), "added": added, "dropped": dropped,
             "lost": [t for t in toc if t not in found], "names": list(toc)}
 
@@ -197,6 +201,12 @@ def apply(paras, marks):
         # Продолжение приклеивается только к прозе. К заголовку — никогда:
         # на одной книге за заголовком шло оборванное слово, помеченное `+`,
         # за ним следующее, и в заголовок уехала глава целиком — 22 261 знак.
+        # `+t` ставит только сверка с оглавлением: там известно, что это
+        # продолжение названия главы. `+` от модели к заголовку не клеится
+        # никогда — так глава уезжала в заголовок целиком.
+        if kind == "+t" and out and out[-1][0] == "title":
+            out[-1] = (out[-1][0], out[-1][1] + " " + p)
+            continue
         if kind == "+" and out and out[-1][0] == "p":
             sep = "" if out[-1][1].endswith("-") else " "
             out[-1] = (out[-1][0], out[-1][1].rstrip("-") + sep + p)
@@ -207,3 +217,52 @@ def apply(paras, marks):
             kind = "p"
         out.append(("p" if kind == "+" else kind, p))
     return out
+
+
+PROSE = 60          # заголовок длиннее — скорее всего строка прозы
+
+
+def _by_contents(paras, keys, marks, names):
+    """Расставить заголовки по оглавлению. Возвращает (сколько поднято, что нашлось).
+
+    Оглавление — единственное место, где книга сама перечисляет свои главы, и
+    здесь оно главное, а не подсказка. Иначе выходит то, что вышло на живой
+    книге: «A Being» и «Makes a Choice» двумя главами, «Electronics
+    Connecting» обрубком, а строка прозы — главой.
+
+    Ищем главы по порядку, каждую после предыдущей: в pdf заголовок бывает
+    разорван на две-три строки, и по отдельности они не совпадут ни с чем, а
+    склеенные — совпадут.
+    """
+    at, found, starts = 0, set(), set()
+    for name in names:
+        k = _key(name)
+        if len(k) < 3:
+            continue
+        for i in range(at, len(paras)):
+            if marks.get(i + 1) in ("toc", "skip") or len(paras[i]) > 100:
+                continue
+            joined = ""
+            for j in range(i, min(i + 3, len(paras))):
+                if len(paras[j]) > 100 or marks.get(j + 1) == "toc":
+                    break
+                joined += keys[j]
+                if joined == k:
+                    marks[i + 1] = "title"
+                    starts.add(i + 1)
+                    for m in range(i + 2, j + 2):
+                        marks[m] = "+t"
+                    found.add(name)
+                    at = j + 1
+                    break
+            if name in found:
+                break
+
+    # Оглавление нашлось почти всё — значит ему можно верить и в обратную
+    # сторону: длинная строка, которой в нём нет, это проза, а не глава.
+    # Понижаем до абзаца, а не выбрасываем: текст автора остаётся в книге.
+    if len(found) >= max(3, len(names) // 2):
+        for i in [i for i, v in marks.items() if v == "title"]:
+            if i not in starts and len(paras[i - 1]) > PROSE:
+                marks[i] = "p"
+    return len(starts), found
