@@ -1260,7 +1260,10 @@ def apply_fixes(work, blocks, log=None):
         return blocks
     fixes, n = json.load(open(p, encoding="utf-8")), 0
     for b in blocks:
-        for old, new in fixes.get(b["id"], []):
+        # Длинные первыми: короткая общая поправка иначе срабатывает раньше и
+        # съедает место у точной. На живой книге «hack» → «back» опередила
+        # «hack into HYPERSPACE» → «back into HYPERSPACE».
+        for old, new in sorted(fixes.get(b["id"], []), key=lambda x: -len(x[0])):
             if old in b["text"]:
                 b["text"] = b["text"].replace(old, new)
                 n += 1
