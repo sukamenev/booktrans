@@ -41,15 +41,37 @@ def _parse(out, lo, hi):
     return got
 
 
+TOC_TAG = re.compile(r"<<<TOC>>>(.*?)(?=<<<|\Z)", re.S)
+
+
+def _toc_lines(out):
+    """Названия глав, выписанные моделью из оглавления.
+
+    Правилом их оттуда не достать: страница оглавления бывает в два столбца,
+    и `pdftotext -layout` кладёт на одну строку и главу, и запись чужого
+    столбца — «Baby John Lilly 5 : Education into Becoming Human».
+    """
+    got = []
+    for m in TOC_TAG.finditer(out):
+        for line in m.group(1).splitlines():
+            s = _title(line.strip(" -•*|"))
+            if 2 <= len(s) <= 120 and s not in got:
+                got.append(s)
+    return got
+
+
 def plan(paras, run, log):
-    """Пометки для каждого куска. `run` — вызов модели: (prompt) → текст."""
-    marks = {}
+    """Пометки для каждого куска и названия глав из оглавления.
+
+    `run` — вызов модели: (prompt) → текст."""
+    marks, toc = {}, []
     for lo in range(0, len(paras), WINDOW):
         part = paras[lo:lo + WINDOW]
         body = "\n".join(_show(lo + i + 1, p) for i, p in enumerate(part))
         out = run(body)
         marks.update(_parse(out, lo + 1, lo + len(part)))
-    return marks
+        toc += [s for s in _toc_lines(out) if s not in toc]
+    return marks, toc
 
 
 LEAD = re.compile(r"[.·‧․\s]{3,}\d*\s*$")   # отточие с номером страницы
@@ -85,7 +107,7 @@ def _key(s, page=False):
     s = LEAD.sub(" ", s)
     if page:
         s = re.sub(r"\s+\d{1,4}\s*$", " ", s)      # номер страницы без отточия
-    s = re.sub(r"^\s*\d{1,3}\s*[.)]\s+", " ", s)   # номер главы в начале
+    s = re.sub(r"^\s*\d{1,3}\s*[.):]\s*", " ", s)  # номер главы в начале
     return re.sub(r"\W+", "", s, flags=re.U).lower()
 
 
@@ -122,9 +144,14 @@ def _same(ids, keys):
     return groups
 
 
-def reconcile(paras, marks):
-    """Сверить найденные заголовки с оглавлением. Возвращает, что вышло."""
-    toc = contents(paras, marks)
+def reconcile(paras, marks, names=()):
+    """Сверить найденные заголовки с оглавлением. Возвращает, что вышло.
+
+    `names` — список глав, выписанный моделью. Разбор помеченных строк остаётся
+    запасным путём: он годится, пока оглавление свёрстано в один столбец.
+    """
+    toc = ({n: {_key(n)} for n in names if len(_key(n)) >= 3}
+           if names else contents(paras, marks))
     named = {k: name for name, ks in toc.items() for k in ks}
     keys = [_key(p) for p in paras]
     seen = collections.Counter(keys)

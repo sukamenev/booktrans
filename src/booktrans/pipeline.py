@@ -957,10 +957,10 @@ def format_marks(work, path, agent, task, encoding, ask, log):
         cost[0] += meta.get("cost_usd") or 0
         return out
 
-    marks = fmt.plan(paras, run, log)
+    marks, names = fmt.plan(paras, run, log)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
-    _check_toc(work, paras, marks, log)
+    _check_toc(work, paras, marks, names, log)
     kinds = collections.Counter(marks.values())
     log("  " + T("marks_done", kinds.get("title", 0), kinds.get("skip", 0),
                  kinds.get("+", 0)))
@@ -969,12 +969,12 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     return marks
 
 
-def _check_toc(work, paras, marks, log):
+def _check_toc(work, paras, marks, names, log):
     """Сверка с оглавлением. Оно у книги одно, и обмануться ему негде: главу,
     которой там нет, придумала разметка, а названную и не найденную — потеряла.
     """
     from . import format as fmt
-    r = fmt.reconcile(paras, marks)
+    r = fmt.reconcile(paras, marks, names)
     if not r["toc"]:
         return
     json.dump(r["names"], open(f"{work}/toc.json", "w", encoding="utf-8"),
