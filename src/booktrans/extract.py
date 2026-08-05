@@ -7,6 +7,7 @@ kind: title | subtitle | p | break
 абзац не потерялся и не склеился.
 """
 import collections
+import difflib
 import os
 import re
 import subprocess
@@ -700,6 +701,61 @@ def _place_images(blocks, pages, imgs):
     return out, images
 
 
+# Колонтитул и номер страницы: сколько строк сверху и снизу смотреть и на
+# какой доле страниц строка должна повториться, чтобы счесть её служебной.
+# Не только доля, но и число: у статьи в десять страниц 15% — это две, и
+# под правило попадала строка авторского текста.
+HEAD_LINES, HEAD_SHARE, HEAD_MIN = 2, 0.15, 4
+
+
+def _running_key(s):
+    return re.sub(r"\W+", "", re.sub(r"\d+", "", s), flags=re.U).lower()
+
+
+def _strip_running(txt):
+    """Снять колонтитулы и номера страниц.
+
+    Делаем это до разбора на абзацы, а не пометками модели. Причина простая:
+    в тексте от `pdftotext -layout` колонтитул стоит с отступом, а значит
+    начинает абзац — и втягивает в себя всю страницу. На одной книге так
+    склеилось 71 колонтитул из 78.
+
+    Служебной строку делает повторяемость: название книги или главы стоит на
+    доброй половине страниц, а строка авторского текста не повторяется нигде.
+    Плохо распознанный колонтитул искажён каждый раз по-своему, поэтому
+    близкие строки считаем за одну.
+    """
+    pages = txt.split("\f")
+    if len(pages) < 5:
+        return txt
+    cand = collections.Counter()
+    for p in pages:
+        lines = [l.strip() for l in p.split("\n") if l.strip()]
+        for l in lines[:HEAD_LINES] + lines[-HEAD_LINES:]:
+            if len(l) < 80:
+                cand[_running_key(l)] += 1
+    need = max(HEAD_MIN, len(pages) * HEAD_SHARE)
+    often = {k for k, n in cand.items() if k and n >= need}
+
+    out = []
+    for p in pages:
+        lines = p.split("\n")
+        idx = [i for i, l in enumerate(lines) if l.strip()]
+        drop = set()
+        for i in idx[:HEAD_LINES] + idx[-HEAD_LINES:]:
+            s = lines[i].strip()
+            if len(s) >= 80:
+                continue
+            k = _running_key(s)
+            if not k:
+                drop.add(i)          # номер страницы и прочее без букв
+            elif k in often or any(difflib.SequenceMatcher(None, k, o).ratio() > 0.8
+                                   for o in often):
+                drop.add(i)
+        out.append("\n".join(l for i, l in enumerate(lines) if i not in drop))
+    return "\f".join(out)
+
+
 def _pdf_text(path):
     """Текст pdf. Отдельно от разбора: та же выжимка нужна и разметке."""
     if not _which("pdftotext"):
@@ -709,7 +765,7 @@ def _pdf_text(path):
     if r.returncode != 0 and not r.stdout.strip():
         raise BadBook(f"pdftotext не смог прочитать {os.path.basename(path)}: "
                       + (r.stderr.strip().splitlines() or ["неизвестная ошибка"])[-1])
-    txt = _unspace(_fix_mojibake(r.stdout))
+    txt = _strip_running(_unspace(_fix_mojibake(r.stdout)))
     if not txt.strip():
         raise BadBook(
             f"в {os.path.basename(path)} нет текстового слоя — это скан или "
