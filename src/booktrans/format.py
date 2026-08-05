@@ -154,12 +154,56 @@ def _same(ids, keys):
     return groups
 
 
+TOC_LINE = 260      # длиннее — это абзац, а не строка оглавления
+
+
+def _trim_toc(paras, marks):
+    """Обрезать разметку оглавления по здравому смыслу.
+
+    Модель, увидев список, метит `toc` и дальше по инерции: на живой книге
+    так пропали раздел «Editors' Note» с двумя абзацами и целая глава
+    «Suckling» — семь кусков подряд, тысяча девятьсот знаков.
+
+    Оглавление в книге одно и идёт подряд, а строка его коротка. Что не
+    подходит под это — возвращается в текст: потерянный абзац хуже лишнего.
+    """
+    hit = sorted(i for i, v in marks.items() if v == "toc")
+    if not hit:
+        return
+    runs, cur = [], [hit[0]]
+    for i in hit[1:]:
+        if i - cur[-1] <= 2:
+            cur.append(i)
+        else:
+            runs.append(cur)
+            cur = [i]
+    runs.append(cur)
+    best = max(runs, key=len)
+    for run in runs:
+        if run is not best:
+            for i in run:
+                marks[i] = "p"
+
+    # Абзац в конце оглавления — это уже текст следующего раздела. Обрезаем
+    # с конца, а не с начала: первая строка оглавления сама бывает длинной,
+    # когда страница свёрстана в две колонки и они слились в одну строку.
+    trimmed = False
+    while len(best) > 1 and len(paras[best[-1] - 1]) > TOC_LINE:
+        marks[best.pop()] = "p"
+        trimmed = True
+    # Прямо перед вернувшимся текстом стоит его заголовок — тот же, что и в
+    # оглавлении, оттого и помеченный вместе с ним.
+    if trimmed and len(paras[best[-1] - 1]) < 40:
+        marks[best[-1]] = "title"
+
+
 def reconcile(paras, marks, names=()):
     """Сверить найденные заголовки с оглавлением. Возвращает, что вышло.
 
     `names` — список глав, выписанный моделью. Разбор помеченных строк остаётся
     запасным путём: он годится, пока оглавление свёрстано в один столбец.
     """
+    _trim_toc(paras, marks)
     toc = ({n: {_key(n)} for n in names if len(_key(n)) >= 3}
            if names else contents(paras, marks))
     named = {k: name for name, ks in toc.items() for k in ks}
@@ -341,6 +385,10 @@ def _by_contents(paras, keys, marks, names):
             for i in range(hit[a2], hit[b2] + 1):
                 marks[i] = "toc"
         a2 = b2 + 1
+    # Названия глав идут подряд и в самой книге — там, где главы коротки.
+    # Обрезаем и эту разметку тем же правилом, иначе она вернёт в оглавление
+    # то, что уже было из него вызволено.
+    _trim_toc(paras, marks)
 
     at, found, starts, cuts = 0, set(), set(), {}
     for name in names:
