@@ -1044,10 +1044,17 @@ def _split_paragraphs(txt, indent_share=INDENT_TEXT):
     indented = sum(1 for l in nonempty if re.match(r"^[ \t]{2,}\S", l))
 
     if indented > len(nonempty) * indent_share:
-        # отступом помечено начало абзаца: продолжения приклеиваем к нему
+        # отступом помечено начало абзаца: продолжения приклеиваем к нему.
+        # Пустая строка тоже кончает абзац — иначе кусок без единого отступа
+        # (хвалебные отзывы в начале книги, выходные данные) слипается в один
+        # блок: на живой книге вышло 27 961 знак, и модель вернула его сто
+        # одиннадцатью строками, потому что абзацев там было столько.
         paras, cur = [], []
         for l in lines:
             if not l.strip():
+                if cur:
+                    paras.append(" ".join(cur))
+                    cur = []
                 continue
             if re.match(r"^[ \t]{2,}\S", l) and cur:
                 paras.append(" ".join(cur))
