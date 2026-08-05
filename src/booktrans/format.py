@@ -18,6 +18,7 @@ HEAD, TAIL = 110, 60    # сколько знаков куска показыв�
 KINDS = {"+", "title", "skip", "verse", "toc", "code"}
 RUN = 3             # столько же похожих заголовков — уже колонтитул
 SAME = 0.8          # с какого сходства строки считаются одной и той же
+TITLE_MAX = 200     # длиннее — это абзац, а не заголовок
 
 
 def _show(i, p):
@@ -145,7 +146,11 @@ def reconcile(paras, marks):
         ks = {keys[i - 1] for i in ids}
         numbered = len(ks) > 1 and len({re.sub(r"\d+", "", k) for k in ks}) == 1
         if len(ids) >= RUN and not ks & set(named) and not numbered:
-            for i in ids:
+            # Первое вхождение оставляем заголовком. В невымышленной книге
+            # колонтитулом часто служит само название главы, и снять их все
+            # значит потерять главу: на одной книге так пропало семь.
+            # Первое стоит там, где глава начинается.
+            for i in ids[1:]:
                 marks[i] = "skip"
             dropped.append(_title(paras[ids[0] - 1]))
 
@@ -162,9 +167,16 @@ def apply(paras, marks):
         kind = marks.get(i, "p")
         if kind in ("skip", "toc"):
             continue
-        if kind == "+" and out:
+        # Продолжение приклеивается только к прозе. К заголовку — никогда:
+        # на одной книге за заголовком шло оборванное слово, помеченное `+`,
+        # за ним следующее, и в заголовок уехала глава целиком — 22 261 знак.
+        if kind == "+" and out and out[-1][0] == "p":
             sep = "" if out[-1][1].endswith("-") else " "
             out[-1] = (out[-1][0], out[-1][1].rstrip("-") + sep + p)
             continue
+        # Заголовок длиной в абзац — это не заголовок: по нему режется книга,
+        # и целая глава ушла бы в оглавление.
+        if kind == "title" and len(p) > TITLE_MAX:
+            kind = "p"
         out.append(("p" if kind == "+" else kind, p))
     return out

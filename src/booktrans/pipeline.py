@@ -986,9 +986,14 @@ def _check_toc(work, paras, marks, log):
         log("  " + T("toc_dropped", _few(r["dropped"])))
 
 
-def _few(names, n=3):
-    """Первые несколько названий, остальные числом."""
-    head = ", ".join(T("quoted", s) for s in names[:n])
+def _few(names, n=3, cut=60):
+    """Первые несколько названий, остальные числом.
+
+    Название режем: за оглавление разметка порой принимает список книг
+    автора, и тогда «запись» выходит в абзац длиной.
+    """
+    head = ", ".join(T("quoted", s[:cut] + ("…" if len(s) > cut else ""))
+                     for s in names[:n])
     return head + (T("and_more", len(names) - n) if len(names) > n else "")
 
 
@@ -1471,7 +1476,11 @@ def headings(work, blocks, agent, system, retries, log):
                 got[uniq[i - 1]] = m.group(2).strip()
         missing = [t for t in uniq if t not in got]
         if missing:
-            raise ValueError(f"не переведено {len(missing)} заголовков: {missing[:3]}")
+            # Обрезаем: заголовок бывает и в тысячи знаков, если разметка
+            # приняла за него абзац, и такой список смывает весь вывод.
+            short = [re.sub(r"\s+", " ", t)[:70] + ("…" if len(t) > 70 else "")
+                     for t in missing[:3]]
+            raise ValueError(f"не переведено {len(missing)} заголовков: {short}")
         return got, ""
 
     (got, _), meta, dt = _run(agent, system, prompt, retries, parse_heads, log)
