@@ -443,15 +443,26 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             w("</stanza></poem>")
             in_poem = False
 
+    was_title = False
     for b in blocks:
         text = tr.get(b["id"], "")
+        if b["kind"] in ("p", "verse", "code") and text.strip():
+            was_title = False       # пустая строка и картинка заголовки не разделяют
         if b["kind"] == "title":
             close_poem()
-            if open_sec:
-                w("</section>")
-            w("<section>")
-            w(f"<title><p>{esc(text, b.get('links'), notes_map)}</p></title>")
-            open_sec = True
+            if was_title:
+                # Второй заголовок подряд — это подзаголовок: имя автора под
+                # названием, время и место. Открой он свою секцию, предыдущая
+                # осталась бы пустой, а в оглавлении читалки — пустой строкой.
+                w(f"<subtitle>{esc(text, b.get('links'), notes_map)}</subtitle>")
+            else:
+                if open_sec:
+                    w("</section>")
+                w("<section>")
+                w(f"<title><p>{esc(text, b.get('links'), notes_map)}</p></title>")
+                open_sec = True
+            was_title = True
+            continue
         elif b["kind"] == "subtitle":
             close_poem()
             if not open_sec:

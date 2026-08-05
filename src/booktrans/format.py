@@ -186,6 +186,14 @@ def reconcile(paras, marks, names=()):
                 marks[i] = "skip"
             dropped.append(_title(paras[ids[0] - 1]))
 
+    # Заголовок над оглавлением: сами строки выброшены, и раздел «Содержание»
+    # остаётся в книге пустым — читатель открывает его и не находит ничего.
+    for i in [i for i, v in marks.items() if v == "title"]:
+        nxt = next((marks.get(j) for j in range(i + 1, i + 4)
+                    if marks.get(j) not in (None, "skip")), None)
+        if nxt == "toc" and len(paras[i - 1]) < 40:
+            marks[i] = "skip"
+
     if not names:
         found = {named[keys[i - 1]] for i in marks
                  if marks[i] == "title" and keys[i - 1] in named}
