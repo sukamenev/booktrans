@@ -29,7 +29,24 @@ STEPS = ("structure", "ocrfix", "scout", "translate", "edit", "build", "qa")
 ALL_STEPS = STEPS + ("notes",)
 
 
+# Ложь, а не истина: самая первая пустая строка нужна — она отбивает вывод
+# конвейера от строки приглашения оболочки.
+_blank = [False]
+
+
 def log(msg="", end="\n"):
+    """Печать с подавлением подряд идущих пустых строк.
+
+    Пустую строку печатает и конец этапа, и заголовок следующего — а откуда
+    именно, зависит от того, какие этапы включены. Проще давить повторы здесь,
+    чем следить за этим в каждом месте.
+    """
+    if not msg and end == "\n":
+        if _blank[0]:
+            return
+        _blank[0] = True
+    else:
+        _blank[0] = False
     print(msg, end=end, flush=True)
 
 
@@ -276,6 +293,7 @@ def main():
                     log("  " + T("stop_same_lang", pre))
                     log("  " + T("same_lang_hint"))
                     sys.exit(1)
+            log("")
             log(f"=== {T('step_structure')} ===")
             styles_map = pipeline.detect_structure(
                 work, extract.scan_styles(args.book), agent,
@@ -293,6 +311,7 @@ def main():
             # Разметка идёт и без этапа structure — книгу всё равно надо
             # прочесть, — так что заголовок печатает она сама.
             if "structure" not in steps:
+                log("")
                 log(f"=== {T('step_structure')} ===")
                 log("")
             marks = pipeline.format_marks(
@@ -430,6 +449,7 @@ def main():
     if made_by_ocr:
         if "ocrfix" in steps:
             n += 1
+            log("")
             log(f"=== {n}. {T('step_ocrfix')} ===")
             pipeline.fix_ocr(work, blocks, agent_for("ocrfixer"), sysprompt(),
                                task("ocrfix"), args.retries, log)
@@ -438,6 +458,7 @@ def main():
 
     if "scout" in steps:
         n += 1
+        log("")
         log(f"=== {n}. {T('step_scout')} ===")
         pipeline.scout(work, blocks, agent_for("scout"), sysprompt(), task("scout"),
                        args.retries, log, args.to,
@@ -455,6 +476,7 @@ def main():
 
     if "translate" in steps:
         n += 1
+        log("")
         log(f"=== {n}. {T('step_translate')} ===")
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(), args.retries, log)
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
@@ -466,20 +488,20 @@ def main():
             pipeline.code_comments(work, blocks, agent_for("translator"),
                                    sysprompt(), task("code"), args.retries, log)
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
-        log("")
 
     if "edit" in steps:
         n += 1
+        log("")
         log(f"=== {n}. {T('step_edit')} ===")
         d, s, t = pipeline.edit(work, chunks, agent_for("editor"), sysprompt(), task("edit"),
                                 args.retries, log, only_chunks, args.jobs,
                                 fallback=fallback_agent(),
                                 force=args.force_editing)
         log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
-        log("")
 
     if "notes" in steps:
         n += 1
+        log("")
         log(f"=== {n}. {T('step_notes')} ===")
         d, s, t = pipeline.notes(work, chunks, agent_for("editor"), sysprompt(), task("notes"),
                                  args.retries, log, only_chunks, args.jobs)
@@ -488,6 +510,7 @@ def main():
 
     if "build" in steps:
         n += 1
+        log("")
         log(f"=== {n}. {T('step_build')} ===")
         dest = args.out or f"{build.out_name(meta, base)}.fb2"
         # Затереть исходник переводом — потеря невосполнимая, а совпасть
@@ -499,6 +522,7 @@ def main():
 
     if "qa" in steps:
         n += 1
+        log("")
         log(f"=== {n}. {T('step_qa')} ===")
         build.qa(work, blocks, log, T, meta.get("lang"), args.to)
         build.unfinished_edits(work, log, T)
