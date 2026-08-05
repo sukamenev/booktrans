@@ -42,6 +42,7 @@ def _parse(out, lo, hi):
 
 
 TOC_TAG = re.compile(r"<<<TOC>>>(.*?)(?=<<<|\Z)", re.S)
+MARKLINE = re.compile(r"\s*\d+\s+(\+t?|title|skip|verse|toc|code)\s*$")
 
 
 def _toc_lines(out):
@@ -54,8 +55,12 @@ def _toc_lines(out):
     got = []
     for m in TOC_TAG.finditer(out):
         for line in m.group(1).splitlines():
+            # Модель порой дописывает пометки уже после списка глав, и они
+            # уходили в оглавление главами: «2020 skip», «2105 title».
+            if MARKLINE.match(line):
+                break
             s = _title(line.strip(" -•*|"))
-            if "`" in s or "<<<" in s:
+            if "`" in s or "<<<" in s or s.endswith(":"):
                 continue                 # модель пересказала само задание
             if 2 <= len(s) <= 120 and s not in got:
                 got.append(s)

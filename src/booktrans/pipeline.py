@@ -1227,7 +1227,9 @@ def fix_ocr(work, blocks, agent, system, task, retries, log):
             bad += len(got.get(b["id"], [])) - len(keep)
             done[b["id"]] = keep
             n += len(keep)
-    _save(p, done)
+        # Пишем после каждого окна: проход идёт десятками окон, и прерванный
+        # на тридцатом не должен терять все тридцать.
+        _save(p, done)
     log(T("took", f"{time.time() - t0:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
     log("  " + T("fix_done", n, len(todo)) + (T("fix_bad", bad) if bad else ""))
