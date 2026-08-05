@@ -10,6 +10,9 @@ from xml.sax.saxutils import escape
 from . import lang, output
 from .pipeline import all_notes, all_translations, strip
 
+CAPTION = 160       # длиннее строка под снимком — уже не подпись
+
+
 def _date(ts, code="ru"):
     return lang.fmt_date(ts, code)
 
@@ -474,9 +477,19 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             w("</stanza></poem>")
             in_poem = False
 
-    was_title = False
+    was_title, after_img = False, False
     for b in blocks:
         text = tr.get(b["id"], "")
+        if after_img and b["kind"] != "image":
+            # Короткая строка сразу за снимком — это подпись под ним: её
+            # оставляем прижатой, а отбиваем уже после неё.
+            if b["kind"] == "p" and 0 < len(text) <= CAPTION and open_sec:
+                w(f"<p>{esc(text, b.get('links'), notes_map)}</p>")
+                w("<empty-line/>")
+                after_img = False
+                continue
+            w("<empty-line/>")
+            after_img = False
         if b["kind"] in ("p", "verse", "code") and text.strip():
             was_title = False       # пустая строка и картинка заголовки не разделяют
         if b["kind"] == "title":
@@ -532,7 +545,14 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
                 w("<section>")
                 open_sec = True
             if b["text"] in (images or {}):
+                # Пустая строка перед: по схеме картинка блочная, но читалки
+                # вольны прижать её к соседнему абзацу, и текст оказывается с
+                # ней в одной строке.
+                if not after_img:
+                    w("<empty-line/>")
                 w(f'<image l:href="#{esc(b["text"])}"/>')
+                after_img = True
+                continue
         elif b["kind"] == "note":
             close_poem()
             continue                      # авторские сноски идут в примечания
