@@ -11,6 +11,11 @@ code: en
 - Em dash (—) without surrounding spaces; en dash (–) for ranges.
 - Serial (Oxford) comma in lists of three or more.
 
+- **Latin and other foreign set phrases stay as they are**, in italics:
+  *de facto*, *post factum*, *curriculum vitae*, *sic*. A reader knows them,
+  and translating flattens the register. A rare one gets a footnote, but
+  stays itself in the text.
+
 ## Grammar and register
 
 - English has no T–V distinction: formality is carried by word choice,

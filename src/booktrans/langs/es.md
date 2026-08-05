@@ -10,6 +10,11 @@ code: es
   **vosotros** solo si el libro es deliberadamente peninsular y el cliente
   lo pide.
 
+- **Las locuciones latinas y demás extranjerismos se dejan tal cual**, en
+  cursiva: *de facto*, *post factum*, *curriculum vitae*, *sic*. El lector
+  las reconoce y traducirlas rebaja el registro. Si la locución es rara, una
+  nota al pie; en el texto sigue siendo ella misma.
+
 ## Tipografía
 - **Signos de apertura ¿ y ¡ son obligatorios**, también en frases cortas y
   en medio de una oración: «Y tú, ¿qué dices?».

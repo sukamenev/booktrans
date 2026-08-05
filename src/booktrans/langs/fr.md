@@ -8,6 +8,11 @@ code: fr
 - Guillemets français « avec espaces insécables », imbriqués “doubles anglais”.
 - Espace insécable avant : ; ! ?
 - Tiret cadratin — pour les dialogues, en début de réplique.
+- **Les locutions latines et autres tournures étrangères restent telles**, en
+  italique : *de facto*, *post factum*, *curriculum vitae*, *sic*. Le lecteur
+  les reconnaît et les traduire abaisse le registre. Une locution rare prend
+  une note, mais reste elle-même dans le texte.
+
 ## Grammaire
 - Le tutoiement et le vouvoiement sont obligatoires et doivent rester
   constants pour chaque couple de personnages.

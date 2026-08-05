@@ -8,6 +8,11 @@ code: de
 - Anführungszeichen: „doppelt unten-oben“, innen ‚einfach‘.
 - Gedankenstrich – mit Leerzeichen (Halbgeviertstrich), nicht der lange Strich.
 - Alle Substantive werden großgeschrieben.
+- **Lateinische und andere fremdsprachige Wendungen bleiben stehen**, kursiv:
+  *de facto*, *post factum*, *curriculum vitae*, *sic*. Der Leser kennt sie,
+  und eine Übersetzung nimmt ihnen den Ton. Seltenes bekommt eine Fußnote,
+  bleibt im Text aber es selbst.
+
 ## Grammatik
 - Du/Sie ist verpflichtend und muss pro Figurenpaar konsequent bleiben.
 - Das Genus steckt im Artikel und ist oft nicht das der Ausgangssprache;
