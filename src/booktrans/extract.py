@@ -615,6 +615,36 @@ def _png_size(raw):
     return 0, 0
 
 
+# Программы распознавания, какими делают текстовый слой в pdf. Список
+# короткий нарочно: ложное «книга распознана» развяжет модели руки чинить то,
+# что не сломано, а это хуже, чем не предупредить её вовсе.
+OCR_MADE = re.compile(
+    r"omnipage|scansoft|abbyy|finereader|tesseract|ocrmypdf|readiris"
+    r"|cuneiform|acrobat capture|paperport|kofax|nuance|iris ?ocr", re.I)
+
+
+def ocr_made(path):
+    """Сделан ли текстовый слой pdf распознаванием.
+
+    Спрашиваем сам файл, а не гадаем по тексту: программа распознавания
+    подписывается в метаданных («OmniPage 11 http://www.scansoft.com»), а
+    вёрстка — своим именем («Acrobat Distiller»). По тексту это не отличить:
+    на живой книге доля битых слов у распознанной вышла ниже, чем у чистого
+    epub, — имена собственные и остатки разметки шумят сильнее самой порчи.
+
+    Молчат метаданные — считаем, что книга набрана. Пропустить порчу дешевле,
+    чем объявить порчей замысел автора.
+    """
+    if not path.lower().endswith(".pdf") or not _which("pdfinfo"):
+        return ""
+    r = subprocess.run(["pdfinfo", path], capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        k, _, v = line.partition(":")
+        if k.strip().lower() in ("creator", "producer") and OCR_MADE.search(v):
+            return v.strip()
+    return ""
+
+
 def photo_pages(path):
     """Страницы, на которых есть фотография. Только список, без извлечения:
     разметке нужно знать, где они, а картинки достанутся потом.

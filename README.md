@@ -706,6 +706,12 @@ the markup was throwing it out along with the junk.
 
 ### Text that came from OCR
 
+Whether the text was recognised is asked of the file itself: an OCR program
+signs the metadata ("OmniPage 11 http://www.scansoft.com") while a typesetter
+names itself otherwise ("Acrobat Distiller"). The text will not tell you — on a
+live book the share of broken words came out lower in the scanned one than in a
+clean epub.
+
 In a pdf letters get swapped and words broken by a space: `IIc realized` for
 "He realized", `J ANUS Proj ect` for "JANUS Project", `Seduction by If` for
 "Seduction by K" — a capital K falls apart into two letters. That damage
