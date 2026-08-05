@@ -55,6 +55,8 @@ def _toc_lines(out):
     for m in TOC_TAG.finditer(out):
         for line in m.group(1).splitlines():
             s = _title(line.strip(" -•*|"))
+            if "`" in s or "<<<" in s:
+                continue                 # модель пересказала само задание
             if 2 <= len(s) <= 120 and s not in got:
                 got.append(s)
     return got
@@ -257,6 +259,7 @@ def apply(paras, marks, cuts=None):
 
 PROSE = 60          # заголовок длиннее — скорее всего строка прозы
 TOC_GAP, TOC_MANY = 3, 4     # столько названий вплотную — это оглавление
+TRUST = 8                    # столько найденных глав — оглавлению можно верить
 
 
 def _rx(name):
@@ -366,8 +369,21 @@ def _by_contents(paras, keys, marks, names):
     # Оглавление нашлось почти всё — значит ему можно верить и в обратную
     # сторону: длинная строка, которой в нём нет, это проза, а не глава.
     # Понижаем до абзаца, а не выбрасываем: текст автора остаётся в книге.
-    if len(found) >= max(3, len(names) // 2):
+    # Оглавлению верим, когда нашлось хотя бы TRUST глав. Долей от списка
+    # мерить нельзя: модель приносит из него и подписи к иллюстрациям, и
+    # разделы, которых в тексте нет, — на живой книге вышло 25 из 72, и
+    # проверка молчала.
+    if len(found) >= min(TRUST, max(3, len(names) // 2)):
+        known = {_key(n) for n in found}
         for i in [i for i, v in marks.items() if v == "title"]:
-            if i not in starts and len(paras[i - 1]) > PROSE:
+            if i in starts:
+                continue
+            k = keys[i - 1]
+            # Обрубок названия: разметка приняла за главу первую строку
+            # разорванного заголовка — «From Physics» при «From Physics to
+            # Biology». Он входит в настоящее название и сам главой не был.
+            stump = k and k not in known and any(
+                k in x and len(k) < len(x) for x in known)
+            if stump or len(paras[i - 1]) > PROSE:
                 marks[i] = "p"
     return len(found), found, cuts
