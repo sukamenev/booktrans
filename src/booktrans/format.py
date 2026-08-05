@@ -260,6 +260,7 @@ def apply(paras, marks, cuts=None):
 PROSE = 60          # заголовок длиннее — скорее всего строка прозы
 TOC_GAP, TOC_MANY = 3, 4     # столько названий вплотную — это оглавление
 TRUST = 8                    # столько найденных глав — оглавлению можно верить
+NEAR = 0.75                  # с какого сходства название считается тем же
 
 
 def _rx(name):
@@ -326,6 +327,13 @@ def _by_contents(paras, keys, marks, names):
             continue
         hits = _where(paras, keys, marks, name)
         if not hits:
+            # Заголовок разорван по строкам: «A Being» + «Makes a Choice».
+            # Пробуем склеить соседние куски здесь же, а не вторым проходом:
+            # к нему `at` уже ушёл бы дальше по книге, и место потерялось.
+            j = _join(paras, keys, marks, _key(name), at, starts)
+            if j:
+                found.add(name)
+                at = j
             continue
         head = next((h for h in hits if h[0] > at), None) or hits[0]
         for i, a2, b2 in hits:
@@ -342,29 +350,6 @@ def _by_contents(paras, keys, marks, names):
                 cuts.setdefault(i, []).append([a2, b2, "drop"])
         found.add(name)
         at = head[0]
-
-    # Заголовок бывает разорван по строкам: «A Being» + «Makes a Choice».
-    # Склеиваем соседние куски, когда вместе они дают название целиком.
-    for name in names:
-        k = _key(name)
-        if name in found or len(k) < 3:
-            continue
-        for i in range(at, len(paras)):
-            joined = ""
-            for j in range(i, min(i + 3, len(paras))):
-                if len(paras[j]) > 100 or marks.get(j + 1) == "toc":
-                    break
-                joined += keys[j]
-                if joined == k:
-                    marks[i + 1] = "title"
-                    starts.add(i + 1)
-                    for m in range(i + 2, j + 2):
-                        marks[m] = "+t"
-                    found.add(name)
-                    at = j + 1
-                    break
-            if name in found:
-                break
 
     # Оглавление нашлось почти всё — значит ему можно верить и в обратную
     # сторону: длинная строка, которой в нём нет, это проза, а не глава.
@@ -387,3 +372,29 @@ def _by_contents(paras, keys, marks, names):
             if stump or len(paras[i - 1]) > PROSE:
                 marks[i] = "p"
     return len(found), found, cuts
+
+
+def _join(paras, keys, marks, k, at, starts):
+    """Склеить два-три соседних куска в заголовок. Возвращает, где он кончился.
+
+    Нестрого: книга и её оглавление расходятся в слове чаще, чем кажется. На
+    странице «Conference of Three Beings», в содержании «First Conference of
+    Three Beings» — сходство 0.90. Спутать первую главу со второй порядок не
+    даёт: каждая ищется после предыдущей.
+    """
+    for i in range(at, len(paras)):
+        joined, best = "", None
+        for j in range(i, min(i + 3, len(paras))):
+            if len(paras[j]) > 100 or marks.get(j + 1) == "toc":
+                break
+            joined += keys[j]
+            if len(joined) >= 8 and difflib.SequenceMatcher(
+                    None, joined, k).ratio() > NEAR:
+                best = j
+        if best is not None:
+            marks[i + 1] = "title"
+            starts.add(i + 1)
+            for m in range(i + 2, best + 2):
+                marks[m] = "+t"
+            return best + 1
+    return None
