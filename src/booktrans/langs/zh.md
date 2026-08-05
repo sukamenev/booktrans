@@ -44,4 +44,4 @@ str.details_chapters: 第 {chapters} 章
 str.details_partly: 部分：第 {chapters} 章
 str.details_caveat: 手工改动未记录于此；同一片段两次润色的，标出后一次。
 str.details_reader: 源文件读取：{reader}。
-str.details_format: 无结构正文的结构标注：{models}。
+str.details_format: 章节与段落的划分：{models}。

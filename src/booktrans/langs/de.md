@@ -46,4 +46,4 @@ str.details_chapters: Kapitel {chapters}
 str.details_partly: teilweise {chapters}
 str.details_caveat: Von Hand vorgenommene Änderungen sind hier nicht verzeichnet; wurde ein Abschnitt zweimal redigiert, steht die spätere Redaktion.
 str.details_reader: Die Quelldatei wurde gelesen mit: {reader}.
-str.details_format: Auszeichnung des unausgezeichneten Textes: {models}.
+str.details_format: Gliederung in Kapitel und Absätze: {models}.
