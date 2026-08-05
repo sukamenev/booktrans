@@ -613,14 +613,19 @@ def review_report(work, log, T=None):
             if t and len(t) > 12 and t.lower().rstrip(".") not in (
                     "нет", "none", "keine", "aucune", "无", "なし", "-", "—"):
                 items.append((x.get("index"), t))
+    p = os.path.join(work, "review.md")
     if not items:
+        # Замечания помечены номером куска. Убрали редактуру — файл обязан
+        # уйти с ней: от прежней нарезки он остался бы лежать как свежий и
+        # показывал бы совсем на другие места книги.
+        if os.path.exists(p):
+            os.unlink(p)
         return
     log("")
     log(T("review_head", len(items)))
     # В консоли — первая мысль замечания, целиком — в файле рядом с кусками.
     # Замечание бывает на полстраницы, и вываливать сорок таких в поток значит
     # смыть остальной отчёт.
-    p = os.path.join(work, "review.md")
     with open(p, "w", encoding="utf-8") as f:
         for idx, t in items:
             f.write(f"## {idx:04d}\n\n{t}\n\n")
