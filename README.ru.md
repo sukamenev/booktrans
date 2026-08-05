@@ -531,7 +531,7 @@ mybooksite\.org
 -pt, --prompt-text S  то же строкой; можно вместе с -p
 -o, --out FILE        выходной fb2
 -w, --work DIR        рабочая папка
---only ЭТАП           только один: structure|fix|scout|translate|edit|build|qa|notes
+--only ЭТАП           только один: structure|ocrfix|scout|translate|edit|build|qa|notes
 --skip a,b            пропустить этапы
 --chunks 5,6,7        только эти куски; можно диапазоном: 41-93
 --force-editing       править дальше и после трёх отказов подряд
@@ -746,8 +746,8 @@ thou art        → you are          отвергнуто: это правка �
 не сочинение. Другую задаёт `--ocrfixer ID`.
 
 `book.json` остаётся нетронутым — там оригинал как он есть, и всегда видно,
-что именно поправлено; правки лежат в `work/fix.json` и накладываются при
-чтении. Проверить отбор без обращения к модели: `python3 tests/fix_check.py`.
+что именно поправлено; правки лежат в `work/ocrfix.json` и накладываются при
+чтении. Проверить отбор без обращения к модели: `python3 tests/ocrfix_check.py`.
 
 ## Список литературы
 

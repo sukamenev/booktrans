@@ -537,7 +537,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --to CODE             target language (langs/CODE.md), en by default
 --ui CODE             interface language (ui/CODE.json), en by default
 --encoding NAME       input encoding, when detection got it wrong
---only STEP           a single step: structure|fix|scout|translate|edit|build|qa|notes
+--only STEP           a single step: structure|ocrfix|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
 --force-editing       keep editing past three refusals in a row
@@ -753,9 +753,9 @@ It runs on the cheapest model the agent has, as the markup pass does: this is
 recognition, not composition. `--ocrfixer ID` picks another.
 
 `book.json` is left untouched — the original stands there as it is, so what
-was corrected is always visible; the corrections live in `work/fix.json` and
+was corrected is always visible; the corrections live in `work/ocrfix.json` and
 are applied on reading. To check the filter without calling a model:
-`python3 tests/fix_check.py`.
+`python3 tests/ocrfix_check.py`.
 
 ## Bibliographies
 

@@ -1195,7 +1195,7 @@ def fix_ocr(work, blocks, agent, system, task, retries, log):
     Модель называет замены, подставляет их программа — и только те, что
     сходятся дословно и проходят `fix_ok`. Переписать книгу она не может.
     """
-    p = f"{work}/fix.json"
+    p = f"{work}/ocrfix.json"
     done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     todo = [b for b in blocks if b["id"] not in done and not b.get("asis")
             and b["kind"] in ("p", "verse", "note", "title") and b["text"].strip()]
@@ -1249,7 +1249,7 @@ def apply_fixes(work, blocks, log=None):
     `book.json` остаётся нетронутым: там оригинал как он есть, и всегда видно,
     что именно поправлено. Правки лежат отдельно и накладываются при чтении.
     """
-    p = f"{work}/fix.json"
+    p = f"{work}/ocrfix.json"
     if not os.path.exists(p):
         return blocks
     fixes, n = json.load(open(p, encoding="utf-8")), 0
