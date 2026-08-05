@@ -944,7 +944,7 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     p = f"{work}/marks.json"
     if os.path.exists(p):
         log("  " + T("marks_known"))
-        return {int(k): v for k, v in json.load(open(p, encoding="utf-8")).items()}
+        return _load_marks(p)
     paras = extract.plain_paragraphs(path, encoding, ask)
     if not paras:
         return None
@@ -960,12 +960,25 @@ def format_marks(work, path, agent, task, encoding, ask, log):
     marks, names = fmt.plan(paras, run, log)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
-    _check_toc(work, paras, marks, names, log)
+    cuts = _check_toc(work, paras, marks, names, log)
     kinds = collections.Counter(marks.values())
     log("  " + T("marks_done", kinds.get("title", 0), kinds.get("skip", 0),
                  kinds.get("+", 0)))
-    json.dump(marks, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    out = {str(k): v for k, v in marks.items() if isinstance(k, int)}
+    out["_cuts"] = {str(k): v for k, v in cuts.items()}
+    json.dump(out, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    marks["cuts"] = cuts
     note_source(work, formatter=getattr(agent, "model", None) or "?")
+    return marks
+
+
+def _load_marks(p):
+    """Пометки и разрезы из файла. Разрезы лежат под отдельным ключом: без
+    них заголовок, влитый в абзац, при пересборке потерялся бы."""
+    d = json.load(open(p, encoding="utf-8"))
+    cuts = d.pop("_cuts", None) or {}
+    marks = {int(k): v for k, v in d.items()}
+    marks["cuts"] = {int(k): v for k, v in cuts.items()}
     return marks
 
 
@@ -976,7 +989,7 @@ def _check_toc(work, paras, marks, names, log):
     from . import format as fmt
     r = fmt.reconcile(paras, marks, names)
     if not r["toc"]:
-        return
+        return {}
     json.dump(r["names"], open(f"{work}/toc.json", "w", encoding="utf-8"),
               ensure_ascii=False, indent=1)
     log("  " + T("toc_found", r["toc"], r["toc"] - len(r["lost"]), r["added"]))
@@ -984,6 +997,7 @@ def _check_toc(work, paras, marks, names, log):
         log("  " + T("toc_lost", _few(r["lost"])))
     if r["dropped"]:
         log("  " + T("toc_dropped", _few(r["dropped"])))
+    return r["cuts"]
 
 
 def _few(names, n=3, cut=60):

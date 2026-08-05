@@ -157,12 +157,12 @@ def reconcile(paras, marks, names=()):
     seen = collections.Counter(keys)
 
     if names:
-        added, found = _by_contents(paras, keys, marks, names)
+        added, found, cuts = _by_contents(paras, keys, marks, names)
     else:
         # Глава названа в оглавлении, а на своём месте не отмечена — поднимаем.
         # Только редкую строку: то, что повторяется по всей книге, —
         # колонтитул, даже если оглавление его называет.
-        added, found = 0, set()
+        added, found, cuts = 0, set(), {}
         for i, k in enumerate(keys, 1):
             if k in named and seen[k] <= RUN and marks.get(i) not in ("title", "toc", "+"):
                 marks[i] = "title"
@@ -187,16 +187,48 @@ def reconcile(paras, marks, names=()):
     if not names:
         found = {named[keys[i - 1]] for i in marks
                  if marks[i] == "title" and keys[i - 1] in named}
-    return {"toc": len(toc), "added": added, "dropped": dropped,
+    return {"toc": len(toc), "added": added, "dropped": dropped, "cuts": cuts,
             "lost": [t for t in toc if t not in found], "names": list(toc)}
 
 
-def apply(paras, marks):
-    """Склеить и разметить по пометкам: [(вид, текст), ...]."""
-    out = []
+def _split(p, spans):
+    """Разрезать кусок по местам, найденным в оглавлении: [(вид, текст), ...].
+
+    Заголовок главы бывает влит в абзац страницы и отдельной строкой не
+    существует вовсе — искать его нечего, надо резать. Колонтитул с тем же
+    названием оттуда просто удаляется.
+    """
+    out, at = [], 0
+    for a, b, kind in sorted(spans):
+        if a < at:
+            continue
+        head = p[at:a].strip()
+        if head:
+            out.append(("p", head))
+        if kind == "title":
+            # Номер страницы прилипает к названию вплотную: «From Physics to
+            # Biology 53».
+            out.append(("title", re.sub(r"\s+\d{1,4}$", "", p[a:b].strip())))
+        at = b
+    tail = p[at:].strip()
+    if tail:
+        out.append(("p", tail))
+    return out
+
+
+def apply(paras, marks, cuts=None):
+    """Склеить и разметить по пометкам: [(вид, текст), ...].
+
+    Разрезы (места, где заголовок влит в абзац) приходят либо отдельно, либо
+    под ключом `cuts` в самих пометках — так они переживают перезапуск, не
+    заводя второго файла."""
+    out, cuts = [], cuts or marks.get("cuts") or {}
     for i, p in enumerate(paras, 1):
         kind = marks.get(i, "p")
         if kind in ("skip", "toc"):
+            continue
+        if i in cuts:
+            out += _split(p, cuts[i])
             continue
         # Продолжение приклеивается только к прозе. К заголовку — никогда:
         # на одной книге за заголовком шло оборванное слово, помеченное `+`,
@@ -215,33 +247,106 @@ def apply(paras, marks):
         # и целая глава ушла бы в оглавление.
         if kind == "title" and len(p) > TITLE_MAX:
             kind = "p"
+        if kind == "title":
+            # Колонтитул несёт номер страницы в той же строке: «From Physics
+            # to Biology       53».
+            p = re.sub(r"\s{2,}\d{1,4}\s*$", "", p)
         out.append(("p" if kind == "+" else kind, p))
     return out
 
 
 PROSE = 60          # заголовок длиннее — скорее всего строка прозы
+TOC_GAP, TOC_MANY = 3, 4     # столько названий вплотную — это оглавление
+
+
+def _rx(name):
+    """Название главы как образец: пробелы в pdf гуляют, регистр тоже."""
+    return re.compile(r"\s+".join(re.escape(w) for w in name.split()), re.I)
+
+
+def _where(paras, keys, marks, name):
+    """Все места, где встречается название: (кусок, начало, конец).
+
+    Начало и конец — по тексту куска; для куска, состоящего из одного лишь
+    названия, это он весь. Названия глав стоят и в колонтитулах, поэтому
+    вхождений почти всегда несколько.
+    """
+    k, rx, out = _key(name), _rx(name), []
+    for i, p in enumerate(paras, 1):
+        if marks.get(i) == "toc":
+            continue
+        if keys[i - 1] == k:
+            out.append((i, 0, len(p)))
+        elif len(p) > 100 and len(name.split()) > 1:
+            # Внутри абзаца режем осторожно: односложное название («Рождение»,
+            # «Переход») встречается в прозе обычным словом, и книга рвалась
+            # посреди фразы. Двух слов подряд хватает, но и они должны стоять
+            # как заголовок — не строчными.
+            out += [(i, m.start(), m.end()) for m in rx.finditer(p)
+                    if not m.group().islower()]
+    return out
 
 
 def _by_contents(paras, keys, marks, names):
-    """Расставить заголовки по оглавлению. Возвращает (сколько поднято, что нашлось).
+    """Расставить главы по оглавлению. Возвращает (сколько, что нашлось, разрезы).
 
     Оглавление — единственное место, где книга сама перечисляет свои главы, и
-    здесь оно главное, а не подсказка. Иначе выходит то, что вышло на живой
+    здесь оно главное, а не подсказка. Без него выходит то, что вышло на живой
     книге: «A Being» и «Makes a Choice» двумя главами, «Electronics
     Connecting» обрубком, а строка прозы — главой.
 
-    Ищем главы по порядку, каждую после предыдущей: в pdf заголовок бывает
-    разорван на две-три строки, и по отдельности они не совпадут ни с чем, а
-    склеенные — совпадут.
+    Каждая глава ищется по порядку, после предыдущей. Найденное место —
+    заголовок, **все остальные вхождения удаляются**: то же название стоит в
+    колонтитуле каждой страницы главы, и разрезать книгу по нему нельзя.
     """
-    at, found, starts = 0, set(), set()
+    # Страница содержания: на ней стоят сразу многие названия, и разрезать
+    # книгу по ним нельзя. Обычно её помечает разметка, но полагаться на это
+    # одно нельзя — цена промаха слишком велика.
+    rxs = [_rx(n) for n in names if len(_key(n)) >= 3]
+    hit = [i for i, p in enumerate(paras, 1) if any(rx.search(p) for rx in rxs)]
+    a2 = 0
+    while a2 < len(hit):
+        # Оглавление свёрстано в столбик и разбирается на десяток кусков по
+        # названию в каждом: они идут вплотную. В самой книге названия глав
+        # стоят через десятки кусков, и в такую цепочку не складываются.
+        b2 = a2
+        while b2 + 1 < len(hit) and hit[b2 + 1] - hit[b2] <= TOC_GAP:
+            b2 += 1
+        if b2 - a2 + 1 >= TOC_MANY:
+            for i in range(hit[a2], hit[b2] + 1):
+                marks[i] = "toc"
+        a2 = b2 + 1
+
+    at, found, starts, cuts = 0, set(), set(), {}
+    for name in names:
+        if len(_key(name)) < 3:
+            continue
+        hits = _where(paras, keys, marks, name)
+        if not hits:
+            continue
+        head = next((h for h in hits if h[0] > at), None) or hits[0]
+        for i, a2, b2 in hits:
+            whole = (a2, b2) == (0, len(paras[i - 1]))
+            if (i, a2, b2) == head:
+                if whole:
+                    marks[i] = "title"
+                    starts.add(i)
+                else:
+                    cuts.setdefault(i, []).append([a2, b2, "title"])
+            elif whole:
+                marks[i] = "skip"
+            else:
+                cuts.setdefault(i, []).append([a2, b2, "drop"])
+        found.add(name)
+        at = head[0]
+
+    # Заголовок бывает разорван по строкам: «A Being» + «Makes a Choice».
+    # Склеиваем соседние куски, когда вместе они дают название целиком.
     for name in names:
         k = _key(name)
-        if len(k) < 3:
+        if name in found or len(k) < 3:
             continue
         for i in range(at, len(paras)):
-            if marks.get(i + 1) in ("toc", "skip") or len(paras[i]) > 100:
-                continue
             joined = ""
             for j in range(i, min(i + 3, len(paras))):
                 if len(paras[j]) > 100 or marks.get(j + 1) == "toc":
@@ -265,4 +370,4 @@ def _by_contents(paras, keys, marks, names):
         for i in [i for i, v in marks.items() if v == "title"]:
             if i not in starts and len(paras[i - 1]) > PROSE:
                 marks[i] = "p"
-    return len(starts), found
+    return len(found), found, cuts
