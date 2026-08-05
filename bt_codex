@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# BookTrans с умолчаниями для агента «codex».
-# Всё остальное — как у booktrans; любой явный ключ сильнее умолчания:
-#   ./bt_codex книга.epub --to de --model другая-модель
+# BookTrans with the defaults of the "codex" agent.
+#
+# There is no model set for codex (PRESETS in src/booktrans/cli.py): every
+# pass — scouting, translation, editing, markup detection, OCR repair — runs on
+# whatever is selected inside codex itself, and none of them has a fallback.
+#
+# To set your own, use a key or the environment; a comma writes a chain, where
+# the first model does the book and the rest pick up what it refuses:
+#   BT_MODEL="model,fallback-model"
+#   ./bt_codex book.epub --to de --translator model,claude:claude-opus-5
 export BT_AGENT="codex"
 exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"

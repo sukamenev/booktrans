@@ -1,4 +1,6 @@
 #!/bin/sh
-# Booktrans с русскими умолчаниями: интерфейс по-русски, перевод на русский.
-# Любой явный ключ сильнее: booktrans_ru книга.epub --to de переведёт на немецкий.
+# BookTrans with Russian defaults: Russian interface, Russian as the target.
+# The agent and its models are untouched — that is what --agent and the bt_*
+# wrappers are for. Any explicit key wins:
+#   booktrans_ru book.epub --to de     translates into German
 BT_UI=ru BT_TO=ru exec "$(dirname "$0")/booktrans" "$@"

@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
-# BookTrans с умолчаниями для агента «claude».
-# Всё остальное — как у booktrans; любой явный ключ сильнее умолчания:
-#   ./bt_claude книга.epub --to de --model другая-модель
+# BookTrans with the defaults of the "claude" agent.
+#
+# The models come from the PRESETS["claude"] set (src/booktrans/cli.py), which
+# is the same as appending to the run:
+#
+#   --formatter  claude-sonnet-5   (at low effort)
+#   --ocrfixer   claude-sonnet-5   (at low effort)
+#
+# Scouting, translation and editing get no model of their own: they run on
+# whatever is selected inside claude itself. To name one explicitly, use a key
+# or the environment:
+#   BT_MODEL="claude-opus-5"
+#
+# Any explicit key beats the set:
+#   ./bt_claude book.epub --to de --editor claude-sonnet-5
 export BT_AGENT="claude"
 exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"
