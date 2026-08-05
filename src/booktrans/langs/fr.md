@@ -53,3 +53,4 @@ str.details_partly: en partie {chapters}
 str.details_caveat: Les corrections faites à la main ne figurent pas ici ; lorsqu'un fragment a été révisé deux fois, c'est le dernier réviseur qui est nommé.
 str.details_reader: Le fichier source a été lu avec : {reader}.
 str.details_format: Découpage en chapitres et paragraphes : {models}.
+str.details_fix: Correction des erreurs de reconnaissance : {models}.

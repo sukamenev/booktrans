@@ -537,7 +537,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --to CODE             target language (langs/CODE.md), en by default
 --ui CODE             interface language (ui/CODE.json), en by default
 --encoding NAME       input encoding, when detection got it wrong
---only STEP           a single step: structure|scout|translate|edit|build|qa|notes
+--only STEP           a single step: structure|fix|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
 --force-editing       keep editing past three refusals in a row
@@ -728,6 +728,30 @@ manglings as one name and hold a single spelling through the book, leave the
 illegible alone and say so in a remark. Do not guess at numbers — a digit is
 misread as easily as it is read. An invented sentence is worse than a damaged
 one: damage shows, invention does not.
+
+**The damage is corrected in the original, in a pass of its own.** Otherwise
+the translator does two jobs at once — deciphering and translating; it
+deciphers silently and differently each time, so one mangled name comes out
+several ways. The editor cannot mend that: it never sees the original. And
+reconnaissance builds its reference from the damaged text.
+
+The corrector runs first and **does not rewrite the text**: it names the
+replacements, the program applies them, and only those that match word for
+word and pass the filter. A replacement is accepted if it is under eighty
+characters, close to the original letter by letter, and invents no digits:
+
+```
+Proj ect        → Project          accepted
+Courlety        → Courtesy         accepted
+Seduction by If → Seduction by K   accepted
+1935            → 1955             refused: digits are not guessed
+thou art        → you are          refused: that is editing the author
+```
+
+`book.json` is left untouched — the original stands there as it is, so what
+was corrected is always visible; the corrections live in `work/fix.json` and
+are applied on reading. To check the filter without calling a model:
+`python3 tests/fix_check.py`.
 
 ## Bibliographies
 

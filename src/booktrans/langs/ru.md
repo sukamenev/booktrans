@@ -90,3 +90,4 @@ str.details_partly: частично {chapters}
 str.details_caveat: Правки, внесённые вручную, здесь не отражены; если кусок редактировался дважды, назван последний из редакторов.
 str.details_reader: Исходный файл прочитан: {reader}.
 str.details_format: Разбивка на главы и абзацы: {models}.
+str.details_fix: Правка порчи распознавания: {models}.

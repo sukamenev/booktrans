@@ -157,6 +157,8 @@ def details_lines(work, st, blocks):
             body.append(st["details_reader"].format(reader=src["reader"]))
         if src.get("formatter"):
             body.append(st["details_format"].format(models=src["formatter"]))
+        if src.get("fixer"):
+            body.append(st["details_fix"].format(models=src["fixer"]))
     p = os.path.join(work, "scout.json")
     if os.path.exists(p):
         m = json.load(open(p, encoding="utf-8")).get("model")

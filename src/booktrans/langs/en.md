@@ -72,3 +72,4 @@ str.details_partly: in part {chapters}
 str.details_caveat: Changes made by hand are not shown here; where a chunk was edited twice, the later editor is the one named.
 str.details_reader: The source file was read with: {reader}.
 str.details_format: Split into chapters and paragraphs: {models}.
+str.details_fix: Correcting recognition damage: {models}.

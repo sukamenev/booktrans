@@ -50,3 +50,4 @@ str.details_partly: 一部: 第{chapters}章
 str.details_caveat: 手作業による修正はここに記していません。同じ箇所を二度推敲した場合は、後の担当を示しています。
 str.details_reader: 原本の読み取り: {reader}。
 str.details_format: 章と段落への区切り: {models}。
+str.details_fix: 認識の乱れの修正: {models}。

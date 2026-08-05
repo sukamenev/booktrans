@@ -70,3 +70,4 @@ str.details_partly: en parte {chapters}
 str.details_caveat: Las correcciones hechas a mano no constan aquí; si un fragmento se revisó dos veces, se nombra al último revisor.
 str.details_reader: El archivo de origen se leyó con: {reader}.
 str.details_format: División en capítulos y párrafos: {models}.
+str.details_fix: Corrección de los errores de reconocimiento: {models}.

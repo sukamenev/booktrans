@@ -25,7 +25,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Сноски делает проход редактуры: он и так держит оригинал с переводом
 # рядом, а отдельный проход перечитывал бы всю книгу второй раз. Шаг notes
 # остался для случая, когда редактуру пропускают.
-STEPS = ("structure", "scout", "translate", "edit", "build", "qa")
+STEPS = ("structure", "fix", "scout", "translate", "edit", "build", "qa")
 ALL_STEPS = STEPS + ("notes",)
 
 
@@ -410,6 +410,18 @@ def main():
         return "\n\n---\n\n".join(parts)
 
     n = 0
+    # Порчу распознавания чиним в оригинале и до всего остального: иначе
+    # разведка соберёт справочник по испорченному, а переводчик будет
+    # разбирать порчу молча и всякий раз по-своему.
+    if made_by_ocr:
+        if "fix" in steps:
+            n += 1
+            log(f"=== {n}. {T('step_fix')} ===")
+            pipeline.proofread(work, blocks, agent_for("formatter"), sysprompt(),
+                               task("fix"), args.retries, log)
+            log("")
+        pipeline.apply_fixes(work, blocks, log)
+
     if "scout" in steps:
         n += 1
         log(f"=== {n}. {T('step_scout')} ===")

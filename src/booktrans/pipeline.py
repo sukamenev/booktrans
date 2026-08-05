@@ -1,5 +1,6 @@
 """Нарезка, перевод, редактура. Все проходы возобновляемые."""
 import collections
+import difflib
 import concurrent.futures as cf
 import json
 import os
@@ -1139,6 +1140,127 @@ def _by_lines(blocks, limit):
         cur.append(b)
         k += m
     return out + ([cur] if cur else [])
+
+
+FIX_CHARS = 12000       # знаков книги в одном запросе корректору
+FIX_MAX = 80            # длиннее — это уже не поправка, а переписывание
+# Ниже сходства — подмена, а не починка. Граница узкая: «hitr«d iietion» →
+# «Introduction» это 0.67, а «thou art» → «you are» (осовременивание автора,
+# чинить которое не просили) — 0.62. Главный заслон тут промпт, а не число.
+FIX_NEAR = 0.65
+
+
+def fix_ok(old, new):
+    """Можно ли принять поправку корректора.
+
+    Порча распознавания — это перепутанная буква и разорванное слово, а не
+    новая фраза. Поэтому замена принимается, только если она короткая, похожа
+    на исходное и не выдумывает цифр: год `1935` восстановить нельзя, цифра
+    распознаётся неверно так же легко, как верно.
+    """
+    if not old or not new or old == new or len(old) > FIX_MAX:
+        return False
+    if not re.search(r"[^\W\d_]", old):
+        return False                       # чинить нечего: ни одной буквы
+    if set(re.findall(r"\d", new)) - set(re.findall(r"\d", old)):
+        return False                       # цифры не угадываем
+    # Сравниваем по одним буквам: порча сидит как раз в пробелах и мусорных
+    # знаках, и они занижают сходство там, где починка верна. «hitr«d iietion»
+    # против «Introduction» — 0.54 как есть и 0.67 по буквам, а подмена слова
+    # даёт ноль и так и так.
+    bare = lambda s: re.sub(r"[\W\d_]", "", s, flags=re.U).lower()   # noqa: E731
+    return difflib.SequenceMatcher(None, bare(old), bare(new)).ratio() >= FIX_NEAR
+
+
+def _parse_fix(out, allowed):
+    """Записи <<<F номер>>> из ответа: {номер: [(было, стало), ...]}."""
+    got = {}
+    for m in re.finditer(r"<<<F\s+(\S+?)>>>\s*ORIG:\s*(.*?)\n\s*FIX:\s*(.*?)(?=<<<|\Z)",
+                         out, re.S):
+        bid, old, new = m.group(1), m.group(2).strip(), m.group(3).strip()
+        if bid in allowed:
+            got.setdefault(bid, []).append((old, new))
+    return got
+
+
+def proofread(work, blocks, agent, system, task, retries, log):
+    """Правка порчи распознавания — в оригинале, до перевода.
+
+    Иначе переводчик делает две работы разом: разбирает порчу и переводит.
+    Разбирает молча и всякий раз по-своему, так что одно искажённое имя в
+    разных кусках выходит по-разному; редактор поправить это не может, он
+    оригинала не видит вовсе, а разведка успевает собрать справочник по
+    испорченному.
+
+    Модель называет замены, подставляет их программа — и только те, что
+    сходятся дословно и проходят `fix_ok`. Переписать книгу она не может.
+    """
+    p = f"{work}/fix.json"
+    done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    todo = [b for b in blocks if b["id"] not in done and not b.get("asis")
+            and b["kind"] in ("p", "verse", "note", "title") and b["text"].strip()]
+    if not todo:
+        if done:
+            log("  " + T("fix_known", sum(len(v) for v in done.values())))
+        return done
+    log("  " + T("fix_start", len(todo)), end="")
+    t0, cost, n, bad = time.time(), 0.0, 0, 0
+    parts = _by_chars(todo, FIX_CHARS)
+    for w, part in enumerate(parts, 1):
+        log(f"{w}/{len(parts)} ", end="")
+        ids = {b["id"] for b in part}
+        body = "\n\n".join(f"<<<F {b['id']}>>>\n{strip(b['text'])}" for b in part)
+        try:
+            (got, _), meta, _ = _run(agent, system, task + "\n\n---\n\n" + body,
+                                     retries, lambda o: (_parse_fix(o, ids), ""), log)
+        except (Refused, RuntimeError, Fatal):
+            log("")
+            log("  " + T("fix_failed", len(part)))
+            continue
+        cost += meta.get("cost_usd") or 0
+        for b in part:
+            keep = [[o, x] for o, x in got.get(b["id"], []) if fix_ok(o, x) and o in b["text"]]
+            bad += len(got.get(b["id"], [])) - len(keep)
+            done[b["id"]] = keep
+            n += len(keep)
+    _save(p, done)
+    log(T("took", f"{time.time() - t0:.0f}",
+          f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
+    log("  " + T("fix_done", n, len(todo)) + (T("fix_bad", bad) if bad else ""))
+    note_source(work, fixer=getattr(agent, "model", None) or "?")
+    return done
+
+
+def _by_chars(blocks, limit):
+    """Блоки пачками не длиннее предела."""
+    out, cur, k = [], [], 0
+    for b in blocks:
+        if cur and k + len(b["text"]) > limit:
+            out.append(cur)
+            cur, k = [], 0
+        cur.append(b)
+        k += len(b["text"])
+    return out + ([cur] if cur else [])
+
+
+def apply_fixes(work, blocks, log=None):
+    """Наложить поправки корректора на текст книги.
+
+    `book.json` остаётся нетронутым: там оригинал как он есть, и всегда видно,
+    что именно поправлено. Правки лежат отдельно и накладываются при чтении.
+    """
+    p = f"{work}/fix.json"
+    if not os.path.exists(p):
+        return blocks
+    fixes, n = json.load(open(p, encoding="utf-8")), 0
+    for b in blocks:
+        for old, new in fixes.get(b["id"], []):
+            if old in b["text"]:
+                b["text"] = b["text"].replace(old, new)
+                n += 1
+    if n and log:
+        log("  " + T("fix_applied", n))
+    return blocks
 
 
 OCR_SAMPLE = 3000       # знаков текста, по которым видно, распознан ли он
