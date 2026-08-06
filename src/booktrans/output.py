@@ -412,7 +412,11 @@ def _tex(s, links=None):
             url = (links or [None] * i)[i - 1] if i <= len(links or []) else None
             if not url:
                 return ""
-            return "}" if close else r"\href{%s}{" % url.replace("%", r"\%")
+            if close:
+                return "}"
+            # В адресе особые знаки экранируются иначе, чем в тексте: `#` —
+            # это якорь, и hyperref без обратной косой ломается на нём.
+            return r"\href{%s}{" % url.replace("%", r"\%").replace("#", r"\#")
         return "}" if close else "\\%s{" % TEX_INLINE[name]
     return re.sub(r"\x00(\d+)\x00", back, s)
 
@@ -558,5 +562,44 @@ def _tex_table(text, spans=None):
     return "\n".join(out)
 
 
-WRITERS = {".tex": write_tex, ".txt": write_txt, ".html": write_html, ".htm": write_html,
+
+TEX_ENGINES = ("lualatex", "xelatex")
+
+
+def write_pdf(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+    """Pdf — это собранный LaTeX, и собирает его TeX, а не мы.
+
+    Своей вёрстки конвейер не делает: перенос строк, разбиение на страницы,
+    встраивание шрифтов — это месяцы работы и всё равно хуже, чем у TeX.
+    Поэтому рядом кладётся `.tex`, и он остаётся лежать в любом случае: не
+    нашлось движка или сборка не удалась — у человека на руках исходник и
+    строка, которой его собрать.
+    """
+    from . import lang
+    import shutil
+    import subprocess
+    tex = os.path.splitext(path)[0] + ".tex"
+    write_tex(tex, meta, items, notes, images, note_prefix, st, cover)
+    engine = next((e for e in TEX_ENGINES if shutil.which(e)), None)
+    if not engine:
+        print("  " + lang.T("pdf_no_engine", os.path.basename(tex),
+                            " или ".join(TEX_ENGINES)))
+        return
+    d = os.path.dirname(os.path.abspath(tex)) or "."
+    print("  " + lang.T("pdf_run", engine), end="", flush=True)
+    for _ in range(2):        # второй проход наполняет оглавление
+        subprocess.run([engine, "-interaction=nonstopmode",
+                        os.path.basename(tex)], cwd=d,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = os.path.splitext(os.path.basename(tex))[0]
+    for ext in (".aux", ".toc", ".out", ".log"):
+        f = os.path.join(d, base + ext)
+        bad = ext == ".log" and os.path.exists(f) and not os.path.exists(path)
+        if os.path.exists(f) and not bad:
+            os.unlink(f)
+    print(lang.T("pdf_done" if os.path.exists(path) else "pdf_failed",
+                 os.path.basename(tex)))
+
+
+WRITERS = {".tex": write_tex, ".pdf": write_pdf, ".txt": write_txt, ".html": write_html, ".htm": write_html,
            ".epub": write_epub}

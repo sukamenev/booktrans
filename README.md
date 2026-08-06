@@ -571,9 +571,14 @@ Liberation. If none is present TeX falls back to its own, and Cyrillic may not
 come out.
 
 ```bash
-./booktrans book.epub --to ru -o Book.tex
-lualatex Book.tex
+./booktrans book.epub --to ru -o Book.tex     # the source
+./booktrans book.epub --to ru -o Book.pdf     # and build it too
 ```
+
+`-o Book.pdf` writes the `.tex` beside it and calls `lualatex` twice — the
+second pass fills the table of contents. With no engine installed the source is
+still there and the pipeline says what to build it with. It stays after a
+failed build as well, together with the error log.
 
 What stays with you is the typography. The preamble comes first and is meant to
 be edited — paper size, margins, type size, two columns. Hyphenation by the

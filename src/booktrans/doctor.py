@@ -23,6 +23,13 @@ LINUX_PM = (
     ("apk", "sudo apk add {alpine}"),
 )
 
+TEXLIVE = {"apt": "texlive-luatex texlive-latex-extra fonts-noto",
+           "rpm": "texlive-luatex texlive-collection-fontsrecommended",
+           "arch": "texlive-luatex texlive-latexextra noto-fonts",
+           "gentoo": "dev-texlive/texlive-luatex media-fonts/noto",
+           "alpine": "texlive-luatex font-noto",
+           "brew": "--cask mactex", "win": "latex"}
+
 POPPLER = {"apt": "poppler-utils", "rpm": "poppler-utils", "arch": "poppler",
            "gentoo": "app-text/poppler", "alpine": "poppler-utils",
            "brew": "poppler", "win": "poppler"}
@@ -84,6 +91,8 @@ def check(log=print, agent="claude"):
          _install_line(POPPLER), need=False)
     line(bool(shutil.which("pdfimages")), "pdfimages", T("doc_pdfimages"),
          _install_line(POPPLER), need=False)
+    line(any(shutil.which(e) for e in ("lualatex", "xelatex")), "lualatex",
+         T("doc_tex"), _install_line(TEXLIVE), need=False)
     try:
         import charset_normalizer          # noqa: F401
         ok = True
