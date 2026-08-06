@@ -298,6 +298,13 @@ def esc(s, links=None, notes_map=None):
                     s = re.sub(rf"&lt;a{i}&gt;.*?&lt;/a{i}&gt;",
                                f'<a l:href="#{anchor}" type="note">[{num}]</a>',
                                s, flags=re.S)
+                    continue
+                if not url.startswith("#"):
+                    continue
+                # Перекрёстная ссылка внутри книги: цель — блок, и его
+                # идентификатор проставлен при сборке.
+                s = s.replace(f"&lt;a{i}&gt;", f'<a l:href="{escape(url)}">')
+                s = s.replace(f"&lt;/a{i}&gt;", "</a>")
                 continue
             s = s.replace(f"&lt;a{i}&gt;", f'<a l:href="{escape(url)}">')
             s = s.replace(f"&lt;/a{i}&gt;", "</a>")
@@ -305,7 +312,20 @@ def esc(s, links=None, notes_map=None):
     return s
 
 
+def link_targets(blocks):
+    """Блоки, на которые ссылаются изнутри книги: им нужен `id` в выходном
+    файле, иначе ссылка ведёт в пустоту."""
+    return {u[1:] for b in blocks for u in b.get("links", ())
+            if u.startswith("#")}
+
+
 def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
+    targets = link_targets(blocks)
+
+    def aid(b):
+        """Атрибут `id`, если на блок ссылаются изнутри книги."""
+        return f' id="{b["id"]}"' if b["id"] in targets else ""
+
     tr, edited = all_translations(work)
     if edited:
         log("  " + lang.T("applied_edits", edited))
@@ -498,11 +518,13 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
                 # Второй заголовок подряд — это подзаголовок: имя автора под
                 # названием, время и место. Открой он свою секцию, предыдущая
                 # осталась бы пустой, а в оглавлении читалки — пустой строкой.
-                w(f"<subtitle>{esc(text, b.get('links'), notes_map)}</subtitle>")
+                w(f"<subtitle{aid(b)}>{esc(text, b.get('links'), notes_map)}</subtitle>")
             else:
                 if open_sec:
                     w("</section>")
-                w("<section>")
+                # Заголовок сам `id` нести не может — по схеме его нет у
+                # <title>, — поэтому цель ссылки помечается на секции.
+                w(f"<section{aid(b)}>")
                 w(f"<title><p>{esc(text, b.get('links'), notes_map)}</p></title>")
                 open_sec = True
             was_title = True
@@ -512,7 +534,7 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             if not open_sec:
                 w("<section>")
                 open_sec = True
-            w(f"<subtitle>{esc(text)}</subtitle>")
+            w(f"<subtitle{aid(b)}>{esc(text)}</subtitle>")
         elif b["kind"] == "verse":
             # Стихи в fb2 — это <poem>/<stanza>/<v>. Такой ветки не было
             # вовсе, и стихотворные строки просто исчезали из книги: у одной
@@ -577,7 +599,7 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             if b["id"] in nid:
                 num = next(n for k, n, _, _ in note_seq if k == nid[b["id"]])
                 a = f'<a l:href="#{nid[b["id"]]}" type="note">[{num}]</a>'
-            w(f"<p>{esc(text, b.get('links'), notes_map)}{a}</p>")
+            w(f"<p{aid(b)}>{esc(text, b.get('links'), notes_map)}{a}</p>")
     close_poem()
     if open_sec:
         w("</section>")

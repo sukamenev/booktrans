@@ -510,6 +510,25 @@ same rules as an epub, through the style census.
 
 To check without calling a model: `python3 tests/html_check.py`.
 
+## Links
+
+The author's outward links — site, social media, sources — are carried over as
+they are: the addresses live in the block, never pass through the model, and
+arrive byte for byte.
+
+**A link into the book stays inside the book.** A page is saved whole, and its
+cross-references are written as full addresses —
+`https://site/article.html#Intro` rather than `#Intro`. What makes a link
+internal is not the address but the anchor: if it exists in this same book, the
+link points inward, however it was written. Anchors are taken both from `id`
+and from the older `<a name>`.
+
+In the finished book such a link reaches its own section: in fb2 through
+`l:href="#…"`, in epub with the chapter's file name. An anchor the book does
+not contain is left alone — that link really is outward.
+
+To check without calling a model: `python3 tests/link_check.py`.
+
 ## Tables
 
 Read from epub, fb2 and html, written into every output format — fb2 has

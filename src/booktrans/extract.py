@@ -94,6 +94,36 @@ def _keep_link(href):
     return href.startswith("http") and not SKIP_LINK.search(href)
 
 
+def _link_inside(blocks):
+    """Ссылку, ведущую в эту же книгу, обратить во внутреннюю.
+
+    Страницу сохраняют целиком, и перекрёстные ссылки в ней записаны полным
+    адресом: «https://сайт/статья.html#Intro» вместо «#Intro». Разбор видел
+    `http` и считал такую ссылку внешней — в переведённой книге она уводила
+    читателя на английский подлинник, да ещё и в оглавлении, где таких ссылок
+    большинство.
+
+    Внутренней ссылку делает не адрес, а якорь: если он есть в этой же книге,
+    ссылка ведёт внутрь, чем бы её ни записали. Сноски не трогаем — у них
+    своя нумерация и свой путь сборки.
+    """
+    notes = {b["note_id"] for b in blocks if b.get("note_id")}
+    at = {a: b["id"] for b in blocks for a in b.get("anchors", ())
+          if b["kind"] != "note" and a not in notes}
+    n = 0
+    for b in blocks:
+        out = []
+        for url in b.get("links", ()):
+            frag = url.split("#", 1)[1] if "#" in url else ""
+            if frag and frag not in notes and frag in at and at[frag] != b["id"]:
+                url = "#" + at[frag]
+                n += 1
+            out.append(url)
+        if out:
+            b["links"] = out
+    return n
+
+
 def _prune_links(blocks):
     """Снять ярлыки внутренних ссылок, которые никуда не ведут.
 
@@ -103,6 +133,7 @@ def _prune_links(blocks):
     чтобы модель не возилась с ярлыками, которые всё равно исчезнут.
     """
     anchors = {b["note_id"] for b in blocks if b.get("note_id")}
+    anchors |= {b["id"] for b in blocks}      # цели перекрёстных ссылок
     for b in blocks:
         links = b.get("links")
         if not links:
@@ -431,9 +462,12 @@ def _html(path, styles=None, encoding=None, ask=None):
         return key
 
     stats = {"watermarks": 0, "junk_pages": 0}
-    got = _doc_blocks(root, styles, get_image, stats)
+    got, anchors = _doc_blocks(root, styles, get_image, stats)
+    at = {}
+    for a, i in anchors.items():
+        at.setdefault(i, []).append(a)
     blocks, sec, n = [], 1, 0
-    for kind, text, lnk, note_id in got:
+    for i, (kind, text, lnk, note_id) in enumerate(got):
         if kind == "title":
             sec += 1
             n = 0
@@ -443,7 +477,11 @@ def _html(path, styles=None, encoding=None, ask=None):
             blk["links"] = lnk
         if note_id:
             blk["note_id"] = note_id
+        if at.get(i):
+            blk["anchors"] = at[i]
         blocks.append(blk)
+    _link_inside(blocks)
+    _link_inside(blocks)
     _prune_links(blocks)
     if not [b for b in blocks if b["kind"] in ("p", "verse")]:
         raise BadBook(f"в {os.path.basename(path)} нет текста — похоже, "
@@ -481,6 +519,23 @@ def _bare(t):
     return re.sub(r"<[^>]+>", "", t).strip()
 
 
+def _anchors_of(el):
+    """Якоря элемента: и `id`, и старый `<a name=…>` внутри него.
+
+    Второй встречается в файлах, вышедших из редакторов и конвертеров: там
+    вместо `id` расставлены пустые `<a name>`, а ссылки на них ведут не
+    решёткой, а полным адресом страницы.
+    """
+    out = [el.get("id")] if el.get("id") else []
+    for ch in el.iter():
+        # Себя не считаем: якорь `<a name>` принадлежит абзацу, внутри
+        # которого стоит, и тот его уже забрал. Иначе сам `<a>`, обходимый
+        # следом за абзацем, переписал бы цель на следующий блок.
+        if ch is not el and re.sub(r"\{.*?\}", "", ch.tag) == "a" and ch.get("name"):
+            out.append(ch.get("name"))
+    return out
+
+
 def _doc_blocks(root, styles, get_image, stats):
     """Блоки одного документа html или xhtml.
 
@@ -494,6 +549,7 @@ def _doc_blocks(root, styles, get_image, stats):
     # Потомков сноски обходить не надо: сама сноска уже взята целиком,
     # иначе её текст выйдет дважды — и в сносках, и абзацем в главе.
     inside_note = set()
+    anchors = {}                 # якорь -> какой по счёту блок его несёт
     prev_anchor = ""
     for el in root.iter():
         # Таблицу берём целиком, как и сноску: иначе её абзацы выйдут ещё и
@@ -509,6 +565,11 @@ def _doc_blocks(root, styles, get_image, stats):
         if a and not (el.text or "").strip():
             prev_anchor = a          # пустая ссылка-якорь перед сноской
         tag = re.sub(r"\{.*?\}", "", el.tag)
+        # Побеждает не первый, а последний: обход идёт сверху вниз, и <body>
+        # с <div> видят якорь раньше того абзаца, которому он принадлежит.
+        # Блока они не дают, а заявку подавали.
+        for a in _anchors_of(el):
+            anchors[a] = len(got)
         if tag == "hr":
             got.append(("break", "", [], ""))
             continue
@@ -574,9 +635,10 @@ def _doc_blocks(root, styles, get_image, stats):
         else:
             kind = "p"
         got.append((kind, text, links, ""))
-    keep = []
-    for k, t, l, nid_ in got:
+    keep, moved = [], {}
+    for i, (k, t, l, nid_) in enumerate(got):
         if k in ("image", "break"):
+            moved[i] = len(keep)
             keep.append((k, t, l, nid_))
             continue
         txt = _bare(t)
@@ -585,9 +647,9 @@ def _doc_blocks(root, styles, get_image, stats):
         if WATERMARK.search(txt):
             stats["watermarks"] += 1
             continue
+        moved[i] = len(keep)
         keep.append((k, t, l, nid_))
-    got = keep
-    return got
+    return keep, {a: moved[i] for a, i in anchors.items() if i in moved}
 
 
 def _epub(path, styles=None, encoding=None, ask=None):
@@ -661,20 +723,25 @@ def _epub(path, styles=None, encoding=None, ask=None):
 
         sec += 1
         n = 0
-        got = _doc_blocks(root, styles, get_image, stats)
+        got, anchors = _doc_blocks(root, styles, get_image, stats)
+        at = {}
+        for a, i in anchors.items():
+            at.setdefault(i, []).append(a)
         plain = " ".join(_bare(t) for k, t, _, _ in got if k in ("p", "title")).strip()
         if not plain:
             continue                          # страница без текста
         if JUNK_PAGE.match(plain) and len(plain.split()) < 120:
             stats["junk_pages"] += 1
             continue                          # оглавление, реклама, навигация
-        for kind, text, lnk, note_id in got:
+        for i, (kind, text, lnk, note_id) in enumerate(got):
             n += 1
             blk = {"id": f"s{sec:02d}.b{n:04d}", "kind": kind, "text": text}
             if lnk:
                 blk["links"] = lnk
             if note_id:
                 blk["note_id"] = note_id     # по нему на сноску ссылается текст
+            if at.get(i):
+                blk["anchors"] = at[i]
             blocks.append(blk)
 
     cover_bytes = None
@@ -683,6 +750,7 @@ def _epub(path, styles=None, encoding=None, ask=None):
             cover_bytes = zf.read(cover)
         except KeyError:
             pass
+    _link_inside(blocks)
     _prune_links(blocks)
     if lost and not blocks:
         raise BadBook("ни одна глава epub не прочиталась:\n  "

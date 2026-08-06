@@ -119,6 +119,7 @@ h2{color:#999}.notes{color:#bbb;border-color:#333}sup a{color:#7ab}}"""
 
 def write_html(path, meta, items, notes, images, note_prefix, st=None):
     st = st or {}
+    targets = _targets(items)
     title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
     author = meta.get("author_target") or meta.get("author") or ""
     code = meta.get("target_lang", "ru")
@@ -131,9 +132,9 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
     nums = {b: i for i, b in enumerate(notes, 1)}
     for kind, text, bid, links in items:
         if kind == "title":
-            o.append(f"<h1>{_inline(text, HTML_INLINE)}</h1>")
+            o.append(f"<h1{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h1>")
         elif kind == "subtitle":
-            o.append(f"<h2>{_inline(text, HTML_INLINE)}</h2>")
+            o.append(f"<h2{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h2>")
         elif kind == "break":
             o.append("<hr>")
         elif kind == "image" and text in images:
@@ -150,7 +151,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
         elif kind == "p":
             mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">[{nums[bid]}]</a></sup>'
                     if bid in nums else "")
-            o.append(f"<p>{_inline(text, HTML_INLINE, links)}{mark}</p>")
+            o.append(f"<p{_at(bid, targets)}>"
+                     f"{_inline(text, HTML_INLINE, links)}{mark}</p>")
     if notes:
         o.append('<div class="notes"><h2>' + escape(st.get("notes_title", "Примечания")) + '</h2><ol>')
         for i, (bid, txt) in enumerate(notes.items(), 1):
@@ -166,8 +168,19 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
 
 # ---------------------------------------------------------------- epub
 
+def _at(bid, targets):
+    return f' id="{bid}"' if bid in targets else ""
+
+
+def _targets(items):
+    """Блоки, на которые ссылаются изнутри книги: им нужен `id`."""
+    return {u[1:] for _, _, _, links in items for u in (links or ())
+            if u.startswith("#")}
+
+
 def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None):
     st = st or {}
+    targets = _targets(items)
     code = meta.get("target_lang", "ru")
     title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
     author = meta.get("author_target") or meta.get("author") or ""
@@ -194,14 +207,20 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
                 '<link rel="stylesheet" href="style.css" type="text/css"/>'
                 f"</head><body>{body}</body></html>")
 
+    # В epub книга разложена по файлам, и «#блок» внутри одного из них до
+    # цели в другом не доведёт: адрес обязан нести имя файла.
+    where = {b: f"ch{i:03d}.xhtml" for i, part in enumerate(parts, 1)
+             for _, _, b, _ in part}
     files = {}
     for i, part in enumerate(parts, 1):
         o = []
         for kind, text, bid, links in part:
+            links = [where.get(u[1:], "") + u if u.startswith("#") else u
+                     for u in (links or [])] or None
             if kind == "title":
-                o.append(f"<h1>{_inline(text, HTML_INLINE)}</h1>")
+                o.append(f"<h1{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h1>")
             elif kind == "subtitle":
-                o.append(f"<h2>{_inline(text, HTML_INLINE)}</h2>")
+                o.append(f"<h2{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h2>")
             elif kind == "break":
                 o.append("<hr/>")
             elif kind == "image" and text in images:
@@ -215,7 +234,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             elif kind == "p":
                 mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">[{nums[bid]}]</a></sup>'
                         if bid in nums else "")
-                o.append(f"<p>{_inline(text, HTML_INLINE, links)}{mark}</p>")
+                o.append(f"<p{_at(bid, targets)}>"
+                         f"{_inline(text, HTML_INLINE, links)}{mark}</p>")
         files[f"ch{i:03d}.xhtml"] = xhtml("".join(o), titles[i - 1])
 
     if notes:
