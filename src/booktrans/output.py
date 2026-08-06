@@ -276,8 +276,17 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         nav.append(f'<li><a href="notes.xhtml">{escape(st.get("notes_title", "Примечания"))}</a></li>')
     nav.append("</ol></nav></body></html>")
 
+    # Обложка нередко лежит и среди картинок книги: тогда второй копии под
+    # именем cover.jpg не нужно — на одной живой книге она весила 2,3 МБ из
+    # 5,4. Хватит пометки на той, что уже есть.
+    same = next((n for n, raw in images.items() if raw == cover), None) if cover else None
+    # В книгу кладём только то, на что в ней ссылаются, плюс обложку. Реклама
+    # и титульная картинка из исходника обычно висят на выброшенных блоках, а
+    # весят как половина книги: на одной живой epub — 860 КБ из 3,2 МБ.
+    used = {t for k, t, *_ in items if k == "image"}
+    images = {n: r for n, r in images.items() if n in used or n == same}
     man, spine = [], []
-    if cover:
+    if cover and not same:
         man.append('<item id="cover-img" href="img/cover.jpg" '
                    'media-type="image/jpeg" properties="cover-image"/>')
     for i in range(1, len(parts) + 1):
@@ -288,7 +297,9 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         man.append('<item id="notes" href="notes.xhtml" media-type="application/xhtml+xml"/>')
         spine.append('<itemref idref="notes"/>')
     for j, name in enumerate(images):
-        man.append(f'<item id="img{j}" href="img/{escape(name)}" media-type="{_mime(name)}"/>')
+        cov = ' properties="cover-image"' if name == same else ""
+        man.append(f'<item id="img{j}" href="img/{escape(name)}" '
+                   f'media-type="{_mime(name)}"{cov}/>')
     man.append('<item id="css" href="style.css" media-type="text/css"/>')
     man.append('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" '
                'properties="nav"/>')
@@ -328,7 +339,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             z.writestr("OEBPS/" + name, body)
         for name, raw in images.items():
             z.writestr("OEBPS/img/" + name, raw)
-        if cover:
+        if cover and not same:
             z.writestr("OEBPS/img/cover.jpg", cover)
 
 
