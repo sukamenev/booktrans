@@ -2,8 +2,8 @@
 
 *[Русская версия](README.ru.md)*
 
-**Translate a whole book in one run.** Takes epub, fb2, pdf or txt; produces a
-finished book as epub, fb2, html or txt.
+**Translate a whole book in one run.** Takes epub, fb2, html, pdf or txt;
+produces a finished book as epub, fb2, html or txt.
 
 ## Translating a book
 
@@ -76,7 +76,7 @@ translation, adds footnotes and assembles the file.
 
 ## What it does
 
-- **reads** epub, fb2, pdf, txt; **writes** epub, fb2, html, txt;
+- **reads** epub, fb2, html, pdf, txt; **writes** epub, fb2, html, txt;
 - **works out the markup with the model** rather than by fixed rules: every
   publisher lays books out differently;
 - **scouts the book before translating** — narrator voices, names, terms,
@@ -485,6 +485,25 @@ compiled at the site
 ```
 
 How much was stripped is shown in the output.
+
+## A standalone html
+
+Read on the same footing as epub — the parsing is shared, an epub being a zip
+of such documents. Two things differ.
+
+Strict parsing falls over on html as people actually write it: tags left open,
+attributes unquoted, `<br>` without a slash. So html is parsed leniently — an
+unclosed heading is closed by the paragraph that follows instead of swallowing
+half the page, and `<script>` and `<style>` never reach the book.
+
+Images are taken from the disk beside the file, and ones embedded in the markup
+(`data:`) from the markup itself. A link that leads nowhere is passed over in
+silence: a page is saved without its images folder more often than with it.
+
+A lone html has no chapters, so it is cut into sections by its headings, by the
+same rules as an epub, through the style census.
+
+To check without calling a model: `python3 tests/html_check.py`.
 
 ## Encodings
 

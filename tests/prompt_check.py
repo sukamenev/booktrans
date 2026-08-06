@@ -65,6 +65,26 @@ CASES = [
      "de", [BASE, "для всех", "для немецкого"], False),
 ]
 
+# Несколько папок сразу: своя старше авторской. (имя, старшая, младшая,
+# язык, что выйдет).
+ROOTS = [
+    ("своей папки нет", {}, {"translate.md": BASE}, "de", [BASE]),
+
+    ("своя папка перекрывает",
+     {"translate.md": "моё"}, {"translate.md": BASE}, "de", ["моё"]),
+
+    ("язык в своей папке старше общего в авторской",
+     {"de/translate.md": "mein Deutsch"}, {"translate.md": BASE}, "de",
+     ["mein Deutsch"]),
+
+    # Замена берётся одна, а дополнения собираются со всех папок: иначе своё
+    # дополнение молча отменяло бы авторское.
+    ("дополнения складываются, авторское первым",
+     {"translate.add.md": "моё сверху"},
+     {"translate.md": BASE, "translate.add.md": "авторское"},
+     "de", [BASE, "авторское", "моё сверху"]),
+]
+
 # Знаки протокола: что должно найтись пропавшим в перекрытом промпте.
 TOKENS = [
     ("всё на месте", "deutsch\n<<<P>>>\nTERM: Wort", []),
@@ -78,7 +98,7 @@ def main():
     bad = 0
     for name, files, to, want, own_want in CASES:
         d = build(files)
-        text, own = cli.prompt("translate", to, d)
+        text, own = cli.prompt("translate", to, [d])
         ok = text == "\n\n".join(want) and bool(own) == own_want
         print(f"  {name:34} {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}")
         if not ok:
@@ -86,6 +106,17 @@ def main():
             print(f"      вышло: {text!r}, своё={bool(own)}")
         bad += not ok
         shutil.rmtree(d)
+    for name, high, low, to, want in ROOTS:
+        a, b = build(high), build(low)
+        text, _ = cli.prompt("translate", to, [a, b])
+        ok = text == "\n\n".join(want)
+        print(f"  папки: {name:27} {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}")
+        if not ok:
+            print(f"      ждали: {'|'.join(want)!r}")
+            print(f"      вышло: {text!r}")
+        bad += not ok
+        shutil.rmtree(a)
+        shutil.rmtree(b)
     for name, over, want in TOKENS:
         d = build({"translate.md": BASE})
         got = cli.lost_tokens("translate", over, d)
@@ -95,7 +126,7 @@ def main():
             print(f"      ждали {want}, вышло {got}")
         bad += not ok
         shutil.rmtree(d)
-    n = len(CASES) + len(TOKENS)
+    n = len(CASES) + len(ROOTS) + len(TOKENS)
     print(f"\nслучаев: {n}   с расхождениями: {bad}")
     return 1 if bad else 0
 

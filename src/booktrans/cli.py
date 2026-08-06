@@ -93,8 +93,37 @@ PROMPTS = os.path.join(HERE, "prompts")
 TOKENS = re.compile(r"<<<[A-Z]+(?=[ >])|^[A-Z]{2,10}:", re.M)
 
 
-def prompt(name, to=None, root=PROMPTS):
-    """Промпт прохода, с учётом языковых перекрытий.
+def config_dir():
+    """Папка настроек пользователя — своя на каждой системе.
+
+    Стандартной библиотеке такое неизвестно; ради этих пяти строк существует
+    пакет `platformdirs`, но тянуть зависимость в проект с одной-единственной
+    незачем. На Linux спрашиваем `XDG_CONFIG_HOME` (обычно она не задана, и
+    соглашение предписывает `~/.config`), на прочих системах — их места.
+    """
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~/AppData/Roaming")
+    elif sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "booktrans")
+
+
+def prompt_roots():
+    """Где искать промпты, от старшего к младшему.
+
+    Папка пакета перезаписывается при обновлении, поэтому свои промпты кладут
+    не в неё. `BOOKTRANS_PROMPTS` — для запуска из скрипта и «положил рядом с
+    книгой», папка настроек — для того, что должно пережить обновление.
+    """
+    out = [os.environ.get("BOOKTRANS_PROMPTS"),
+           os.path.join(config_dir(), "prompts"), PROMPTS]
+    return [p for p in out if p]
+
+
+def prompt(name, to=None, roots=None):
+    """Промпт прохода, с учётом перекрытий.
 
     Свои промпты кладут в папку по коду языка перевода:
 
@@ -102,16 +131,32 @@ def prompt(name, to=None, root=PROMPTS):
         prompts/de/translate.add.md    в дополнение к нему
 
     Файл `.add.md` приписывается к тому, что вышло, — им дополняют, не
-    переписывая. Такой же файл в самой `prompts/` действует на все языки.
+    переписывая; такой же файл вне языковой папки действует на все языки.
+    Замена берётся одна, старшая; дополнения собираются со всех папок, начиная
+    с авторской, — иначе своё дополнение отменяло бы авторское.
     """
-    own = os.path.join(root, to, f"{name}.md") if to else None
-    if not (own and os.path.exists(own)):
-        own = None
-    out = [open(own or os.path.join(root, f"{name}.md"), encoding="utf-8").read()]
-    for add in (os.path.join(root, f"{name}.add.md"),
-                os.path.join(root, to, f"{name}.add.md") if to else None):
-        if add and os.path.exists(add):
-            out.append(open(add, encoding="utf-8").read())
+    roots = roots or prompt_roots()
+    base = None
+    for root in roots:
+        for p in ([os.path.join(root, to, f"{name}.md")] if to else []) + \
+                 [os.path.join(root, f"{name}.md")]:
+            if os.path.exists(p):
+                base = p
+                break
+        if base:
+            break
+    if base is None:
+        raise SystemExit(f"нет промпта {name}.md ни в одной из папок: "
+                         + ", ".join(roots))
+    out = [open(base, encoding="utf-8").read()]
+    for root in reversed(roots):
+        for add in [os.path.join(root, f"{name}.add.md")] + \
+                   ([os.path.join(root, to, f"{name}.add.md")] if to else []):
+            if os.path.exists(add):
+                out.append(open(add, encoding="utf-8").read())
+    # «Своё» — всё, кроме авторского файла из последней папки: о нём человеку
+    # сообщают, потому что дальше конвейер работает не по тому, что в пакете.
+    own = base if base != os.path.join(roots[-1], f"{name}.md") else None
     return "\n\n".join(out), own
 
 
@@ -383,7 +428,7 @@ def main():
         text, own = prompt(name, args.to)
         if own and name not in said:
             said.add(name)
-            log("  " + T("prompt_own", os.path.relpath(own, PROMPTS)))
+            log("  " + T("prompt_own", own.replace(os.path.expanduser("~"), "~")))
             lost = lost_tokens(name, text)
             if lost:
                 log("  " + T("prompt_lost", ", ".join(lost)))

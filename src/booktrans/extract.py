@@ -6,9 +6,11 @@ kind: title | subtitle | p | break
 Идентификатор устойчив: по нему собирается перевод и проверяется, что ни один
 абзац не потерялся и не склеился.
 """
+import base64
 import collections
 import functools
 import difflib
+import html.parser
 import os
 import re
 import subprocess
@@ -241,6 +243,10 @@ def scan_styles(path):
     и <p class="Chap-Title-ct">. На вход модели идёт только эта перепись —
     десяток строк, а не книга.
     """
+    if path.lower().endswith((".html", ".htm")):
+        seen = {}
+        _scan_doc(_html_tree(open(path, "rb").read()), seen)
+        return sorted(seen.values(), key=lambda r: -r["count"])
     if not path.lower().endswith(".epub"):
         return []
     zf = zipfile.ZipFile(path)
@@ -261,26 +267,289 @@ def scan_styles(path):
             root = ET.fromstring(zf.read(_zpath(base, item.get("href"))))
         except (KeyError, ET.ParseError):
             continue
-        for el in root.iter():
-            tag = re.sub(r"\{.*?\}", "", el.tag)
-            if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
-                continue
-            if _is_container(el):
-                continue
-            txt = _inner(el)[0]
-            txt = re.sub(r"<[^>]+>", "", txt).strip()
-            if not txt:
-                continue
-            key = (tag, (el.get("class") or "").strip())
-            rec = seen.setdefault(key, {"tag": key[0], "cls": key[1],
-                                        "count": 0, "samples": []})
-            rec["count"] += 1
-            if len(rec["samples"]) < 3:
-                rec["samples"].append(txt[:90])
+        _scan_doc(root, seen)
     return sorted(seen.values(), key=lambda r: -r["count"])
 
 
+def _scan_doc(root, seen):
+    for el in root.iter():
+        tag = re.sub(r"\{.*?\}", "", el.tag)
+        if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
+            continue
+        if _is_container(el):
+            continue
+        txt = _inner(el)[0]
+        txt = re.sub(r"<[^>]+>", "", txt).strip()
+        if not txt:
+            continue
+        key = (tag, (el.get("class") or "").strip())
+        rec = seen.setdefault(key, {"tag": key[0], "cls": key[1],
+                                    "count": 0, "samples": []})
+        rec["count"] += 1
+        if len(rec["samples"]) < 3:
+            rec["samples"].append(txt[:90])
+
+
+# ---------------------------------------------------------------- HTML
+
+# Пустые теги: конца у них нет, и ждать его — значит уложить в них всю
+# оставшуюся страницу.
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+        "meta", "param", "source", "track", "wbr"}
+# Что закрывается само, когда начинается такой же или старший брат. Правил в
+# html десятки; берём те, без которых дерево заваливается набок.
+BLOCK = {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "ul", "ol",
+         "table", "blockquote", "section", "article", "hr"}
+CLOSES = dict({"p": BLOCK, "li": {"li"}, "dd": {"dd", "dt"}, "dt": {"dd", "dt"}},
+              **{h: BLOCK for h in ("h1", "h2", "h3", "h4", "h5", "h6")})
+DROP = {"script", "style", "template"}
+
+
+class _Html(html.parser.HTMLParser):
+    """Дерево из html, который не обязан быть xml.
+
+    Отдельный html пишут люди и редакторы, а не издательские конвейеры: теги
+    не закрыты, атрибуты без кавычек, `<br>` без слэша. `ET.fromstring` на
+    таком падает, а книга при этом читается прекрасно.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.b = ET.TreeBuilder()
+        self.open, self.skip = [], 0
+        self.b.start("html", {})
+
+    def handle_starttag(self, tag, attrs):
+        if tag in DROP:
+            self.skip += 1
+            return
+        if self.skip:
+            return
+        # `epub:type` в отдельном html встречается: файл выгружен из epub.
+        # Приводим к тому же виду, в каком его ждёт разбор.
+        at = {(EPUB_OPS + "type" if k == "epub:type" else k): (v or "")
+              for k, v in attrs}
+        while self.open and tag in CLOSES.get(self.open[-1], ()):
+            self.b.end(self.open.pop())
+        if tag in VOID:
+            self.b.start(tag, at)
+            self.b.end(tag)
+            return
+        self.b.start(tag, at)
+        self.open.append(tag)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in VOID and self.open and self.open[-1] == tag:
+            self.b.end(self.open.pop())
+
+    def handle_endtag(self, tag):
+        if tag in DROP:
+            self.skip = max(0, self.skip - 1)
+            return
+        if self.skip or tag in VOID or tag not in self.open:
+            return
+        while self.open:                  # закрываем и всё, что забыли закрыть
+            t = self.open.pop()
+            self.b.end(t)
+            if t == tag:
+                break
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.b.data(data)
+
+    def tree(self):
+        while self.open:
+            self.b.end(self.open.pop())
+        self.b.end("html")
+        return self.b.close()
+
+
+def _html_tree(raw, encoding=None, ask=None):
+    p = _Html()
+    p.feed(_decode(raw, encoding, ask) if isinstance(raw, bytes) else raw)
+    p.close()
+    return p.tree()
+
+
+IMG_MIME = {"png": "png", "gif": "gif", "webp": "webp", "svg+xml": "svg",
+            "jpeg": "jpg", "jpg": "jpg"}
+
+
+def _html(path, styles=None, encoding=None, ask=None):
+    """Отдельный html: одна страница, один раздел.
+
+    Картинки берутся с диска рядом с файлом, а встроенные `data:` — прямо из
+    разметки. Ссылка, ведущая в никуда, просто пропускается: html сохраняют
+    без папки с картинками чаще, чем с ней.
+    """
+    root = _html_tree(open(path, "rb").read(), encoding, ask)
+    meta, images = {}, {}
+    for el in root.iter():
+        tag = re.sub(r"\{.*?\}", "", el.tag)
+        if tag == "title" and (el.text or "").strip():
+            meta.setdefault("title", el.text.strip())
+        elif tag == "html" and el.get("lang"):
+            meta.setdefault("lang", el.get("lang"))
+        elif tag == "meta":
+            name = (el.get("name") or el.get("property") or "").lower()
+            val = (el.get("content") or "").strip()
+            if val and name in ("author", "dc.creator", "citation_author"):
+                meta.setdefault("author", val)
+            elif val and name in ("dc.title", "og:title"):
+                meta.setdefault("title", val)
+
+    def get_image(href):
+        if href.startswith("data:"):
+            head, _, data = href.partition(",")
+            if "base64" not in head:
+                return None
+            mime = re.search(r"image/([\w+.-]+)", head)
+            key = f"img{len(images) + 1:04d}.{IMG_MIME.get(mime.group(1), 'png') if mime else 'png'}"
+            try:
+                images[key] = base64.b64decode(data)
+            except (ValueError, TypeError):
+                return None
+            return key
+        src = os.path.join(os.path.dirname(os.path.abspath(path)),
+                           urllib.parse.unquote(href.split("#")[0]))
+        key = os.path.basename(src)
+        if key in images:
+            return key
+        if not os.path.isfile(src):
+            return None                      # картинки рядом не положили
+        images[key] = open(src, "rb").read()
+        return key
+
+    stats = {"watermarks": 0, "junk_pages": 0}
+    got = _doc_blocks(root, styles, get_image, stats)
+    blocks, sec, n = [], 1, 0
+    for kind, text, lnk, note_id in got:
+        if kind == "title":
+            sec += 1
+            n = 0
+        n += 1
+        blk = {"id": f"s{sec:02d}.b{n:04d}", "kind": kind, "text": text}
+        if lnk:
+            blk["links"] = lnk
+        if note_id:
+            blk["note_id"] = note_id
+        blocks.append(blk)
+    _prune_links(blocks)
+    if not [b for b in blocks if b["kind"] in ("p", "verse")]:
+        raise BadBook(f"в {os.path.basename(path)} нет текста — похоже, "
+                      "страница целиком из картинок или скриптов")
+    return meta, blocks, None, images
+
+
 # ---------------------------------------------------------------- EPUB
+
+def _bare(t):
+    return re.sub(r"<[^>]+>", "", t).strip()
+
+
+def _doc_blocks(root, styles, get_image, stats):
+    """Блоки одного документа html или xhtml.
+
+    Epub — это zip из таких документов, отдельный html — один такой
+    документ; разбор у них общий, разница только в том, откуда берутся
+    картинки. `get_image(href)` возвращает имя картинки или None, если
+    её нет: в отдельном html ссылка часто ведёт на файл, которого рядом
+    не положили.
+    """
+    got = []
+    # Потомков сноски обходить не надо: сама сноска уже взята целиком,
+    # иначе её текст выйдет дважды — и в сносках, и абзацем в главе.
+    inside_note = set()
+    prev_anchor = ""
+    for el in root.iter():
+        if _epub_type(el) in NOTE_TYPES:
+            for ch in el.iter():
+                if ch is not el:
+                    inside_note.add(id(ch))
+    for el in root.iter():
+        if id(el) in inside_note:
+            continue
+        a = _anchor_in(el)
+        if a and not (el.text or "").strip():
+            prev_anchor = a          # пустая ссылка-якорь перед сноской
+        tag = re.sub(r"\{.*?\}", "", el.tag)
+        if tag == "hr":
+            got.append(("break", "", [], ""))
+            continue
+        if tag in ("img", "image"):
+            href = el.get("src") or el.get("href") or \
+                el.get("{http://www.w3.org/1999/xlink}href")
+            key = get_image(href) if href else None
+            if key:
+                got.append(("image", key, [], ""))
+            continue
+        if tag in ("aside", "div", "li", "p") and _epub_type(el) in NOTE_TYPES:
+            # Авторская сноска. В поток главы её ставить нельзя: она
+            # вывалится абзацем посреди сцены. Уходит отдельным блоком,
+            # переводится наравне со всем и при сборке встаёт в сноски.
+            text, links = _inner(el)
+            if text:
+                got.append(("note", text, links, el.get("id") or ""))
+            continue
+        if tag == "pre":
+            # Листинг. Раньше сюда не заглядывали вовсе, и в книге по
+            # программированию пропадал весь код до единой строки.
+            t = _pre_text(el)
+            if t:
+                got.append(("code", t, [], ""))
+            continue
+        if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
+            continue
+        if _is_container(el):
+            continue                      # контейнер, а не абзац
+        text, links = _inner(el)
+        if not text:
+            continue
+        cls = (el.get("class") or "").strip()
+        mapped = (styles or {}).get(f"{tag}|{cls}")
+        if mapped == "skip":
+            continue
+        if mapped == "note":
+            # Сноска, опознанная по стилю (так размечает, например,
+            # «Проект Гутенберг»): якорь у неё бывает не на самом абзаце,
+            # а на пустой ссылке перед ним.
+            text, links = _inner(el, note=True)
+            if text:
+                got.append(("note", text, links,
+                            el.get("id") or _anchor_in(el) or prev_anchor))
+            continue
+        if mapped in ("title", "subtitle", "p", "verse"):
+            kind = mapped
+            got.append((kind, text, links, ""))
+            continue
+        if tag in ("h1", "h2"):
+            kind = "title"
+        elif tag in ("h3", "h4"):
+            kind = "subtitle"
+        elif SUB_CLASS.search(cls):
+            kind = "subtitle"        # раньше TITLE_CLASS: «Chap-Epigraph»
+        elif TITLE_CLASS.search(cls):
+            kind = "title"
+        else:
+            kind = "p"
+        got.append((kind, text, links, ""))
+    keep = []
+    for k, t, l, nid_ in got:
+        if k in ("image", "break"):
+            keep.append((k, t, l, nid_))
+            continue
+        txt = _bare(t)
+        if not txt:
+            continue
+        if WATERMARK.search(txt):
+            stats["watermarks"] += 1
+            continue
+        keep.append((k, t, l, nid_))
+    got = keep
+    return got
+
 
 def _epub(path, styles=None, encoding=None, ask=None):
     zf = zipfile.ZipFile(path)
@@ -341,106 +610,20 @@ def _epub(path, styles=None, encoding=None, ask=None):
         except KeyError as e:
             lost.append(f"{name}: {type(e).__name__}")
             continue
+        def get_image(href, _base=os.path.dirname(name)):
+            ipath = _zpath(_base, href)
+            key = os.path.basename(ipath)
+            if key not in images:
+                try:
+                    images[key] = zf.read(ipath)
+                except KeyError:
+                    return None
+            return key
+
         sec += 1
         n = 0
-        got = []
-        # Потомков сноски обходить не надо: сама сноска уже взята целиком,
-        # иначе её текст выйдет дважды — и в сносках, и абзацем в главе.
-        inside_note = set()
-        prev_anchor = ""
-        for el in root.iter():
-            if _epub_type(el) in NOTE_TYPES:
-                for ch in el.iter():
-                    if ch is not el:
-                        inside_note.add(id(ch))
-        for el in root.iter():
-            if id(el) in inside_note:
-                continue
-            a = _anchor_in(el)
-            if a and not (el.text or "").strip():
-                prev_anchor = a          # пустая ссылка-якорь перед сноской
-            tag = re.sub(r"\{.*?\}", "", el.tag)
-            if tag == "hr":
-                got.append(("break", "", [], ""))
-                continue
-            if tag in ("img", "image"):
-                href = el.get("src") or el.get("href") or \
-                    el.get("{http://www.w3.org/1999/xlink}href")
-                if href:
-                    ipath = _zpath(os.path.dirname(name), href)
-                    key = os.path.basename(ipath)
-                    if key not in images:
-                        try:
-                            images[key] = zf.read(ipath)
-                        except KeyError:
-                            continue
-                    got.append(("image", key, [], ""))
-                continue
-            if tag in ("aside", "div", "li", "p") and _epub_type(el) in NOTE_TYPES:
-                # Авторская сноска. В поток главы её ставить нельзя: она
-                # вывалится абзацем посреди сцены. Уходит отдельным блоком,
-                # переводится наравне со всем и при сборке встаёт в сноски.
-                text, links = _inner(el)
-                if text:
-                    got.append(("note", text, links, el.get("id") or ""))
-                continue
-            if tag == "pre":
-                # Листинг. Раньше сюда не заглядывали вовсе, и в книге по
-                # программированию пропадал весь код до единой строки.
-                t = _pre_text(el)
-                if t:
-                    got.append(("code", t, [], ""))
-                continue
-            if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
-                continue
-            if _is_container(el):
-                continue                      # контейнер, а не абзац
-            text, links = _inner(el)
-            if not text:
-                continue
-            cls = (el.get("class") or "").strip()
-            mapped = (styles or {}).get(f"{tag}|{cls}")
-            if mapped == "skip":
-                continue
-            if mapped == "note":
-                # Сноска, опознанная по стилю (так размечает, например,
-                # «Проект Гутенберг»): якорь у неё бывает не на самом абзаце,
-                # а на пустой ссылке перед ним.
-                text, links = _inner(el, note=True)
-                if text:
-                    got.append(("note", text, links,
-                                el.get("id") or _anchor_in(el) or prev_anchor))
-                continue
-            if mapped in ("title", "subtitle", "p", "verse"):
-                kind = mapped
-                got.append((kind, text, links, ""))
-                continue
-            if tag in ("h1", "h2"):
-                kind = "title"
-            elif tag in ("h3", "h4"):
-                kind = "subtitle"
-            elif SUB_CLASS.search(cls):
-                kind = "subtitle"        # раньше TITLE_CLASS: «Chap-Epigraph»
-            elif TITLE_CLASS.search(cls):
-                kind = "title"
-            else:
-                kind = "p"
-            got.append((kind, text, links, ""))
-        bare = lambda t: re.sub(r"<[^>]+>", "", t).strip()
-        keep = []
-        for k, t, l, nid_ in got:
-            if k in ("image", "break"):
-                keep.append((k, t, l, nid_))
-                continue
-            txt = bare(t)
-            if not txt:
-                continue
-            if WATERMARK.search(txt):
-                stats["watermarks"] += 1
-                continue
-            keep.append((k, t, l, nid_))
-        got = keep
-        plain = " ".join(bare(t) for k, t, _, _ in got if k in ("p", "title")).strip()
+        got = _doc_blocks(root, styles, get_image, stats)
+        plain = " ".join(_bare(t) for k, t, _, _ in got if k in ("p", "title")).strip()
         if not plain:
             continue                          # страница без текста
         if JUNK_PAGE.match(plain) and len(plain.split()) < 120:
@@ -1646,6 +1829,9 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None):
         return _fb2(path, encoding, ask)
     if ext == ".pdf":
         return _pdf(path, marks)
+    if ext in (".html", ".htm"):
+        return _html(path, styles, encoding, ask)
     if ext in (".txt", ".md"):
         return _txt(path, encoding, ask, marks)
-    raise SystemExit(f"не умею читать {ext}; поддерживаются epub, fb2, pdf, txt")
+    raise SystemExit(
+        f"не умею читать {ext}; поддерживаются epub, fb2, html, pdf, txt")

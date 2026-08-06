@@ -93,6 +93,15 @@ def check(log=print, agent="claude"):
          f"{os.path.basename(sys.executable)} -m pip install charset-normalizer",
          need=False)
 
+    # Где искать свои промпты — вопрос, на который иначе отвечают гаданием:
+    # папка настроек называется по-разному на трёх системах.
+    from .cli import prompt_roots
+    log("")
+    log("  " + T("doc_prompts"))
+    for r in prompt_roots():
+        short = r.replace(os.path.expanduser("~"), "~")
+        log(f"  {'+' if os.path.isdir(r) else '-'} {short}")
+
     log("")
     log("  " + (T("doc_ok") if not bad else T("doc_bad", bad)))
     if opt_bad:
