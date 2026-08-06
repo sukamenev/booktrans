@@ -166,6 +166,8 @@ def _inner(el, keep=KEEP_INLINE, note=False):
                     out.append(ch.text)
                 walk(ch)
                 out.append(f"</{t}>")
+            elif tag == "br":
+                out.append(" ")            # иначе слова по краям склеятся
             elif tag == "a" and (_epub_type(ch) == "backlink" or note):
                 pass                       # «вернуться к тексту» — служебное
             elif tag == "a" and _href(ch) and (
@@ -274,7 +276,7 @@ def scan_styles(path):
 def _scan_doc(root, seen):
     for el in root.iter():
         tag = re.sub(r"\{.*?\}", "", el.tag)
-        if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
+        if tag not in ("h1", "h2", "h3", "h4", "p", "div", "li"):
             continue
         if _is_container(el):
             continue
@@ -412,6 +414,11 @@ def _html(path, styles=None, encoding=None, ask=None):
             except (ValueError, TypeError):
                 return None
             return key
+        if re.match(r"https?://|//", href):
+            # Скачивать нельзя: конвейер в сеть не ходит, и книга — чужой
+            # файл. Оставляем ссылкой: в html она доедет и покажется, в
+            # прочих форматах картинку вставить всё равно некуда.
+            return href
         src = os.path.join(os.path.dirname(os.path.abspath(path)),
                            urllib.parse.unquote(href.split("#")[0]))
         key = os.path.basename(src)
@@ -500,7 +507,7 @@ def _doc_blocks(root, styles, get_image, stats):
             if t:
                 got.append(("code", t, [], ""))
             continue
-        if tag not in ("h1", "h2", "h3", "h4", "p", "div"):
+        if tag not in ("h1", "h2", "h3", "h4", "p", "div", "li"):
             continue
         if _is_container(el):
             continue                      # контейнер, а не абзац

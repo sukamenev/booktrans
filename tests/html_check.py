@@ -47,6 +47,9 @@ def f(x):      # комментарий
 <p>Текст второй главы<a href="#fn1" role="doc-noteref">1</a>.</p>
 <p role="doc-footnote" id="fn1">Сноска автора.</p>
 <p id="fn2">Абзац, похожий на сноску, но на него никто не ссылается.</p>
+<img src="https://example.com/pictures/whale.jpg" alt="по сети">
+<ul><li>первый пункт<li>второй пункт</ul>
+<p>Строка с<br>переносом.
 <script>var x = "этого в книге быть не должно";</script>
 </body></html>
 """
@@ -95,6 +98,16 @@ def main():
     ok("вшитая картинка взята", any(n.startswith("img") for n in imgs), list(imgs))
     ok("пропавшая пропущена", "нет.png" not in imgs, list(imgs))
     ok("картинок ровно две", len(imgs) == 2, list(imgs))
+    # Скачивать нельзя, а терять незачем: в html ссылка доедет и покажется.
+    ok("картинка по сети осталась ссылкой",
+       any(k == "image" and t.startswith("https://") for k, t in kinds), kinds)
+
+    ok("пункты списка не пропали",
+       [t for k, t in kinds if t in ("первый пункт", "второй пункт")]
+       == ["первый пункт", "второй пункт"], kinds)
+    ok("<br> не склеивает слова",
+       any("с переносом" in t for k, t in kinds),
+       [t for k, t in kinds if "перенос" in t])
 
     ok("сноска со ссылкой — сноска",
        any(k == "note" and t == "Сноска автора." for k, t in kinds), kinds)
@@ -123,7 +136,7 @@ def main():
        [(r["tag"], r["cls"], r["count"]) for r in rows])
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 18   с расхождениями: {bad}")
+    print(f"\nслучаев: 21   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

@@ -500,6 +500,14 @@ Images are taken from the disk beside the file, and ones embedded in the markup
 (`data:`) from the markup itself. A link that leads nowhere is passed over in
 silence: a page is saved without its images folder more often than with it.
 
+An image at a network address is not downloaded — the pipeline never goes to
+the network, and the book is somebody else's file. It stays a link: in html
+output it arrives and displays for the reader, and into fb2 or epub there is
+nowhere to put it anyway.
+
+What html does not yield: tables. Nor does the epub reader — that is a gap
+in both, not a property of the format.
+
 A lone html has no chapters, so it is cut into sections by its headings, by the
 same rules as an epub, through the style census.
 

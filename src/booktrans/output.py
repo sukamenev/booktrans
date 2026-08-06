@@ -124,6 +124,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
         elif kind == "image" and text in images:
             data = base64.b64encode(images[text]).decode()
             o.append(f'<img src="data:{_mime(text)};base64,{data}" alt="">')
+        elif kind == "image" and re.match(r"https?://|//", text):
+            o.append(f'<img src="{escape(text)}" alt="">')   # картинка по сети
         elif kind == "verse":
             o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
         elif kind == "code":
