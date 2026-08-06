@@ -483,6 +483,9 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                  r"keepaspectratio]{%s}\end{titlepage}" % name)
     o.append(r"\title{%s}" % _tex(title))
     o.append(r"\author{%s}" % _tex(author))
+    # Без этого LaTeX ставит на титул сегодняшнее число, и оно читается как
+    # дата издания. Когда книга переведена, сказано в разделе «О переводе».
+    o.append(r"\date{}")
     o.append(r"\maketitle")
     o.append(r"\tableofcontents")
     nums = {b: i for i, b in enumerate(notes, 1)}
