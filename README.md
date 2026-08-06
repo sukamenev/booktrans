@@ -81,7 +81,7 @@ translation, adds footnotes and assembles the file.
 - **reports spending** by pass and model;
 - **works with any agent**, Claude Code by default;
 - **translates into any language** that has a rules file in `langs/`
-  (Russian, English, German, Spanish, French, Japanese and Chinese ship with it);
+  (Russian, English, German, Spanish, French, Japanese, Chinese and Hindi ship with it);
 - **speaks any interface language** that has a file in `ui/`.
 
 What it does **not** do: replace a human translator. Before your first run,
@@ -190,7 +190,7 @@ nothing to someone installing their first tool.
 | `en` | English | `ja` | Japanese |
 | `ru` | Russian | `zh` | Chinese |
 | `de` | German | `fr` | French |
-| `es` | Spanish | | |
+| `es` | Spanish | `hi` | Hindi |
 
 **Interface language** — the `--ui` key: `en` (the default) and `ru`. Messages
 live in `ui/CODE.json` with identical keys; anything missing from a

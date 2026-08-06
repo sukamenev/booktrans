@@ -55,12 +55,14 @@ SCRIPTS = {
     "cyrillic": r"\u0400-\u04ff",
     "cjk": r"\u3040-\u30ff\u4e00-\u9fff",
     "hangul": r"\uac00-\ud7af",
+    "devanagari": r"\u0900-\u097f",
 }
 LANG_SCRIPT = {
     "ru": "cyrillic", "uk": "cyrillic", "bg": "cyrillic",
     "en": "latin", "de": "latin", "fr": "latin", "es": "latin",
     "it": "latin", "pl": "latin",
     "ja": "cjk", "zh": "cjk", "ko": "hangul",
+    "hi": "devanagari", "mr": "devanagari", "ne": "devanagari",
 }
 
 
