@@ -575,10 +575,11 @@ come out.
 ./booktrans book.epub --to ru -o Book.pdf     # and build it too
 ```
 
-`-o Book.pdf` writes the `.tex` beside it and calls `lualatex` twice — the
-second pass fills the table of contents. With no engine installed the source is
-still there and the pipeline says what to build it with. It stays after a
-failed build as well, together with the error log.
+`-o Book.pdf` calls `lualatex` twice — the second pass fills the table of
+contents. The drafts go into the book's work folder and only the pdf comes out,
+so there is nothing to sort through afterwards. With no engine installed the
+source stays in the work folder and the pipeline says what to build it with;
+after a failed build the error log stays beside it.
 
 What stays with you is the typography. The preamble comes first and is meant to
 be edited — paper size, margins, type size, two columns. Hyphenation by the

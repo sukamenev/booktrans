@@ -616,7 +616,8 @@ TEX_HEAD = 55       # столько знаков названия влезае�
 TEX_ENGINES = ("lualatex", "xelatex")
 
 
-def write_pdf(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+def write_pdf(path, meta, items, notes, images, note_prefix, st=None,
+              cover=None, tmp=None):
     """Pdf — это собранный LaTeX, и собирает его TeX, а не мы.
 
     Своей вёрстки конвейер не делает: перенос строк, разбиение на страницы,
@@ -628,27 +629,36 @@ def write_pdf(path, meta, items, notes, images, note_prefix, st=None, cover=None
     from . import lang
     import shutil
     import subprocess
-    tex = os.path.splitext(path)[0] + ".tex"
+    import tempfile
+    # Черновики — в рабочую папку книги, а не рядом с готовым файлом: там
+    # им и место, и человек не разбирает потом, что из этого книга, а что
+    # подсобное. Наружу выходит один pdf.
+    d = tmp or tempfile.mkdtemp(prefix="booktrans-")
+    os.makedirs(d, exist_ok=True)
+    tex = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + ".tex")
     write_tex(tex, meta, items, notes, images, note_prefix, st, cover)
     engine = next((e for e in TEX_ENGINES if shutil.which(e)), None)
     if not engine:
         print("  " + lang.T("pdf_no_engine", os.path.basename(tex),
                             " или ".join(TEX_ENGINES)))
         return
-    d = os.path.dirname(os.path.abspath(tex)) or "."
     print("  " + lang.T("pdf_run", engine), end="", flush=True)
     for _ in range(2):        # второй проход наполняет оглавление
         subprocess.run([engine, "-interaction=nonstopmode",
                         os.path.basename(tex)], cwd=d,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = os.path.splitext(os.path.basename(tex))[0]
+    made = os.path.join(d, base + ".pdf")
+    if os.path.exists(made):
+        shutil.copyfile(made, path)
+        os.unlink(made)
     for ext in (".aux", ".toc", ".out", ".log"):
         f = os.path.join(d, base + ext)
-        bad = ext == ".log" and os.path.exists(f) and not os.path.exists(path)
-        if os.path.exists(f) and not bad:
+        # Запись об ошибках оставляем только когда книга не собралась: без
+        # неё разбираться не с чем.
+        if os.path.exists(f) and not (ext == ".log" and not os.path.exists(path)):
             os.unlink(f)
-    print(lang.T("pdf_done" if os.path.exists(path) else "pdf_failed",
-                 os.path.basename(tex)))
+    print(lang.T("pdf_done" if os.path.exists(path) else "pdf_failed", tex))
 
 
 WRITERS = {".tex": write_tex, ".pdf": write_pdf, ".txt": write_txt, ".html": write_html, ".htm": write_html,
