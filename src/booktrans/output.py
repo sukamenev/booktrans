@@ -468,6 +468,10 @@ def _tex_preamble(meta, st, code):
             r"\titleformat{\chapter}{\huge\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\section}{\Large\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\subsection}{\large\sffamily}{}{0pt}{}",
+            # Колонтитул — название текущего раздела. Класс `book` держит там
+            # имя главы, а глав у нас нет: без этого на каждой странице висело
+            # бы «Оглавление», поставленное \tableofcontents.
+            r"\pagestyle{myheadings}",
             r"\begin{document}"]
     return "\n".join(out)
 
@@ -495,7 +499,8 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
     nums = {b: i for i, b in enumerate(notes, 1)}
     for kind, text, bid, links, *sp in items:
         if kind == "title":
-            o.append(r"\section{%s}" % _tex(text))
+            t = _tex(text)
+            o.append(r"\section{%s}\markright{%s}" % (t, t))
         elif kind == "subtitle":
             o.append(r"\subsection*{%s}" % _tex(text))
         elif kind == "break":

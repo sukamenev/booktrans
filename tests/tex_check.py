@@ -79,11 +79,15 @@ def main():
     # в русской книге называется Contents.
     ok("оглавление названо на языке книги",
        r"\renewcommand{\contentsname}" in t, "")
+    # В колонтитул идёт название раздела: класс book держит там имя главы, а
+    # глав у нас нет, и на каждой странице висело бы «Оглавление».
+    ok("колонтитул — название раздела",
+       r"\markright{Глава \& первая}" in t and "myheadings" in t, "")
     ok("шрифты с перебором",
        t.count(r"\IfFontExistsTF") >= 3 and "DejaVu Serif" in t)
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 14   с расхождениями: {bad}")
+    print(f"\nслучаев: 15   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
