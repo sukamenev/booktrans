@@ -604,14 +604,19 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
 
     if cover:
         binary("cover.jpg", cover)
-    used = {b["text"] for b in blocks if b["kind"] == "image"}
+    spots = [b for b in blocks if b["kind"] == "image"]
+    used = {b["text"] for b in spots}
     n_img = 0
     for name, raw in (images or {}).items():
         if name in used and name != "cover.jpg":
             binary(name, raw)
             n_img += 1
     if n_img:
-        log("  " + lang.T("images_n", n_img))
+        # Двух чисел мало кому нужно, но одного тут недостаточно: из файла
+        # картинок извлекается больше, чем попадает в книгу (обложка, знак
+        # издательства), а разделитель глав — это одна картинка на два
+        # десятка мест. Одно число читалось как пропажа остальных.
+        log("  " + lang.T("images_n", n_img, len(spots)))
     w("</FictionBook>")
 
     open(dest, "w", encoding="utf-8").write("\n".join(o))
@@ -741,6 +746,32 @@ def unfinished_edits(work, log, T=None):
                  ",".join(str(i) for i, _, _ in items)))
 
 
+# Название произведения в пояснении редактора: первое, что взято в кавычки
+# или в звёздочки. Пишет он свободным текстом — «У. Джеймс, „Принципы
+# психологии“, глава IX, перевод И. И. Лапшина», — и название единственное,
+# что в этих пояснениях стоит одинаково.
+WORK = re.compile(r"[«\"“„]([^«»\"“”„]{3,80})[»\"”“]|\*([^*\n]{3,80})\*")
+
+
+def _by_work(items):
+    """Цитаты, сгруппированные по названию произведения.
+
+    Порядок сохраняем: первое появление задаёт место группы в списке. Без
+    названия — своя группа на каждую, такие ни с чем не сверяются.
+    """
+    out, at = [], {}
+    for it in items:
+        m = WORK.search(it["text"])
+        key = (m.group(1) or m.group(2)).strip(" .,;:") if m else None
+        if key and key.lower() in at:
+            out[at[key.lower()]][1].append(it)
+            continue
+        if key:
+            at[key.lower()] = len(out)
+        out.append((key or it["term"], [it]))
+    return out
+
+
 def sources_report(work, log, T=None):
     T = T or lang.T
     """Все цитаты, приведённые по чужому переводу, — списком.
@@ -764,15 +795,30 @@ def sources_report(work, log, T=None):
         return
     log("")
     log(T("sources_head", len(items)))
-    seen = set()
+    seen, uniq = set(), []
     for it in items:
         k = it["term"].lower()
-        if k in seen:
-            continue
-        seen.add(k)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(it)
+
+    def one(it, pad=""):
         flag = "  !! по памяти" if "памят" in it["text"].lower() else ""
-        log(f"  [{it['block']}] {it['term']}{flag}")
-        log(f"      {_cut(it['text'], 150)}")
+        log(f"{pad}  [{it['block']}] {it['term']}{flag}")
+        log(f"{pad}      {_cut(it['text'], 150)}")
+
+    for work, group in _by_work(uniq):
+        # Одну и ту же книгу редактор приписывает разным переводчикам, а одну
+        # и ту же фразу передаёт в двух кусках по-разному — куски правятся
+        # порознь и друг друга не видят. Существует ли перевод, машина
+        # проверить не может, но противоречие внутри книги видно и без
+        # вывода: достаточно поставить такие места рядом.
+        if len(group) < 2:
+            one(group[0])
+            continue
+        log("  " + T("sources_same", work, len(group)))
+        for it in group:
+            one(it, "  ")
     log("  " + T("sources_hint"))
 
 
@@ -917,8 +963,17 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         left = [i for i, t in tr.items() if len(pat.findall(strip(t))) >= 3]
         if left:
             log("   " + T("qa4_bad", len(left)))
+            # Показываем найденное, а не начало блока. Начало почти всегда на
+            # языке перевода, и по нему не видно, на что правило сработало:
+            # на именах, на названиях в сноске или на абзаце, который остался
+            # непереведённым. Раздел из-за этого читать было нечем.
             for i in left[:8]:
-                log(f"     {i}: {_cut(strip(tr[i]), 80)}")
+                found, seen = [], set()
+                for w in pat.findall(strip(tr[i])):
+                    if w.lower() not in seen:
+                        seen.add(w.lower())
+                        found.append(w)
+                log(f"     {i}: {_cut(' · '.join(found), 80)}")
             _more(log, len(left) - 8, T)
         else:
             log("   " + T("qa4_none"))

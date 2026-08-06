@@ -831,8 +831,20 @@ stitched back together, since between two confirmed stretches of a list there
 can be nothing but the list. A numbered run without publication years is not
 taken for one. The older rule still stands alongside it, for books where the
 whole bibliography arrives as one page-sized block: three years and three entry
-numbers inside it. To check the picking without calling a model:
-`python3 tests/refs_check.py`.
+numbers inside it.
+
+**Endnote citations** are the same thing wearing another kind of block. Notes
+come in two breeds: one is the author's own text ("the phrase found chalked on
+Feynman's blackboard reads otherwise"), the other is a reference ("skills of a
+one-year-old": Hans Moravec, *Mind Children* (Harvard U. Press, 1988), 15).
+The first must be translated, the second must not. It is recognised by its
+shape — a lemma, a colon, an author, a title, a year or page numbers — and,
+again, by a run of at least five. Each matching note inside the run is marked,
+not the region: commentary sits interleaved with references, and marking the
+region would have left it silently in the source language. On a live book 225
+of 305 notes matched, and they were exactly the source list.
+
+To check the picking without calling a model: `python3 tests/refs_check.py`.
 
 ## Layout
 

@@ -42,10 +42,27 @@ def blocks(texts, kind="p"):
             for i, t in enumerate(texts, 1)]
 
 
+def cites(n, first=1):
+    """Концевые сноски-ссылки: лемма, двоеточие, источник."""
+    return [f'"a phrase number {i}": Hans Moravec, Mind Children: The Future '
+            f'of Robot Intelligence (Harvard University Press, {1980 + i}), {i * 7}.'
+            for i in range(first, first + n)]
+
+
+# Содержательное примечание: авторский текст, его переводить обязательно.
+# Второе — с двоеточием и годом нарочно: по одному признаку оно сошло бы за
+# ссылку.
+TALK = ["The actual quote, found chalked on a blackboard after his death, reads "
+        "otherwise, and the difference matters here.",
+        "Levin has gotten some experimental support: He has successfully "
+        "reprogrammed cells, and others have repeated it since."]
+
+
 def marked(bs):
     for b in bs:
         b.pop("asis", None)
     E._mark_refs(bs)
+    E._mark_cites(bs)
     return [b["text"] for b in bs if b.get("asis")]
 
 
@@ -86,6 +103,21 @@ CASES = [
 
     ("заголовок списка цепляется", blocks(
         [PROSE, "Библиография"] + refs(8) + [PROSE]), 16),
+
+    # Концевые сноски. Помечается каждая подходящая внутри ряда, а не вся
+    # область: содержательные примечания стоят вперемешку со ссылками.
+    ("ряд концевых ссылок", blocks(cites(8), kind="note"), 8),
+
+    ("примечание внутри ряда остаётся",
+     blocks(cites(4) + TALK[:1] + cites(4, first=5), kind="note"), 8),
+
+    ("одиночная ссылка среди примечаний",
+     blocks(TALK * 3 + cites(1) + TALK * 3, kind="note"), 0),
+
+    ("содержательные примечания", blocks(TALK * 4, kind="note"), 0),
+
+    # Тот же ряд, но это абзацы, а не сноски: правило смотрит только на них.
+    ("ссылки в прозе не трогаем", blocks(cites(8)), 0),
 ]
 
 

@@ -1492,6 +1492,59 @@ def _refs_span(blocks):
     return spans
 
 
+# Концевая сноска-ссылка: лемма, двоеточие, автор, название, год или
+# страницы. Такую сноску издатели ставят вместо номера, и книга ими кончается
+# сотнями. Ссылку переводить вредно ровно по той же причине, что и
+# библиографию: по ней читатель ищет издание.
+NOTE_CITE = re.compile(r"^.{0,100}?[:—]\s+[A-ZА-ЯЁ][^\n]{0,140}?,")
+NOTE_PAGE = re.compile(r"\b\d+[:–—-]\d+|\bp{1,2}\.\s*\d+|\b\d{1,4}\.$")
+NOTE_RUN = 5        # столько ссылок подряд — уже список источников
+NOTE_GAP = 3        # столько содержательных примечаний между ними ещё терпим
+
+
+def _looks_cite(text):
+    t = " ".join(strip_tags(text).split())
+    return bool(NOTE_CITE.match(t)) and bool(REFS_YEAR.search(t) or NOTE_PAGE.search(t))
+
+
+def _mark_cites(blocks):
+    """Пометить концевые сноски-ссылки: их тоже переводить не надо.
+
+    Сноски в книге двух пород, и вид блока у них один. Одна — авторский
+    текст: «фраза, найденная на доске после смерти Фейнмана, читается так…».
+    Другая — ссылка: «"skills of a one-year-old": Hans Moravec, Mind Children
+    (Harvard U. Press, 1988), 15». Первую переводить обязательно, вторую
+    вредно.
+
+    Помечаем не область, а каждую подходящую сноску внутри ряда. Область
+    пометить проще, но содержательные примечания стоят вперемешку со
+    ссылками, и тогда они молча остались бы на языке оригинала. Ряд нужен от
+    обратной ошибки: одиночная сноска такой формы посреди главы правилом не
+    трогается.
+
+    Замерено на живой книге: из 305 сносок под правило попало 227, и все они
+    из списка источников; двум подходящим за его пределами ряда не хватило.
+    """
+    idx = [i for i, b in enumerate(blocks) if b["kind"] == "note" and not b.get("asis")]
+    hit = [k for k, i in enumerate(idx) if _looks_cite(blocks[i]["text"])]
+    runs, cur = [], []
+    for k in hit:
+        if cur and k - cur[-1] <= NOTE_GAP:
+            cur.append(k)
+            continue
+        runs.append(cur)
+        cur = [k]
+    runs.append(cur)
+    n = 0
+    for run in runs:
+        if len(run) < NOTE_RUN:
+            continue
+        for k in run:
+            blocks[idx[k]]["asis"] = True
+            n += 1
+    return n
+
+
 def _mark_refs(blocks):
     """Пометить список литературы: его переводить не надо.
 
@@ -1543,6 +1596,7 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None):
     try:
         meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks)
         _mark_refs(blocks)
+        _mark_cites(blocks)
         for b in blocks:
             if b["kind"] == "code":
                 b["asis"] = True      # код в перевод не идёт; см. code.py

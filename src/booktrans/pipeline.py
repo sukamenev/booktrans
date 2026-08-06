@@ -1551,6 +1551,22 @@ def _rows(text):
             if line.startswith("|") and line.count("|") > 2 and "---" not in line}
 
 
+SECTION_MIN = 1500      # раздел мельче не сжимаем: возни больше, чем выгоды
+
+
+def _sections(md):
+    """Справочник по разделам. Первый кусок — шапка до первого заголовка."""
+    out, cur = [], []
+    for line in md.splitlines(keepends=True):
+        if line.startswith("## ") and cur:
+            out.append("".join(cur))
+            cur = []
+        cur.append(line)
+    if cur:
+        out.append("".join(cur))
+    return out
+
+
 def _condense_scout(merged, agent, system, retries, log, out_path):
     """Пересжать справочник, если он перерос предел.
 
@@ -1558,6 +1574,14 @@ def _condense_scout(merged, agent, system, retries, log, out_path):
     исполняется она плохо: на одной книге вышло полтора предела. А платится
     справочник в каждом запросе на перевод — надбавка постоянная. Отдельный
     запрос делает ровно одно дело и потому справляется.
+
+    Сжимаем по разделам, а не файл целиком. Замерено на живой книге: одним
+    запросом модель выбросила 128 строк таблиц из 183, охранник справедливо
+    отверг весь результат — и справочник в полтора предела ушёл в каждый из
+    девяноста четырёх запросов. По разделам этого «всё или ничего» нет:
+    биографии ужимаются, а таблица имён, где резать нечего, остаётся как
+    была. Начинаем с самого толстого раздела и останавливаемся, как только
+    уложились.
 
     Порядок, что резать, знать заранее можно: он один для всех книг. Первым
     уходит очевидное — «Aldous Huxley = Олдос Хаксли» переводчик передаст
@@ -1568,9 +1592,44 @@ def _condense_scout(merged, agent, system, retries, log, out_path):
     if len(merged) <= SCOUT_MAX:
         return merged
     log("  " + T("scout_condense", len(merged), SCOUT_BUDGET), end="")
+    parts = _sections(merged)
+    t0, cost, model = time.time(), 0.0, "?"
+    for i in sorted(range(len(parts)), key=lambda k: -len(parts[k])):
+        over = sum(map(len, parts)) - SCOUT_BUDGET
+        if over <= 0 or len(parts[i]) < SECTION_MIN:
+            break
+        # Сколько просить, зависит от природы раздела. Таблица имён короче
+        # строк не станет, а строку из неё разрешено потерять только каждую
+        # третью — больше трети с неё и не спрашиваем, иначе ответ придётся
+        # отвергнуть. Проза ужимается и вдвое.
+        floor = len(parts[i]) * 2 // 3 if _rows(parts[i]) else len(parts[i]) // 2
+        short, meta = _shrink(parts[i], max(len(parts[i]) - over, floor),
+                              agent, system, retries, log)
+        cost += meta.get("cost_usd") or 0
+        model = meta.get("model") or model
+        if short:
+            parts[i] = short
+    now = "".join(parts)
+    log(T("took", f"{time.time() - t0:.0f}",
+          model + (f", ${cost:.2f}" if cost else "")))
+    if now == merged:
+        log("  " + T("scout_condense_no", len(_rows(merged)), len(_rows(merged))))
+        log("  " + T("scout_big", out_path))
+        return merged
+    open(out_path, "w", encoding="utf-8").write(now)
+    log("  " + T("scout_condense_ok", len(merged), len(now),
+                 len(_rows(merged)), len(_rows(now))))
+    if len(now) > SCOUT_MAX:
+        log("  " + T("scout_big", out_path))
+    return now
+
+
+def _shrink(part, want, agent, system, retries, log):
+    """Сжать один раздел справочника. Вернуть его же, если вышло плохо."""
     ask = (
-        f"Справочник по книге вышел на {len(merged)} знаков, а уходит он в "
-        f"каждый запрос на перевод. Сожми примерно до {SCOUT_BUDGET}.\n\n"
+        f"Это раздел справочника по книге. Справочник уходит в каждый запрос "
+        f"на перевод, поэтому его укорачивают. В разделе {len(part)} знаков, "
+        f"надо около {want}.\n\n"
         "Обязано остаться:\n"
         "- всё, чей перевод неочевиден: выдуманные слова, имена и названия, "
         "переданные на слух, и всё, что можно передать двумя способами. Ради "
@@ -1593,38 +1652,28 @@ def _condense_scout(merged, agent, system, retries, log, out_path):
         "чем оно трудно;\n"
         "4. пояснения длиннее строки — ужать до строки;\n"
         "5. людей без прямой речи — до одной строки.\n\n"
-        "Заголовки разделов сохранить, порядок не менять. Ничего не "
-        "дописывать: нового сведения в сжатом справочнике появиться не "
-        "должно. В ответе — только сам справочник, с первого же заголовка: "
-        "ни вступления, ни повторения этих указаний.\n\n---\n\n" + merged)
-    (short, _), meta, dt = _run(agent, system, ask, retries, lambda o: (o, ""), log)
-    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-    log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        "Заголовок раздела сохранить, порядок строк не менять. Ничего не "
+        "дописывать: нового сведения появиться не должно. В ответе — только "
+        "сам раздел, с первой же его строки: ни вступления, ни повторения "
+        "этих указаний.\n\n---\n\n" + part)
+    (short, _), meta, _dt = _run(agent, system, ask, retries, lambda o: (o, ""), log)
 
-    # Всё, что модель приписала перед справочником, отрезаем по первому же
-    # заголовку. Замерено: один прогон вернул справочник, а перед ним — весь
-    # системный промпт целиком, девять тысяч знаков. Ни на длину, ни на число
-    # строк это не влияет, и обе проверки ниже такое пропускают.
-    head = next((l for l in merged.splitlines() if l.startswith("#")), "")
+    # Всё, что модель приписала перед разделом, отрезаем по его заголовку.
+    # Замерено: один прогон вернул справочник, а перед ним — весь системный
+    # промпт целиком, девять тысяч знаков. Ни на длину, ни на число строк это
+    # не влияет, и обе проверки ниже такое пропускают.
+    head = next((l for l in part.splitlines() if l.startswith("#")), "")
     if head and head in short:
         short = short[short.index(head):]
 
-    # Сжатие принимаем не на слово. Вычеркнуть таблицы целиком — самый простой
+    # Сжатие принимаем не на слово. Вычеркнуть таблицу целиком — самый простой
     # способ уложиться в предел, и обнаружилось бы это уже в переводе. Порог
     # широкий: очевидные строки выбрасываются по заданию, и придирчивая мера
-    # запретила бы ровно то, ради чего сжатие затевалось. Замерено: сорвавшийся
-    # проход потерял все строки до одной, а удачный — ни одной.
-    was, now = _rows(merged), _rows(short)
-    lost = was - now
-    if len(short) >= len(merged) or len(lost) > len(was) / 3:
-        log("  " + T("scout_condense_no", len(lost), len(was)))
-        log("  " + T("scout_big", out_path))
-        return merged
-    open(out_path, "w", encoding="utf-8").write(short)
-    log("  " + T("scout_condense_ok", len(merged), len(short), len(was), len(now)))
-    if len(short) > SCOUT_MAX:
-        log("  " + T("scout_big", out_path))
-    return short
+    # запретила бы ровно то, ради чего сжатие затевалось.
+    was, now = _rows(part), _rows(short)
+    if len(short) >= len(part) or len(was - now) > len(was) / 3:
+        return None, meta
+    return short, meta
 
 
 def _forked(merged, to):

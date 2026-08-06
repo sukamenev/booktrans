@@ -85,6 +85,18 @@ def read_prompt(path, log=None, text=None):
     return meta, text.strip()
 
 
+def head(key, n=None):
+    """Заголовок этапа: `=== 1. Правка дефектов распознавания ===`.
+
+    Прописная буква ставится здесь, а не в переводах: за номером с точкой
+    строчная читается обрывком предыдущей строки. Языкам без строчных и
+    прописных это ничего не стоит.
+    """
+    s = lang.T(key)
+    s = s[:1].upper() + s[1:]
+    return f"=== {s} ===" if n is None else f"=== {n}. {s} ==="
+
+
 def _chunks(s):
     """Номера кусков: 5,6,7 и диапазоны 41-93.
 
@@ -360,7 +372,7 @@ def main():
                     log("  " + T("same_lang_hint"))
                     sys.exit(1)
             log("")
-            log(f"=== {T('step_structure')} ===")
+            log(head("step_structure"))
             styles_map = pipeline.detect_structure(
                 work, extract.scan_styles(args.book), agent,
                 task("structure"), args.retries, log)
@@ -378,7 +390,7 @@ def main():
             # прочесть, — так что заголовок печатает она сама.
             if "structure" not in steps:
                 log("")
-                log(f"=== {T('step_structure')} ===")
+                log(head("step_structure"))
                 log("")
             marks = pipeline.format_marks(
                 work, args.book, agent_for("formatter"), task("format"),
@@ -516,7 +528,7 @@ def main():
         if "ocrfix" in steps:
             n += 1
             log("")
-            log(f"=== {n}. {T('step_ocrfix')} ===")
+            log(head("step_ocrfix", n))
             pipeline.fix_ocr(work, blocks, agent_for("ocrfixer"), sysprompt(),
                                task("ocrfix"), args.retries, log,
                                fallback=backup_for("ocrfixer"))
@@ -526,7 +538,7 @@ def main():
     if "scout" in steps:
         n += 1
         log("")
-        log(f"=== {n}. {T('step_scout')} ===")
+        log(head("step_scout", n))
         pipeline.scout(work, blocks, agent_for("scout"), sysprompt(), task("scout"),
                        args.retries, log, args.to,
                        src_name=os.path.basename(args.book))
@@ -544,7 +556,7 @@ def main():
     if "translate" in steps:
         n += 1
         log("")
-        log(f"=== {n}. {T('step_translate')} ===")
+        log(head("step_translate", n))
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(), args.retries, log)
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
                                   args.retries, log, only_chunks,
@@ -559,7 +571,7 @@ def main():
     if "edit" in steps:
         n += 1
         log("")
-        log(f"=== {n}. {T('step_edit')} ===")
+        log(head("step_edit", n))
         d, s, t = pipeline.edit(work, chunks, agent_for("editor"), sysprompt(), task("edit"),
                                 args.retries, log, only_chunks, args.jobs,
                                 fallback=backup_for("editor"),
@@ -569,7 +581,7 @@ def main():
     if "notes" in steps:
         n += 1
         log("")
-        log(f"=== {n}. {T('step_notes')} ===")
+        log(head("step_notes", n))
         d, s, t = pipeline.notes(work, chunks, agent_for("editor"), sysprompt(), task("notes"),
                                  args.retries, log, only_chunks, args.jobs)
         log("  " + (T("done_notes", d, s, t) if d else T("notes_already", s)))
@@ -578,7 +590,7 @@ def main():
     if "build" in steps:
         n += 1
         log("")
-        log(f"=== {n}. {T('step_build')} ===")
+        log(head("step_build", n))
         dest = args.out or f"{build.out_name(meta, base)}.fb2"
         # Затереть исходник переводом — потеря невосполнимая, а совпасть
         # имена могут легко: fb2 на входе, fb2 на выходе.
@@ -590,7 +602,7 @@ def main():
     if "qa" in steps:
         n += 1
         log("")
-        log(f"=== {n}. {T('step_qa')} ===")
+        log(head("step_qa", n))
         build.qa(work, blocks, log, T, meta.get("lang"), args.to, bool(made_by_ocr))
         build.unfinished_edits(work, log, T)
         build.review_report(work, log)
