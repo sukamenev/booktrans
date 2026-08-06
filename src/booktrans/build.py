@@ -960,7 +960,10 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     if ssc and tsc and ssc != tsc:
         rng = lang.SCRIPTS[ssc]
         pat = re.compile(rf"[{rng}]{{4,}}")
-        left = [i for i, t in tr.items() if len(pat.findall(strip(t))) >= 3]
+        # Идём по блокам книги, а не по переводам: перевод есть и у того, что
+        # потом пометили `asis`, — в книгу он не пойдёт, и спрашивать с него
+        # нечего.
+        left = [i for i in src if i in tr and len(pat.findall(strip(tr[i]))) >= 3]
         if left:
             log("   " + T("qa4_bad", len(left)))
             # Показываем найденное, а не начало блока. Начало почти всегда на
