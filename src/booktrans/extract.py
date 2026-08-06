@@ -1545,6 +1545,34 @@ def _mark_cites(blocks):
     return n
 
 
+def _prune_notes(blocks):
+    """Сноска, на которую никто не ссылается, — не сноска.
+
+    Всплывающей примечание делает ссылка из текста. Без неё оно всё равно
+    остаётся там, где стоит, и читатель попадёт в него, читая подряд, —
+    а вынесенное в список сносок пропадает: нажать на него неоткуда, и
+    открывается оно, только если специально листать примечания.
+
+    Так пропала целая глава. У книги с концевыми примечаниями раздел «Notes»
+    стоит в конце обычным текстом, привязанным к фразе, а не к значку;
+    разметка отнесла его к сноскам целиком, и 230 абзацев уехали в список,
+    где на них не ссылался никто. В книге осталась глава «Примечания» из
+    одних подзаголовков.
+
+    Возвращаем их на место. В списке сносок остаётся то, на что можно
+    нажать, — на той же книге 143 из 373.
+    """
+    refs = {u.split("#", 1)[1] for b in blocks for u in (b.get("links") or [])
+            if "#" in u and not u.startswith("http")}
+    n = 0
+    for b in blocks:
+        if b["kind"] == "note" and b.get("note_id") not in refs:
+            b["kind"] = "p"
+            b.pop("note_id", None)
+            n += 1
+    return n
+
+
 def _mark_refs(blocks):
     """Пометить список литературы: его переводить не надо.
 
@@ -1596,7 +1624,8 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None):
     try:
         meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks)
         _mark_refs(blocks)
-        _mark_cites(blocks)
+        _mark_cites(blocks)     # до _prune_notes: правило смотрит на вид блока
+        _prune_notes(blocks)
         for b in blocks:
             if b["kind"] == "code":
                 b["asis"] = True      # код в перевод не идёт; см. code.py

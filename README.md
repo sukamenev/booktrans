@@ -510,6 +510,19 @@ reversible. That is where a cheaper model is worth trying first.
 What does not: tables of contents, newsletter advertising, watermarks from
 pirated files.
 
+**Only what the text links to goes into the notes list.** A link is what makes
+a note pop up; without one it opens from nowhere, and a reader going straight
+through will never meet it either, since it has been lifted out of the text.
+So a note nobody links to stays where it stood, as an ordinary paragraph.
+
+That brings a whole section back. In a book with keyed endnotes, "Notes" sits
+at the back as ordinary text tied to a phrase rather than to a marker —
+'"skills of a one-year-old": Hans Moravec…'. Markup detection takes the lot
+for notes, and on one book 230 paragraphs went off into a list nothing pointed
+at, leaving a "Notes" chapter made of subheadings alone. Now the list holds
+only what can be clicked (143 of 373 on that book) and the section reads
+straight through, as it does in the original.
+
 ## Foreign insertions
 
 What gets removed: pointers to the site the file was hosted on, advertising
