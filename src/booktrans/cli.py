@@ -211,8 +211,9 @@ CHEAP_EFFORT = {"claude": "low"}
 PRESETS = {
     "agy": {
         # Отказ — свойство модели, а не текста, поэтому за Gemini встаёт
-        # Claude, а за ним модель другого происхождения, с другими запретами.
-        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium",
+        # Claude, а за ним он же поменьше: на художественном тексте отказы
+        # у них расходятся чаще, чем можно ждать от одной семьи.
+        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-sonnet-4-6",
         "formatter": "gemini-3.6-flash-low,claude-sonnet-4-6",
         "ocrfixer": "gemini-3.6-flash-low,claude-sonnet-4-6",
     },

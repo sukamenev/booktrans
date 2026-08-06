@@ -21,7 +21,7 @@ ready-made wrappers, each one line away from `booktrans`:
 | | |
 |---|---|
 | `./bt_claude` | Claude Code, the same thing said out loud |
-| `./bt_agy` | Gemini through Antigravity, with Claude and gpt-oss behind it |
+| `./bt_agy` | Gemini through Antigravity, with Claude behind it |
 | `./bt_codex` | Codex |
 
 The key `--agent claude|agy|codex` does the same, and `--agent cmd
@@ -451,7 +451,7 @@ key for each would double their number.
 | `--model` | every pass at once, save the last two |
 
 Name nothing and the agent's set applies (`PRESETS` in `cli.py`): with agy the
-meaning-bearing passes run Gemini with Claude and gpt-oss behind it, while
+meaning-bearing passes run Gemini with Opus and Sonnet behind it, while
 markup and OCR repair run a cheap Flash with Sonnet behind it. What you name
 explicitly always beats the set.
 

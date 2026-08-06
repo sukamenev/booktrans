@@ -20,7 +20,7 @@ pdf или txt, на выходе готовая книга в epub, fb2, html, 
 | | |
 |---|---|
 | `./bt_claude` | Claude Code, то же самое явно |
-| `./bt_agy` | Gemini через Antigravity, с Claude и gpt-oss на подстраховке |
+| `./bt_agy` | Gemini через Antigravity, с Claude на подстраховке |
 | `./bt_codex` | Codex |
 
 То же даёт ключ `--agent claude|agy|codex`, а `--agent cmd --agent-cmd '…'`
@@ -399,7 +399,7 @@ Thoat — тоат, восьминогое ездовое животное; не
 | `--model` | все проходы разом, кроме двух последних |
 
 Не названо ничего — берётся набор агента (`PRESETS` в `cli.py`): у agy на
-смысловых проходах Gemini с Claude и gpt-oss за спиной, на разметке и правке
+смысловых проходах Gemini с Opus и Sonnet за спиной, на разметке и правке
 распознавания — дешёвая Flash с Sonnet за спиной. Названное явно всегда
 сильнее набора.
 

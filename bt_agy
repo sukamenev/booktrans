@@ -4,9 +4,9 @@
 # The models come from the PRESETS["agy"] set (src/booktrans/cli.py), which is
 # the same as appending to the run:
 #
-#   --scout      gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium
-#   --translator gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium
-#   --editor     gemini-3.1-pro-high,claude-opus-4-6-thinking,gpt-oss-120b-medium
+#   --scout      gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-sonnet-4-6
+#   --translator gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-sonnet-4-6
+#   --editor     gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-sonnet-4-6
 #   --formatter  gemini-3.6-flash-low,claude-sonnet-4-6
 #   --ocrfixer   gemini-3.6-flash-low,claude-sonnet-4-6
 #
