@@ -707,31 +707,17 @@ mangles a running head differently every time. Numbered chapters ("Chapter 1",
 alone. Every other mismatch is merely reported — what to do about it is a
 human's call. The parsed contents are kept in `work/toc.json`.
 
-What makes a line a running head is repetition, and repetition comes in two
-kinds. The book's title stands on every verso, so a share of the pages gives it
-away. A chapter's running head stands only on that chapter's pages — four to
-six times in a three-hundred-page book — and no share will ever catch it; what
-does catch it is that the pages run close together: 43, 44, 48, 50. Both are
-counted, otherwise chapter running heads reach the translation and wedge
-themselves into the middle of a sentence. A line of the contents looks exactly
-like a running head (title, gap, page number), but a page carrying many such
-lines is left alone: the contents is where the book names its own chapters, and
-nothing there can be spared.
+Running heads and page numbers are taken out before the model, by repetition:
+both the ones that run through the book, such as its title, and a chapter's
+head standing only on that chapter's pages. Lines of the contents look just
+like them and are left alone — that is where the book names its own chapters.
+The thresholds are explained in the comments on `_strip_running`; to check:
+`python3 tests/pages_check.py`.
 
-A running head is also taken out where it has been glued into the middle of
-a line: in a book set without leading it lands on the same line as the text
-and stands at no edge at all. Only what the rule above already recognised is
-removed, and only where the typesetting leaves a gap of whitespace around
-it — "The Scientist" inside a sentence of the author's is left alone.
-
-**A paragraph torn apart by the end of a page is glued back together.** The
-page break splits it at a hyphen ("lis-" / "tened") or simply mid-sentence
-("hooked a compass" / "needle"), and the translator was handed half a sentence
-at a time: on a live book 217 paragraphs out of 1733 were broken that way. The
-model has a mark for this but does not always place it, whereas the machine
-signal is the more reliable one: a hyphenated word or a break with no
-punctuation, followed by a lowercase letter. An uppercase letter means a new
-paragraph, hyphen or no hyphen. Verse and code listings are never glued.
+**A paragraph torn apart by the end of a page is glued back together** — on a
+live book 217 of 1733 were, and the translator was handed half a sentence at a
+time. The break falls at a hyphen ("lis-" / "tened") or simply mid-sentence
+("hooked a compass" / "needle"). Verse and code listings are never glued.
 To check: `python3 tests/glue_check.py`.
 
 
@@ -838,26 +824,15 @@ A reference list is left as it stands: it is what the reader uses to find the
 sources, and a journal article's title rendered into another language only
 gets in the way.
 
-It is recognised not by a single entry but by a run of them: the numbers climb,
-1, 2, 3 — prose never does that. Runs broken apart by a mangled digit are
-stitched back together, since between two confirmed stretches of a list there
-can be nothing but the list. A numbered run without publication years is not
-taken for one. The older rule still stands alongside it, for books where the
-whole bibliography arrives as one page-sized block: three years and three entry
-numbers inside it.
+**Endnote citations** are the same: '"skills of a one-year-old": Hans Moravec,
+*Mind Children* (Harvard U. Press, 1988), 15' is nothing to translate. The
+commentary note beside it is the author's own text and is translated. So the
+notes in the finished book come out mixed, and that is not a fault.
 
-**Endnote citations** are the same thing wearing another kind of block. Notes
-come in two breeds: one is the author's own text ("the phrase found chalked on
-Feynman's blackboard reads otherwise"), the other is a reference ("skills of a
-one-year-old": Hans Moravec, *Mind Children* (Harvard U. Press, 1988), 15).
-The first must be translated, the second must not. It is recognised by its
-shape — a lemma, a colon, an author, a title, a year or page numbers — and,
-again, by a run of at least five. Each matching note inside the run is marked,
-not the region: commentary sits interleaved with references, and marking the
-region would have left it silently in the source language. On a live book 225
-of 305 notes matched, and they were exactly the source list.
-
-To check the picking without calling a model: `python3 tests/refs_check.py`.
+Both are recognised by a run rather than by a single entry, and the thresholds
+are high: a miss leaves a whole chapter untranslated. How exactly is in the
+comments on `_refs_span` and `_mark_cites`. To check the picking without
+calling a model: `python3 tests/refs_check.py`.
 
 ## Layout
 

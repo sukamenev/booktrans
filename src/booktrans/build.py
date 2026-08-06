@@ -587,6 +587,12 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         # получают — они и есть авторский текст.
         pref = st.get("note_prefix", NOTE_PREFIX).rstrip() + " "
         w('<body name="notes">')
+        # Заголовок у тела, а не у секций: по схеме fb2 это `body = (image?,
+        # title?, epigraph*, section+)`, и оглавление читалка строит по нему.
+        # Без него раздел попадал в оглавление безымянным — как называется
+        # список сносок, каждая программа решала сама. Строка та же, что у
+        # txt, html и epub: они её берут давно, fb2 один её не брал.
+        w(f'<title><p>{esc(st.get("notes_title", "Примечания"))}</p></title>')
         for anchor, num, body, from_source in note_seq:
             if not from_source and not body.startswith(pref):
                 body = pref + body
