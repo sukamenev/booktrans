@@ -85,6 +85,7 @@
   "qa2_ok": "all digits present",
   "qa2_ocr": "a digit standing for a letter (1 for I, 5 for S) — OCR damage, not counted: blocks {0}",
   "qa2_new": "digits that were not in the source appeared in the translation — blocks: {0} (nothing to check them against, take a look)",
+  "qa2_word": "a number glued to a word (\"88-page\", \"2-D\") — the other language writes it differently, not counted: blocks {0}",
   "qa3": "3. PARAGRAPH LENGTH  (an outlier betrays an omission)",
   "qa3_mid": "usual length ratio for this book: {0}",
   "qa3_bad": "suspicious: {0} (often false alarms)",

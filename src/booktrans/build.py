@@ -643,6 +643,21 @@ def _nums(t, group=True):
     return Counter(re.findall(r"\d+", t))
 
 
+def _compound(t, n):
+    """Число, слипшееся дефисом со словом: «88-страничный», «2-D skin cells».
+
+    Это составное определение, и языки пишут его по-разному: английский
+    разворачивает число в слова (eighty-eight-page), русский оставляет
+    цифрой, — так что цифра честно пропадает в одну сторону и появляется в
+    другую. Проверка считала это ошибкой, и на хорошо переведённой книге
+    раздел краснел на пустом месте.
+
+    Число только впереди: «COVID-19» и «MP-3» — обозначения, там цифра
+    обязана уцелеть.
+    """
+    return bool(re.search(rf"(?<![\w-]){re.escape(n)}-[^\W\d_]", t))
+
+
 def _ocr_digit(s, n):
     """Пропавшая цифра — это порча распознавания, а не потеря в переводе.
 
@@ -892,7 +907,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa1_ok", len(src)) + (T("qa1_edited", edited) if edited else ""))
 
     log(T("qa2"))
-    lost, junk, gained = [], set(), []
+    lost, junk, word, gained = [], set(), set(), []
     for i, s in src.items():
         if i not in tr:
             continue
@@ -905,6 +920,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         if ocr:
             junk |= {i for x in bad if _ocr_digit(s, x)}
             bad = [x for x in bad if not _ocr_digit(s, x)]
+        word |= {i for x in bad if _compound(s, x)}
+        bad = [x for x in bad if not _compound(s, x)]
         if bad:
             lost.append((i, bad))
         # Обратная сторона: цифра, которой в оригинале не было. Сверить её не
@@ -912,6 +929,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         # может и от правки распознанной даты, и от пересчёта в другие
         # единицы. Поэтому не ошибка, а строка «посмотрите глазами».
         new = sorted(_nums(tr[i]) - (a | _nums(s, group=False)))
+        word |= {i for x in new if _compound(tr[i], x)}
+        new = [x for x in new if not _compound(tr[i], x)]
         if new:
             gained.append((i, new))
     if lost:
@@ -920,10 +939,12 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         for i, x in lost[:8]:
             log(f"     {i}  {x}")
         _more(log, len(lost) - 8, T)
-    elif not junk:
+    elif not (junk or word):
         log("   " + T("qa2_ok"))
     if junk:
         log("   " + T("qa2_ocr", len(junk)))
+    if word:
+        log("   " + T("qa2_word", len(word)))
     if gained:
         log("   " + T("qa2_new", len(gained)))
         for i, x in gained[:5]:
