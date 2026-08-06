@@ -460,7 +460,11 @@ def _tex_preamble(meta, st, code):
         out.append(r"%% переносы: раскомментируйте, если стоит babel-%s"
                    % lang)
         out.append(r"%% \usepackage[%s]{babel}" % lang)
-    out += [r"\setlength{\parindent}{1.2em}",
+    # Свои подписи вместо английских: babel закомментирован, и без этого
+    # оглавление в русской книге называется Contents.
+    out += [r"\renewcommand{\contentsname}{%s}"
+            % _tex(st.get("toc_title", "Оглавление")),
+            r"\setlength{\parindent}{1.2em}",
             r"\titleformat{\chapter}{\huge\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\section}{\Large\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\subsection}{\large\sffamily}{}{0pt}{}",

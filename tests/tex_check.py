@@ -75,11 +75,15 @@ def main():
     ok("короткая строка добита пустой ячейкой",
        len(rows) == 2 and rows[0].count("&") == rows[1].count("&") + 1
        and rows[0].rstrip(r"\\ ").endswith("&"), rows)
+    # Babel закомментирован, поэтому подписи ставим свои: иначе оглавление
+    # в русской книге называется Contents.
+    ok("оглавление названо на языке книги",
+       r"\renewcommand{\contentsname}" in t, "")
     ok("шрифты с перебором",
        t.count(r"\IfFontExistsTF") >= 3 and "DejaVu Serif" in t)
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 13   с расхождениями: {bad}")
+    print(f"\nслучаев: 14   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
