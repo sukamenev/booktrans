@@ -15,6 +15,19 @@ That is all. Markup detection, reconnaissance, translation, footnotes,
 editing, assembly and checks — on its own. Interrupt whenever you like; it
 resumes where it stopped.
 
+**That runs on Claude Code**, which is the default. Other providers have
+ready-made wrappers, each one line away from `booktrans`:
+
+| | |
+|---|---|
+| `./bt_claude` | Claude Code, the same thing said out loud |
+| `./bt_agy` | Gemini through Antigravity, with Claude and gpt-oss behind it |
+| `./bt_codex` | Codex |
+
+The key `--agent claude|agy|codex` does the same, and `--agent cmd
+--agent-cmd '…'` plugs in a CLI of your own. Which models each set uses is
+written in the wrapper itself and under "Per-pass models".
+
 With translator's instructions:
 
 ```bash
