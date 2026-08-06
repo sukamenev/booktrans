@@ -408,6 +408,12 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
     order = {b["id"]: i for i, b in enumerate(blocks)}
     notes = all_notes(work, order)
     notes = {k: v for k, v in notes.items() if k in tr}
+    # Оговорка про цитату — здесь, до развилки по форматам: она нужна читателю
+    # любой книги, а не только fb2.
+    say = st.get("source_caveat", SOURCE_CAVEAT)
+    for v in notes.values():
+        if v.get("source") and say and say not in v["text"]:
+            v["text"] = v["text"].rstrip() + " " + say
 
     # Сноски бывают двух родов: авторские, пришедшие из самой книги, и
     # предложенные конвейером. Нумерация у них общая и идёт по порядку
@@ -424,10 +430,6 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             a = f"n{len(note_seq) + 1}"
             nid[b["id"]] = a
             v = notes[b["id"]]
-            if isinstance(v, dict) and v.get("source"):
-                say = st.get("source_caveat", SOURCE_CAVEAT)
-                if say and say not in v["text"]:
-                    v = dict(v, text=v["text"].rstrip() + " " + say)
             note_seq.append((a, len(note_seq) + 1,
                              v["text"] if isinstance(v, dict) else v,
                              bool(isinstance(v, dict) and v.get("source_only"))))

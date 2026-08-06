@@ -3,7 +3,7 @@
 *[Русская версия](README.ru.md)*
 
 **Translate a whole book in one run.** Takes epub, fb2, html, pdf or txt;
-produces a finished book as epub, fb2, html or txt.
+produces a finished book as epub, fb2, html, txt or LaTeX.
 
 ## Translating a book
 
@@ -76,7 +76,7 @@ translation, adds footnotes and assembles the file.
 
 ## What it does
 
-- **reads** epub, fb2, html, pdf, txt; **writes** epub, fb2, html, txt;
+- **reads** epub, fb2, html, pdf, txt; **writes** epub, fb2, html, txt, tex;
 - **works out the markup with the model** rather than by fixed rules: every
   publisher lays books out differently;
 - **scouts the book before translating** — narrator voices, names, terms,
@@ -557,6 +557,32 @@ What a table does not keep: `thead`/`tbody`, column alignment and width,
 several paragraphs inside one cell.
 
 To check without calling a model: `python3 tests/table_check.py`.
+
+## LaTeX output
+
+`-o Book.tex` gives a LaTeX source: headings in a sans face, the text in a
+serif one, listings in mono, footnotes where they belong, tables with their
+merges, images in an `img/` folder beside it.
+
+It builds with **lualatex** or **xelatex**, not pdflatex: that one does not
+know scripts such as Devanagari or Chinese. Fonts are chosen where it is built,
+by trying in turn: Noto (which covers nearly every script), then DejaVu, then
+Liberation. If none is present TeX falls back to its own, and Cyrillic may not
+come out.
+
+```bash
+./booktrans book.epub --to ru -o Book.tex
+lualatex Book.tex
+```
+
+What stays with you is the typography. The preamble comes first and is meant to
+be edited — paper size, margins, type size, two columns. Hyphenation by the
+language's rules is one `babel` line, commented out in the preamble: its
+language data is installed as separate packages, and without them the build
+fails.
+
+Images in gif and webp are skipped: `graphicx` cannot open them. To check
+without calling a model: `python3 tests/tex_check.py`.
 
 ## Other input formats
 

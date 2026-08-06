@@ -365,5 +365,198 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             z.writestr(f"OEBPS/img/cover.{cext}", cover)
 
 
-WRITERS = {".txt": write_txt, ".html": write_html, ".htm": write_html,
+
+# ---------------------------------------------------------------- tex
+
+# Знаки, которые TeX читает как разметку. Промах здесь опаснее прочих: `%`
+# молча съедает остаток строки, и текст пропадает при собранном без ошибок
+# файле.
+TEX_ESC = {"\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "$": r"\$",
+           "&": r"\&", "#": r"\#", "^": r"\textasciicircum{}", "_": r"\_",
+           "~": r"\textasciitilde{}", "%": r"\%"}
+TEX_INLINE = {"i": "textit", "em": "textit", "b": "textbf", "strong": "textbf",
+              "s": "sout", "del": "sout", "strike": "sout",
+              "sub": "textsubscript", "sup": "textsuperscript", "code": "texttt"}
+
+# Шрифты берутся по покрытию письменностей: Noto закрывает почти все, DejaVu
+# — латиницу, кириллицу и греческий. Ставим первый, какой найдётся: fontspec
+# умеет искать по имени семейства, установленного в системе.
+TEX_FONTS = {
+    "rm": ["Noto Serif", "DejaVu Serif", "Liberation Serif"],
+    "sf": ["Noto Sans", "DejaVu Sans", "Liberation Sans"],
+    "tt": ["Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono"],
+}
+# Для письменностей, которых в основных шрифтах нет.
+TEX_SCRIPT = {"ja": "Noto Serif CJK JP", "zh": "Noto Serif CJK SC",
+              "ko": "Noto Serif CJK KR", "hi": "Noto Serif Devanagari"}
+TEX_BABEL = {"ru": "russian", "en": "english", "de": "german", "fr": "french",
+             "es": "spanish", "hi": "hindi"}
+
+
+def _tex(s, links=None):
+    """Текст в TeX: экранирование и разворот инлайновой разметки."""
+    out, marks = [], {}
+    # Ярлыки разметки прячем, чтобы экранирование их не тронуло.
+    def hide(m):
+        marks[len(marks)] = m.group()
+        return f"\x00{len(marks) - 1}\x00"
+    s = re.sub(r"</?(?:%s|a\d+)>" % "|".join(TEX_INLINE), hide, s)
+    s = "".join(TEX_ESC.get(c, c) for c in s)
+
+    def back(m):
+        t = marks[int(m.group(1))]
+        name = re.match(r"</?([a-z]+)", t).group(1)
+        close = t.startswith("</")
+        if name == "a":
+            i = int(re.match(r"</?a(\d+)>", t).group(1))
+            url = (links or [None] * i)[i - 1] if i <= len(links or []) else None
+            if not url:
+                return ""
+            return "}" if close else r"\href{%s}{" % url.replace("%", r"\%")
+        return "}" if close else "\\%s{" % TEX_INLINE[name]
+    return re.sub(r"\x00(\d+)\x00", back, s)
+
+
+def _tex_preamble(meta, st, code):
+    """Преамбула: шрифты подбираются на месте сборки.
+
+    Ставить один шрифт нельзя — у читателя может не оказаться именно его, а
+    падение на первой строке хуже, чем другая гарнитура. `\\IfFontExistsTF`
+    перебирает: Noto закрывает почти все письменности, DejaVu — латиницу,
+    кириллицу и греческий, Liberation есть почти везде.
+    """
+    fonts = []
+    for cmd, names in (("setmainfont", TEX_FONTS["rm"]),
+                       ("setsansfont", TEX_FONTS["sf"]),
+                       ("setmonofont", TEX_FONTS["tt"])):
+        line = ""
+        for n in reversed(names):
+            line = "\\IfFontExistsTF{%s}{\\%s{%s}}{%s}" % (n, cmd, n, line)
+        fonts.append(line)
+    extra = TEX_SCRIPT.get(code)
+    if extra:
+        fonts.append("\\IfFontExistsTF{%s}{\\setmainfont{%s}}{}" % (extra, extra))
+    lang = TEX_BABEL.get(code)
+    out = [r"\documentclass[12pt,oneside]{book}",
+           r"% Собирается lualatex или xelatex: fontspec нужен ради письменностей,",
+           r"% которых pdflatex не знает. Заголовки рубленым, текст с засечками,",
+           r"% листинги моноширинным — как в книгах и заведено.",
+           r"\usepackage{fontspec}",
+           *fonts,
+           r"\usepackage[a5paper,margin=18mm]{geometry}",
+           r"\usepackage{graphicx}",
+           r"\usepackage[normalem]{ulem}",
+           r"\usepackage{multirow}",
+           r"\usepackage{titlesec}",
+           r"\usepackage[hidelinks]{hyperref}"]
+    if lang:
+        # Строкой-подсказкой, а не подключением: языковые данные babel
+        # ставятся отдельными пакетами, и без них сборка падает на первой же
+        # строке. Переносы важны, но не ценой несобираемого файла.
+        out.append(r"%% переносы: раскомментируйте, если стоит babel-%s"
+                   % lang)
+        out.append(r"%% \usepackage[%s]{babel}" % lang)
+    out += [r"\setlength{\parindent}{1.2em}",
+            r"\titleformat{\chapter}{\huge\sffamily\bfseries}{}{0pt}{}",
+            r"\titleformat{\section}{\Large\sffamily\bfseries}{}{0pt}{}",
+            r"\titleformat{\subsection}{\large\sffamily}{}{0pt}{}",
+            r"\begin{document}"]
+    return "\n".join(out)
+
+
+def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+    """Книга исходником LaTeX. Компиляция — дело читателя: шрифты и движок у
+    всех свои, и обещать, что соберётся везде, нельзя."""
+    st = st or {}
+    code = meta.get("target_lang", "ru")
+    title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
+    author = meta.get("author_target") or meta.get("author") or ""
+    o = [_tex_preamble(meta, st, code)]
+    if cover:
+        name = "img/cover." + _cover_mime(cover)[1]
+        o.append(r"\begin{titlepage}\centering")
+        o.append(r"\includegraphics[width=\textwidth,height=0.8\textheight,"
+                 r"keepaspectratio]{%s}\end{titlepage}" % name)
+    o.append(r"\title{%s}" % _tex(title))
+    o.append(r"\author{%s}" % _tex(author))
+    o.append(r"\maketitle")
+    o.append(r"\tableofcontents")
+    nums = {b: i for i, b in enumerate(notes, 1)}
+    for kind, text, bid, links, *sp in items:
+        if kind == "title":
+            o.append(r"\section{%s}" % _tex(text))
+        elif kind == "subtitle":
+            o.append(r"\subsection*{%s}" % _tex(text))
+        elif kind == "break":
+            o.append(r"\begin{center}* * *\end{center}")
+        elif kind == "image" and text in images and _tex_pic(text):
+            o.append(r"\begin{center}\includegraphics[width=0.9\textwidth,"
+                     r"keepaspectratio]{img/%s}\end{center}" % text)
+        elif kind == "verse":
+            o.append(r"\begin{verse}%s\end{verse}"
+                     % r"\\".join(_tex(l) for l in text.splitlines()))
+        elif kind == "code":
+            o.append(r"\begin{verbatim}" + "\n" + text + "\n" + r"\end{verbatim}")
+        elif kind == "table":
+            o.append(_tex_table(text, sp[0] if sp else None))
+        elif kind == "note":
+            continue                       # сноски встают по месту, ниже
+        else:
+            note = ""
+            if bid in nums:
+                v = notes[bid]
+                body = v["text"] if isinstance(v, dict) else v
+                if not body.startswith(note_prefix):
+                    body = note_prefix + body
+                note = r"\footnote{%s}" % _tex(body)
+            o.append(_tex(text, links) + note + "\n")
+    o.append(r"\end{document}")
+    open(path, "w", encoding="utf-8").write("\n".join(o) + "\n")
+    d = os.path.join(os.path.dirname(os.path.abspath(path)), "img")
+    used = {t for k, t, *_ in items if k == "image"}
+    if cover or (images and used):
+        os.makedirs(d, exist_ok=True)
+    for name, raw in (images or {}).items():
+        if name in used and _tex_pic(name):
+            open(os.path.join(d, name), "wb").write(raw)
+    if cover:
+        open(os.path.join(d, "cover." + _cover_mime(cover)[1]), "wb").write(cover)
+
+
+def _tex_pic(name):
+    """Годится ли картинка для LaTeX. `graphicx` знает png, jpeg и pdf; gif и
+    webp он не откроет, и сборка встанет — такую картинку пропускаем."""
+    return name.lower().endswith((".png", ".jpg", ".jpeg", ".pdf"))
+
+
+def _tex_table(text, spans=None):
+    rows = [_cells(r) for r in text.splitlines()]
+
+    def width(i, cells):
+        sp = (spans or [])[i] if spans and i < len(spans) else None
+        if not sp or len(sp) != len(cells):
+            return len(cells)
+        return sum(c[0] for c in sp)
+    n = max((width(i, r) for i, r in enumerate(rows)), default=1)
+    out = [r"\begin{center}\begin{tabular}{" + "l" * n + "}"]
+    for i, cells in enumerate(rows):
+        line = []
+        for j, c in enumerate(cells):
+            body = _tex(c)
+            sp = (spans or [])[i][j] if spans and i < len(spans) \
+                and len(spans[i]) == len(cells) else [1, 1]
+            if sp[1] > 1:
+                body = r"\multirow{%d}{*}{%s}" % (sp[1], body)
+            if sp[0] > 1:
+                body = r"\multicolumn{%d}{l}{%s}" % (sp[0], body)
+            line.append(body)
+        # Строку добиваем пустыми ячейками: у TeX число столбцов объявлено
+        # заранее, и короткая строка ломает всю таблицу.
+        line += [""] * (n - width(i, cells))
+        out.append(" & ".join(line) + r" \\")
+    out.append(r"\end{tabular}\end{center}")
+    return "\n".join(out)
+
+
+WRITERS = {".tex": write_tex, ".txt": write_txt, ".html": write_html, ".htm": write_html,
            ".epub": write_epub}
