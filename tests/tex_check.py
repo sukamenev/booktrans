@@ -82,7 +82,7 @@ def main():
     # В колонтитул идёт название раздела: класс book держит там имя главы, а
     # глав у нас нет, и на каждой странице висело бы «Оглавление».
     ok("колонтитул — название раздела",
-       r"\markright{Глава \& первая}" in t and "myheadings" in t, "")
+       r"\markright{Глава \& первая}" in t and r"\pagestyle{bt}" in t, "")
     ok("шрифты с перебором",
        t.count(r"\IfFontExistsTF") >= 3 and "DejaVu Serif" in t)
     shutil.rmtree(d)

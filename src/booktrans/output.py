@@ -441,7 +441,7 @@ def _tex_preamble(meta, st, code):
     if extra:
         fonts.append("\\IfFontExistsTF{%s}{\\setmainfont{%s}}{}" % (extra, extra))
     lang = TEX_BABEL.get(code)
-    out = [r"\documentclass[12pt,oneside]{book}",
+    out = [r"\documentclass[10pt,oneside]{book}",
            r"% Собирается lualatex или xelatex: fontspec нужен ради письменностей,",
            r"% которых pdflatex не знает. Заголовки рубленым, текст с засечками,",
            r"% листинги моноширинным — как в книгах и заведено.",
@@ -483,7 +483,18 @@ def _tex_preamble(meta, st, code):
             # Колонтитул — название текущего раздела. Класс `book` держит там
             # имя главы, а глав у нас нет: без этого на каждой странице висело
             # бы «Оглавление», поставленное \tableofcontents.
-            r"\pagestyle{myheadings}",
+            # Свой колонтитул: у myheadings он вполкегля основного текста.
+            # В книжной вёрстке колонтитул набирают мельче — иначе он спорит
+            # с текстом за внимание.
+            r"\makeatletter",
+            r"\newcommand{\ps@bt}{%",
+            r"  \renewcommand{\@oddhead}{\footnotesize\slshape\rightmark"
+            r"\hfil\thepage}%",
+            r"  \renewcommand{\@evenhead}{\footnotesize\slshape\thepage"
+            r"\hfil\rightmark}%",
+            r"  \renewcommand{\@oddfoot}{}\renewcommand{\@evenfoot}{}}",
+            r"\makeatother",
+            r"\pagestyle{bt}",
             r"\begin{document}"]
     return "\n".join(out)
 
@@ -497,7 +508,8 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
     author = meta.get("author_target") or meta.get("author") or ""
     o = [_tex_preamble(meta, st, code)]
     if cover:
-        name = "img/cover." + _cover_mime(cover)[1]
+        name = "%s.img/cover.%s" % (os.path.splitext(os.path.basename(path))[0],
+                                    _cover_mime(cover)[1])
         o.append(r"\begin{titlepage}\centering")
         o.append(r"\includegraphics[width=\textwidth,height=0.8\textheight,"
                  r"keepaspectratio]{%s}\end{titlepage}" % name)
@@ -512,14 +524,25 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
     for kind, text, bid, links, *sp in items:
         if kind == "title":
             t = _tex(text)
-            o.append(r"\section{%s}\markright{%s}" % (t, t))
+            # Служебные разделы начинаются со своей страницы: «О переводе»
+            # сразу за оглавлением читается его продолжением.
+            if bid.startswith("_"):
+                o.append(r"\clearpage")
+            # Длинное название вылезает за поле: колонтитул в строку, и
+            # переносить его нечем. Обрезаем сами — так надёжнее любого
+            # пакета и не зависит от того, что стоит у читателя.
+            head = " ".join(text.split())
+            if len(head) > TEX_HEAD:
+                head = head[:TEX_HEAD].rsplit(" ", 1)[0] + "…"
+            o.append(r"\section{%s}\markright{%s}" % (t, _tex(head)))
         elif kind == "subtitle":
             o.append(r"\subsection*{%s}" % _tex(text))
         elif kind == "break":
             o.append(r"\begin{center}* * *\end{center}")
         elif kind == "image" and text in images and _tex_pic(text):
             o.append(r"\begin{center}\includegraphics[width=0.9\textwidth,"
-                     r"keepaspectratio]{img/%s}\end{center}" % text)
+                     r"keepaspectratio]{%s.img/%s}\end{center}"
+                     % (os.path.splitext(os.path.basename(path))[0], text))
         elif kind == "verse":
             o.append(r"\begin{verse}%s\end{verse}"
                      % r"\\".join(_tex(l) for l in text.splitlines()))
@@ -540,7 +563,9 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
             o.append(_tex(text, links) + note + "\n")
     o.append(r"\end{document}")
     open(path, "w", encoding="utf-8").write("\n".join(o) + "\n")
-    d = os.path.join(os.path.dirname(os.path.abspath(path)), "img")
+    # Папка своя у каждой книги: собери несколько в один каталог — и
+    # одноимённые cover.jpg, author.jpg, logo.jpg затрут друг друга.
+    d = os.path.splitext(os.path.abspath(path))[0] + ".img"
     used = {t for k, t, *_ in items if k == "image"}
     if cover or (images and used):
         os.makedirs(d, exist_ok=True)
@@ -587,6 +612,7 @@ def _tex_table(text, spans=None):
 
 
 
+TEX_HEAD = 55       # столько знаков названия влезает в колонтитул
 TEX_ENGINES = ("lualatex", "xelatex")
 
 
