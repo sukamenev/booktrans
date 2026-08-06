@@ -220,6 +220,22 @@ Nothing else needs changing; the system picks it up.
 language", not "Russian": anything true of one language only lives in that
 language's file. A new language therefore needs no prompt edits.
 
+**Your own prompt goes in the folder named after the target language.**
+Translating into German with `prompts/de/translate.md` present, that file is
+used instead of the author's. Folders for several common languages are already
+there, empty; any other code works the same — create the folder, drop the file
+in.
+
+More often you want to add to a prompt rather than replace it: name the file
+`name.add.md` and it is appended to the author's instead of displacing it. The
+same file in `prompts/` itself applies to every language. An addition survives
+an upgrade of the pipeline; a full copy quietly falls behind it.
+
+The protocol tokens must be left alone — see below. The pipeline compares a
+replacement against the original and reports a missing token before the first
+request. More in `prompts/README.md`; to check the loading:
+`python3 tests/prompt_check.py`.
+
 **Translating the prompts themselves is unnecessary** — it buys no quality and
 can break things. `TERM:`, `TEXT:`, `SUMMARY:`, `TERMS:` and the markers
 `<<<P>>>`, `<<<V>>>`, `<<<NOTE>>>`, `<<<META>>>` are protocol tokens, not

@@ -99,6 +99,8 @@
   "qa5_none": "no rules (create work/terms.json: {\"Original\": \"translation\"})",
   "qa5_bad": "{0} -> expected /{1}/, missing in {2} of {3}",
   "qa_total": "TOTAL remarks: {0}   (blocking ones are sections 1, 2 and 5)",
+  "prompt_own": "own prompt: prompts/{0}",
+  "prompt_lost": "WARNING: protocol tokens missing from it: {0}. The parser looks for exactly those — footnotes, digest and terms will vanish without a sound.",
   "lim_wait": "rate limit reached, waiting {0} min (waited {1} min so far)",
   "notes_already": "notes were processed earlier ({0} chunks), nothing to do",
   "delete_to_redo": "(delete {0} to redo it)",

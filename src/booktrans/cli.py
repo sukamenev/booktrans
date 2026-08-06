@@ -85,6 +85,43 @@ def read_prompt(path, log=None, text=None):
     return meta, text.strip()
 
 
+PROMPTS = os.path.join(HERE, "prompts")
+# Знаки протокола: по ним разбирается ответ модели. Перевести их — значит
+# молча потерять сноски, конспект и список терминов, и увидеть это можно
+# будет только на собранной книге. Поэтому перекрытый промпт сверяется с
+# исходным: пропал знак — конвейер скажет об этом до первого запроса.
+TOKENS = re.compile(r"<<<[A-Z]+(?=[ >])|^[A-Z]{2,10}:", re.M)
+
+
+def prompt(name, to=None, root=PROMPTS):
+    """Промпт прохода, с учётом языковых перекрытий.
+
+    Свои промпты кладут в папку по коду языка перевода:
+
+        prompts/de/translate.md        вместо авторского
+        prompts/de/translate.add.md    в дополнение к нему
+
+    Файл `.add.md` приписывается к тому, что вышло, — им дополняют, не
+    переписывая. Такой же файл в самой `prompts/` действует на все языки.
+    """
+    own = os.path.join(root, to, f"{name}.md") if to else None
+    if not (own and os.path.exists(own)):
+        own = None
+    out = [open(own or os.path.join(root, f"{name}.md"), encoding="utf-8").read()]
+    for add in (os.path.join(root, f"{name}.add.md"),
+                os.path.join(root, to, f"{name}.add.md") if to else None):
+        if add and os.path.exists(add):
+            out.append(open(add, encoding="utf-8").read())
+    return "\n\n".join(out), own
+
+
+def lost_tokens(name, over, root=PROMPTS):
+    """Знаки протокола, пропавшие из перекрытого промпта."""
+    was = set(TOKENS.findall(open(os.path.join(root, f"{name}.md"),
+                                  encoding="utf-8").read()))
+    return sorted(was - set(TOKENS.findall(over)))
+
+
 def head(key, n=None):
     """Заголовок этапа: `=== 1. Правка дефектов распознавания ===`.
 
@@ -340,8 +377,17 @@ def main():
                          "при чтении файла в неверной кодировке. "
                          "Отвечай одним числом.", prompt)[0]
 
+    said = set()
+
     def task(name):
-        return open(f"{HERE}/prompts/{name}.md", encoding="utf-8").read()
+        text, own = prompt(name, args.to)
+        if own and name not in said:
+            said.add(name)
+            log("  " + T("prompt_own", os.path.relpath(own, PROMPTS)))
+            lost = lost_tokens(name, text)
+            if lost:
+                log("  " + T("prompt_lost", ", ".join(lost)))
+        return text
 
     # ---- разбор книги (детерминированный, но разметку определяет модель)
     bp = f"{work}/book.json"
@@ -499,11 +545,11 @@ def main():
 
     def sysprompt(extra=""):
         parts = [f"Язык перевода: **{lang.lang_name(args.to)}**. Переводить на него.",
-                 open(f"{HERE}/prompts/style.md", encoding="utf-8").read()]
+                 task("style")]
         # Порча от распознавания — свойство исходника, а не прохода: её видят
         # и разведка, и перевод, и редактура, поэтому место ей в общем промпте.
         if made_by_ocr:
-            parts.append(open(f"{HERE}/prompts/ocr.md", encoding="utf-8").read())
+            parts.append(task("ocr"))
         rules = lang.rules(args.to)
         if rules:
             parts.append("# Правила целевого языка\n\n" + rules)
