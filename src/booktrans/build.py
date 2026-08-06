@@ -430,7 +430,7 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         if dhead:
             items += [("title", dhead, "_details", None)]
             items += [("p", t, f"_details{i}", None) for i, t in enumerate(dbody)]
-        kw = {"cover": cover} if ext == ".epub" else {}
+        kw = {"cover": cover} if ext in (".epub", ".html", ".htm") else {}
         output.WRITERS[ext](dest, meta, items, notes, images or {},
                             st.get("note_prefix", NOTE_PREFIX).rstrip() + " ",
                             st, **kw)

@@ -126,6 +126,9 @@ pre{font:.85em/1.4 'DejaVu Sans Mono',Consolas,monospace;background:#f4f4f0;
 border-left:3px solid #ddd;padding:.6em .8em;margin:1.2em 0;overflow-x:auto;
 white-space:pre-wrap;word-wrap:break-word}
 img{max-width:100%;height:auto;display:block;margin:1.5em auto}
+img.cover{max-height:80vh;width:auto;margin:0 auto 2em}
+table{border-collapse:collapse;margin:1.2em 0}
+td,th{border:1px solid #ccc;padding:.3em .6em;text-align:left;vertical-align:top}
 hr{border:0;text-align:center;margin:2em 0}hr:after{content:'* * *';color:#999}
 sup a{text-decoration:none;color:#06c;font-size:.75em}
 .notes{margin-top:4em;border-top:1px solid #ddd;padding-top:1em;font-size:.9em;color:#444}
@@ -134,7 +137,7 @@ sup a{text-decoration:none;color:#06c;font-size:.75em}
 h2{color:#999}.notes{color:#bbb;border-color:#333}sup a{color:#7ab}}"""
 
 
-def write_html(path, meta, items, notes, images, note_prefix, st=None):
+def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=None):
     st = st or {}
     targets = _targets(items)
     title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
@@ -143,6 +146,12 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
     o = ["<!doctype html>", f'<html lang="{code}"><head><meta charset="utf-8">',
          '<meta name="viewport" content="width=device-width,initial-scale=1">',
          f"<title>{escape(title)}</title><style>{CSS}</style></head><body>"]
+    if cover:
+        # Обложка первой, как в epub и fb2. Файл самодостаточный, поэтому
+        # картинка идёт в него же — отдельным файлом рядом она бы потерялась
+        # при пересылке, а ради неё html и выбирают.
+        o.append(f'<img class="cover" src="data:{_cover_mime(cover)[0]};base64,'
+                 f'{base64.b64encode(cover).decode()}" alt="">')
     o.append(f"<h1>{escape(title)}</h1>")
     if author:
         o.append(f"<p><em>{escape(author)}</em></p>")
@@ -184,6 +193,18 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
 
 
 # ---------------------------------------------------------------- epub
+
+def _cover_mime(raw):
+    """Чем на самом деле является обложка. Раньше ей приписывался jpeg, а
+    лежать там может и png: строгая читалка на такое ругается."""
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png", "png"
+    if raw[:3] == b"GIF":
+        return "image/gif", "gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    return "image/jpeg", "jpg"
+
 
 def _at(bid, targets):
     return f' id="{bid}"' if bid in targets else ""
@@ -286,9 +307,10 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     used = {t for k, t, *_ in items if k == "image"}
     images = {n: r for n, r in images.items() if n in used or n == same}
     man, spine = [], []
+    cmime, cext = _cover_mime(cover) if cover else ("", "")
     if cover and not same:
-        man.append('<item id="cover-img" href="img/cover.jpg" '
-                   'media-type="image/jpeg" properties="cover-image"/>')
+        man.append(f'<item id="cover-img" href="img/cover.{cext}" '
+                   f'media-type="{cmime}" properties="cover-image"/>')
     for i in range(1, len(parts) + 1):
         man.append(f'<item id="ch{i}" href="ch{i:03d}.xhtml" '
                    'media-type="application/xhtml+xml"/>')
@@ -340,7 +362,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         for name, raw in images.items():
             z.writestr("OEBPS/img/" + name, raw)
         if cover and not same:
-            z.writestr("OEBPS/img/cover.jpg", cover)
+            z.writestr(f"OEBPS/img/cover.{cext}", cover)
 
 
 WRITERS = {".txt": write_txt, ".html": write_html, ".htm": write_html,

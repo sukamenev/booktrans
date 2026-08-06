@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Проверка собранного epub.
+"""Проверка собранной книги: epub и html.
 
 Epub — это zip с описью: манифест перечисляет файлы, spine задаёт порядок,
 nav делает оглавление. Ошибка тут не видна на глаз — файл откроется, а глава
@@ -117,7 +117,24 @@ def main():
        re.findall(r"<table>.*?</table>", x, re.S))
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 14   с расхождениями: {bad}")
+    # --- html: тот же набор блоков, но один файл
+    d = tempfile.mkdtemp()
+    h = os.path.join(d, "book.html")
+    O.write_html(h, {"title": "Книга", "author": "Автор", "target_lang": "ru"},
+                 ITEMS, {}, {"photo.png": OTHER}, "Прим.:", {}, cover=PIXEL)
+    t = open(h, encoding="utf-8").read()
+    # Файл самодостаточный: картинки уходят в data:, и обложка тоже — иначе
+    # при пересылке одним файлом от неё ничего не осталось бы.
+    ok("обложка в html есть", '<img class="cover"' in t)
+    ok("картинка вшита, а не ссылкой",
+       t.count("data:image/png;base64,") == 2, re.findall(r'src="([^"]{0,24})', t))
+    ok("пропавшую не выдумали", "нет-такой.png" not in t)
+    ok("внутренняя ссылка в html без имени файла",
+       'href="#s02.b0001"' in t and 'id="s02.b0001"' in t,
+       re.findall(r'href="#[^"]*"', t))
+    shutil.rmtree(d)
+
+    print(f"\nслучаев: 18   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
