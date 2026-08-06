@@ -31,6 +31,22 @@ PAGE = """<html><head><title>С таблицей</title></head><body>
 </body></html>
 """
 
+# Слияния ячеек. При rowspan в следующей строке ячейки просто нет — ни в
+# разметке, ни у нас в строке, — поэтому список слияний ложится на ячейки один
+# в один и покрывает любое сочетание с colspan.
+SPAN = """<html><head><title>Слияния</title></head><body>
+<h1>Глава</h1>
+<table>
+<tr><th colspan="3">Шапка на три</th></tr>
+<tr><th>№</th><th>Что</th><th>Год</th></tr>
+<tr><td rowspan="2">1</td><td>Первая половина</td><td>1942</td></tr>
+<tr><td>Вторая половина</td><td>1942</td></tr>
+<tr><td>2</td><td colspan="2">Растянут на две</td></tr>
+</table>
+<p>После.</p>
+</body></html>
+"""
+
 # Вложенная таблица: ею в старой вёрстке разбивали страницу на колонки.
 NEST = """<html><head><title>Вложенная</title></head><body>
 <h1>Глава</h1>
@@ -125,7 +141,36 @@ def main():
        tbl and tbl[0]["text"].splitlines()[0] == "<b>Раз</b> | <b>Два</b>",
        tbl[0]["text"].splitlines()[:1] if tbl else "")
 
-    print(f"\nслучаев: 15   с расхождениями: {bad}")
+    meta, blocks, cover, imgs = read(SPAN)
+    t = [b for b in blocks if b["kind"] == "table"][0]
+    ok("слияния собраны по ячейкам",
+       t.get("spans") == [[[3, 1]], [[1, 1]] * 3, [[1, 2], [1, 1], [1, 1]],
+                          [[1, 1], [1, 1]], [[1, 1], [2, 1]]], t.get("spans"))
+    items = [(b["kind"], b["text"], b["id"], b.get("links"), b.get("spans"))
+             for b in blocks]
+    d = tempfile.mkdtemp()
+    O.write_html(os.path.join(d, "s.html"), meta, items, {}, imgs, "Прим.:", {})
+    h = re.search(r"<table>.*?</table>",
+                  open(os.path.join(d, "s.html"), encoding="utf-8").read(), re.S).group()
+    ok("colspan в html", h.count('colspan="3"') == 1 and h.count('colspan="2"') == 1, h)
+    ok("rowspan в html", h.count('rowspan="2"') == 1, h)
+    shutil.rmtree(d)
+
+    # Таблица без слияний ключа не заводит: хранить нечего.
+    meta, blocks, cover, imgs = read(PAGE)
+    ok("без слияний ключа нет",
+       "spans" not in [b for b in blocks if b["kind"] == "table"][0],
+       [b for b in blocks if b["kind"] == "table"][0].keys())
+
+    # Модель вернула другое число ячеек — слияния этой строки не применяются,
+    # соседние целы.
+    bad_rows = "a | b | c\nодна ячейка вместо трёх\nx | y | z"
+    spans = [[[1, 1]] * 3, [[1, 1]] * 3, [[2, 1], [1, 1], [1, 1]]]
+    got = O._table_html(bad_rows, O.HTML_INLINE, spans)
+    ok("сбитая строка не ломает остальные",
+       got.count("<tr>") == 3 and 'colspan="2"' in got, got)
+
+    print(f"\nслучаев: 20   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

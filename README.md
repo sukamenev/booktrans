@@ -541,7 +541,35 @@ block carries the marker `<<<T>>>` the way verse carries `<<<V>>>`. Header
 cells come out bold: a block has no separate kind for a cell, whereas `<b>`
 survives translation along with the rest of the markup.
 
+**Merged cells are kept.** `colspan` and `rowspan` are stored apart from the
+text and never pass through the model: there is no grid in front of it to
+break. The list of spans describes the cells rather than the columns — with a
+`rowspan` the next row simply has no cell there, neither in the markup nor
+here — so any combination of the two maps one to one. Should the model change
+the number of cells in a row anyway, that row's spans are not applied: the
+table comes out without them rather than skewed, and its neighbours are
+untouched.
+
+What a table does not keep: `thead`/`tbody`, column alignment and width,
+several paragraphs inside one cell.
+
 To check without calling a model: `python3 tests/table_check.py`.
+
+## Other input formats
+
+The pipeline reads epub, fb2, html, pdf and txt. Anything else — docx, rtf,
+mobi, azw3, chm — is easier turned into epub with an outside converter first
+and then translated as usual:
+
+```bash
+ebook-convert book.mobi book.epub     # Calibre
+pandoc book.docx -o book.epub         # pandoc
+```
+
+The pipeline deliberately grows no converter of its own: its reading and
+assembly give what a converter cannot — blocks with stable ids that survive
+translation. Turning mobi into epub, on the other hand, is somebody else's work
+and long since done.
 
 ## Encodings
 

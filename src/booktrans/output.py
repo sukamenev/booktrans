@@ -49,11 +49,28 @@ def _cells(row):
     return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", row)]
 
 
-def _table_html(text, inline):
+def span_attr(spans, i, j, n):
+    """Атрибуты слияния для ячейки, если они есть и подходят к строке.
+
+    Слияния хранятся отдельно от текста и через модель не проходят. Но текст
+    через неё проходит, и число ячеек в строке она изменить может; тогда
+    слияния этой строки не применяются вовсе — таблица выйдет без них, а не
+    поехавшей. Остальные строки это не затрагивает.
+    """
+    row = (spans or [])[i] if spans and i < len(spans) else None
+    if not row or len(row) != n:
+        return ""
+    c, r = row[j]
+    return (f' colspan="{c}"' if c > 1 else "") + (f' rowspan="{r}"' if r > 1 else "")
+
+
+def _table_html(text, inline, spans=None):
     rows = []
-    for row in text.splitlines():
-        rows.append("<tr>" + "".join(f"<td>{_inline(c, inline)}</td>"
-                                     for c in _cells(row)) + "</tr>")
+    for i, row in enumerate(text.splitlines()):
+        cells = _cells(row)
+        rows.append("<tr>" + "".join(
+            f"<td{span_attr(spans, i, j, len(cells))}>{_inline(c, inline)}</td>"
+            for j, c in enumerate(cells)) + "</tr>")
     return "<table>" + "".join(rows) + "</table>"
 
 
@@ -67,7 +84,7 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None):
         out += [meta.get("author_target") or meta["author"], ""]
     out.append("")
     nums = {b: i for i, b in enumerate(notes, 1)}
-    for kind, text, bid, links in items:
+    for kind, text, bid, links, *sp in items:
         if kind == "title":
             out += ["", "", _plain(text).upper(), ""]
         elif kind == "subtitle":
@@ -130,7 +147,7 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
     if author:
         o.append(f"<p><em>{escape(author)}</em></p>")
     nums = {b: i for i, b in enumerate(notes, 1)}
-    for kind, text, bid, links in items:
+    for kind, text, bid, links, *sp in items:
         if kind == "title":
             o.append(f"<h1{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h1>")
         elif kind == "subtitle":
@@ -143,7 +160,7 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
         elif kind == "image" and re.match(r"https?://|//", text):
             o.append(f'<img src="{escape(text)}" alt="">')   # картинка по сети
         elif kind == "table":
-            o.append(_table_html(text, HTML_INLINE))
+            o.append(_table_html(text, HTML_INLINE, sp[0] if sp else None))
         elif kind == "verse":
             o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
         elif kind == "code":
@@ -174,8 +191,7 @@ def _at(bid, targets):
 
 def _targets(items):
     """Блоки, на которые ссылаются изнутри книги: им нужен `id`."""
-    return {u[1:] for _, _, _, links in items for u in (links or ())
-            if u.startswith("#")}
+    return {u[1:] for x in items for u in (x[3] or ()) if u.startswith("#")}
 
 
 def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None):
@@ -209,12 +225,12 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
 
     # В epub книга разложена по файлам, и «#блок» внутри одного из них до
     # цели в другом не доведёт: адрес обязан нести имя файла.
-    where = {b: f"ch{i:03d}.xhtml" for i, part in enumerate(parts, 1)
-             for _, _, b, _ in part}
+    where = {x[2]: f"ch{i:03d}.xhtml" for i, part in enumerate(parts, 1)
+             for x in part}
     files = {}
     for i, part in enumerate(parts, 1):
         o = []
-        for kind, text, bid, links in part:
+        for kind, text, bid, links, *sp in part:
             links = [where.get(u[1:], "") + u if u.startswith("#") else u
                      for u in (links or [])] or None
             if kind == "title":
@@ -226,7 +242,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             elif kind == "image" and text in images:
                 o.append(f'<img src="img/{escape(text)}" alt=""/>')
             elif kind == "table":
-                o.append(_table_html(text, HTML_INLINE))
+                o.append(_table_html(text, HTML_INLINE, sp[0] if sp else None))
             elif kind == "verse":
                 o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
             elif kind == "code":

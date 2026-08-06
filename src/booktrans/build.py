@@ -420,8 +420,8 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         head, body = about_lines(work, st, code)
         items = [("title", head, "_about", None)]
         items += [("p", t, f"_about{i}", None) for i, t in enumerate(body)]
-        items += [(b["kind"], tr.get(b["id"], ""), b["id"], b.get("links"))
-                  for b in blocks]
+        items += [(b["kind"], tr.get(b["id"], ""), b["id"], b.get("links"),
+                   b.get("spans")) for b in blocks]
         dhead, dbody = details_lines(work, st, blocks)
         if dhead:
             items += [("title", dhead, "_details", None)]
@@ -562,11 +562,12 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
                 w("<section>")
                 open_sec = True
             w("<table>")
-            for row in text.splitlines():
+            for i, row in enumerate(text.splitlines()):
                 cells = [c.strip() for c in re.split(r"(?<!\\)\|", row)]
                 w("<tr>" + "".join(
-                    f"<td>{esc(c.replace(chr(92) + '|', '|'), b.get('links'), notes_map)}</td>"
-                    for c in cells) + "</tr>")
+                    f"<td{output.span_attr(b.get('spans'), i, j, len(cells))}>"
+                    f"{esc(c.replace(chr(92) + '|', '|'), b.get('links'), notes_map)}</td>"
+                    for j, c in enumerate(cells)) + "</tr>")
             w("</table>")
         elif b["kind"] == "break":
             if in_poem:

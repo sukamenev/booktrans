@@ -472,7 +472,7 @@ def _html(path, styles=None, encoding=None, ask=None):
     for a, i in anchors.items():
         at.setdefault(i, []).append(a)
     blocks, sec, n = [], 1, 0
-    for i, (kind, text, lnk, note_id) in enumerate(got):
+    for i, (kind, text, lnk, note_id, *sp) in enumerate(got):
         if kind == "title":
             sec += 1
             n = 0
@@ -484,6 +484,8 @@ def _html(path, styles=None, encoding=None, ask=None):
             blk["note_id"] = note_id
         if at.get(i):
             blk["anchors"] = at[i]
+        if sp and sp[0]:
+            blk["spans"] = sp[0]
         blocks.append(blk)
     _link_inside(blocks)
     _link_inside(blocks)
@@ -526,14 +528,35 @@ def _own_rows(el, out):
     return out
 
 
+def _span(el):
+    def n(name):
+        try:
+            return max(1, min(99, int(el.get(name) or 1)))
+        except ValueError:
+            return 1
+    return [n("colspan"), n("rowspan")]
+
+
 def _table_text(el):
-    rows = []
+    """Текст таблицы и слияния ячеек — порознь.
+
+    Слияния идут списком по строкам, ячейка в ячейку с текстом, и через
+    модель не проходят вовсе: сетки перед ней нет, сломать нечего. Список
+    описывает не колонки, а сами ячейки — при `rowspan` в следующей строке
+    ячейки просто нет, ни в разметке, ни здесь, — поэтому любое сочетание
+    `colspan` с `rowspan` ложится один в один.
+    """
+    rows, spans = [], []
     for tr in _own_rows(el, []):
-        cells = [_cell(td) for td in tr
+        cells = [td for td in tr
                  if re.sub(r"\{.*?\}", "", td.tag) in ("td", "th")]
-        if any(c.strip() for c in cells):
-            rows.append(CELL.join(cells))
-    return "\n".join(rows)
+        text = [_cell(td) for td in cells]
+        if any(c.strip() for c in text):
+            rows.append(CELL.join(text))
+            spans.append([_span(td) for td in cells])
+    if all(c == [1, 1] for row in spans for c in row):
+        spans = []                       # слияний нет — и хранить нечего
+    return "\n".join(rows), spans
 
 
 def _bare(t):
@@ -610,9 +633,9 @@ def _doc_blocks(root, styles, get_image, stats):
                 got.append(("note", text, links, el.get("id") or ""))
             continue
         if tag == "table":
-            t = _table_text(el)
+            t, spans = _table_text(el)
             if t:
-                got.append(("table", t, [], ""))
+                got.append(("table", t, [], "", spans))
             continue
         if tag == "pre":
             # Листинг. Раньше сюда не заглядывали вовсе, и в книге по
@@ -657,10 +680,10 @@ def _doc_blocks(root, styles, get_image, stats):
             kind = "p"
         got.append((kind, text, links, ""))
     keep, moved = [], {}
-    for i, (k, t, l, nid_) in enumerate(got):
+    for i, (k, t, l, nid_, *sp) in enumerate(got):
         if k in ("image", "break"):
             moved[i] = len(keep)
-            keep.append((k, t, l, nid_))
+            keep.append((k, t, l, nid_, *sp))
             continue
         txt = _bare(t)
         if not txt:
@@ -669,7 +692,7 @@ def _doc_blocks(root, styles, get_image, stats):
             stats["watermarks"] += 1
             continue
         moved[i] = len(keep)
-        keep.append((k, t, l, nid_))
+        keep.append((k, t, l, nid_, *sp))
     return keep, {a: moved[i] for a, i in anchors.items() if i in moved}
 
 
@@ -748,13 +771,13 @@ def _epub(path, styles=None, encoding=None, ask=None):
         at = {}
         for a, i in anchors.items():
             at.setdefault(i, []).append(a)
-        plain = " ".join(_bare(t) for k, t, _, _ in got if k in ("p", "title")).strip()
+        plain = " ".join(_bare(x[1]) for x in got if x[0] in ("p", "title")).strip()
         if not plain:
             continue                          # страница без текста
         if JUNK_PAGE.match(plain) and len(plain.split()) < 120:
             stats["junk_pages"] += 1
             continue                          # оглавление, реклама, навигация
-        for i, (kind, text, lnk, note_id) in enumerate(got):
+        for i, (kind, text, lnk, note_id, *sp) in enumerate(got):
             n += 1
             blk = {"id": f"s{sec:02d}.b{n:04d}", "kind": kind, "text": text}
             if lnk:
@@ -763,6 +786,8 @@ def _epub(path, styles=None, encoding=None, ask=None):
                 blk["note_id"] = note_id     # по нему на сноску ссылается текст
             if at.get(i):
                 blk["anchors"] = at[i]
+            if sp and sp[0]:
+                blk["spans"] = sp[0]
             blocks.append(blk)
 
     cover_bytes = None
@@ -842,9 +867,9 @@ def _fb2(path, encoding=None, ask=None):
                 if t:
                     blocks.append(("verse", t, lk, note_anchor[0]))
             elif tag == "table":
-                t = _table_text(el)
+                t, spans = _table_text(el)
                 if t:
-                    blocks.append(("table", t, [], ""))
+                    blocks.append(("table", t, [], "", spans))
             elif tag == "image":
                 href = (el.get("{http://www.w3.org/1999/xlink}href") or "").lstrip("#")
                 if href:
@@ -882,7 +907,7 @@ def _fb2(path, encoding=None, ask=None):
                           if k in ("p", "subtitle", "verse")]
 
     out, n, cur = [], 0, 0
-    for kind, text, lk, anchor in blocks:
+    for kind, text, lk, anchor, *sp in blocks:
         if kind == "title":
             cur += 1
             n = 0
@@ -892,6 +917,8 @@ def _fb2(path, encoding=None, ask=None):
             blk["links"] = lk
         if anchor and kind == "note":
             blk["note_id"] = anchor
+        if sp and sp[0]:
+            blk["spans"] = sp[0]
         out.append(blk)
     _prune_links(out)
 
