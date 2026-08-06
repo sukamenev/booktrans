@@ -13,6 +13,8 @@ import collections
 import difflib
 import re
 
+from .agent import AgentError
+
 WINDOW = 200        # кусков в одном запросе
 HEAD, TAIL = 110, 60    # сколько знаков куска показывать с начала и с конца
 KINDS = {"+", "+t", "title", "skip", "verse", "toc", "code"}
@@ -77,7 +79,7 @@ def _toc_lines(out):
     return got
 
 
-def plan(paras, run, log, photo=(), tries=1):
+def plan(paras, run, log, photo=(), tries=1, resume=None, save=None):
     """Пометки для каждого куска и названия глав из оглавления.
 
     `photo` — номера кусков, стоящих на странице с фотографией: подпись под
@@ -88,19 +90,35 @@ def plan(paras, run, log, photo=(), tries=1):
     и окно в две сотни кусков возвращается пустым. Двести кусков подряд без
     единой пометки — это не книга без заголовков, это несостоявшийся ответ, и
     тогда окно передаётся следующей модели цепочки.
+
+    Сбой у поставщика (502, отвалившийся вход) — тоже повод взять следующую
+    модель: она нередко у другого поставщика и стоит. Ошибка отдаётся наружу
+    только если её выдала вся цепочка.
+
+    `resume` — что успел прошлый прогон: (пометки, оглавление, докуда дошёл).
+    `save` — куда складывать то же самое после каждого окна. Окон бывает под
+    сотню, и падение на девяностом не должно стоить восьмидесяти девяти.
     """
-    marks, toc = {}, []
+    marks, toc, at = resume or ({}, [], 0)
+    marks, toc = dict(marks), list(toc)
     n = (len(paras) + WINDOW - 1) // WINDOW
     for w, lo in enumerate(range(0, len(paras), WINDOW), 1):
+        if lo < at:
+            continue
         part = paras[lo:lo + WINDOW]
         body = "\n".join(_show(lo + i + 1, p, lo + i + 1 in photo)
                          for i, p in enumerate(part))
         # Окон бывает десяток, по семь-восемь секунд каждое, и всё это время
         # конвейер молчал — со стороны неотличимо от зависания.
         log(f"{w}/{n} ", end="")
-        got, lines = {}, []
+        got, lines, err = {}, [], None
         for k in range(tries):
-            out = run(body, k)
+            try:
+                out = run(body, k)
+            except AgentError as e:
+                err = e
+                continue
+            err = None
             got = _parse(out, lo + 1, lo + len(part))
             lines = _toc_lines(out)
             # Молчание законно и обычно: о куске, про который ничего не
@@ -109,8 +127,12 @@ def plan(paras, run, log, photo=(), tries=1):
             # единой пометки — это отказ или пересказ задания своими словами.
             if got or lines or len(out.strip()) < NOTHING:
                 break
+        if err is not None:
+            raise err
         marks.update(got)
         toc += [s for s in lines if s not in toc]
+        if save:
+            save(marks, toc, lo + len(part))
     return marks, toc
 
 

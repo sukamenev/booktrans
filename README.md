@@ -3,7 +3,7 @@
 *[Русская версия](README.ru.md)*
 
 **Translate a whole book in one run.** Takes epub, fb2, html, pdf or txt;
-produces a finished book as epub, fb2, html, txt or LaTeX.
+produces a finished book as epub, fb2, html, txt, LaTeX or pdf.
 
 ## Translating a book
 
@@ -76,7 +76,7 @@ translation, adds footnotes and assembles the file.
 
 ## What it does
 
-- **reads** epub, fb2, html, pdf, txt; **writes** epub, fb2, html, txt, tex;
+- **reads** epub, fb2, html, pdf, txt; **writes** epub, fb2, html, txt, tex, pdf;
 - **works out the markup with the model** rather than by fixed rules: every
   publisher lays books out differently;
 - **scouts the book before translating** — narrator voices, names, terms,
@@ -99,6 +99,24 @@ translation, adds footnotes and assembles the file.
 
 What it does **not** do: replace a human translator. Before your first run,
 read the "Security" and "Disclaimer" sections.
+
+## Output formats
+
+The extension of `-o` decides. Without `-o` the book names itself after its
+author and title and comes out fb2.
+
+| | |
+|---|---|
+| `.fb2` | the default: headings, footnotes, images, links, publication data |
+| `.epub` | a chapter per file, cover, table of contents |
+| `.html` | one self-contained file — images and styles inside it, nothing beside it |
+| `.txt` | bare text, footnotes at the end |
+| `.tex` | LaTeX source to typeset yourself — see "LaTeX output" |
+| `.pdf` | the same source, built by `lualatex` right away |
+
+```bash
+./booktrans book.epub --to ru -o Book.epub
+```
 
 ## Before a long run — a dry check
 
@@ -745,10 +763,13 @@ through it and cannot be altered.
 What it does: strips running heads and page numbers, glues back paragraphs torn
 by a page break, marks headings, verse and code listings. Lines of the contents
 are left alone. To check without calling a model: `python3 tests/pages_check.py`,
-`python3 tests/glue_check.py`.
+`python3 tests/glue_check.py`, `python3 tests/marks_check.py`.
 
 It runs once and is kept in `work/marks.json`. The model is the cheapest the
-chosen agent has; `--formatter ID` picks another.
+chosen agent has; `--formatter ID` picks another. A refusal, and equally a
+failure on the provider's side, hands that window to the next model of the
+chain. On a thick book the pass runs to dozens of windows, and each is saved as
+it is done: a run that broke off resumes where it stopped.
 
 **The table of contents checks the markup.** It is the one place where the book
 itself lists its chapters, so its lines get a mark of their own: they never
@@ -848,7 +869,7 @@ lib/agent.py           agent, rate-limit waiting
 lib/extract.py         epub/fb2/pdf/txt -> blocks
 lib/pipeline.py        chunking, scouting, translation, editing, footnotes
 lib/build.py           assembly, checks
-lib/output.py          fb2, epub, html, txt writers
+lib/output.py          epub, html, txt, tex, pdf writers (fb2 lives in build.py)
 lib/lang.py            target language, interface, language detection
 prompts/*.md           the task for each pass
 langs/*.md             target language rules

@@ -1067,7 +1067,25 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
     paras = extract.plain_paragraphs(path, encoding, ask)
     if not paras:
         return None
-    log("  " + T("marks_start", len(paras)), end="")
+    # Разметка идёт окнами по две сотни кусков, и на толстой книге их под
+    # сотню: прогон, упавший на девяностом, раньше начинал заново с первого.
+    # Годится только та половина работы, что считалась по этому же тексту, —
+    # отсюда сверка числа кусков.
+    half = f"{work}/marks.part.json"
+    resume, at = None, 0
+    if os.path.exists(half):
+        d = json.load(open(half, encoding="utf-8"))
+        if d.get("paras") == len(paras):
+            at = d["done"]
+            resume = ({int(k): v for k, v in d["marks"].items()}, d["toc"], at)
+
+    def keep(marks, toc, done):
+        json.dump({"paras": len(paras), "done": done, "toc": toc,
+                   "marks": {str(k): v for k, v in marks.items()}},
+                  open(half, "w", encoding="utf-8"), ensure_ascii=False)
+
+    log("  " + T("marks_more", at, len(paras)) if at
+        else "  " + T("marks_start", len(paras)), end="")
     t = time.time()
     cost = [0.0]
 
@@ -1087,7 +1105,8 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
     with_photo = extract.photo_pages(path)
     photo = {i for i, n in enumerate(extract.piece_pages(path, encoding, ask), 1)
              if n in with_photo}
-    marks, names = fmt.plan(paras, run, log, photo, tries=len(who))
+    marks, names = fmt.plan(paras, run, log, photo, tries=len(who),
+                            resume=resume, save=keep)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
     cuts = _check_toc(work, paras, marks, names, log)
@@ -1097,6 +1116,8 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
     out = {str(k): v for k, v in marks.items() if isinstance(k, int)}
     out["_cuts"] = {str(k): v for k, v in cuts.items()}
     json.dump(out, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    if os.path.exists(half):
+        os.unlink(half)
     marks["cuts"] = cuts
     note_source(work, formatter=getattr(agent, "model", None) or "?")
     return marks
