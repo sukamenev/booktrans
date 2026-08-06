@@ -211,9 +211,9 @@ CHEAP_EFFORT = {"claude": "low"}
 PRESETS = {
     "agy": {
         # Отказ — свойство модели, а не текста, поэтому за Gemini встаёт
-        # Claude, а за ним он же поменьше: на художественном тексте отказы
-        # у них расходятся чаще, чем можно ждать от одной семьи.
-        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-sonnet-4-6",
+        # Claude, а последним — Claude через свой же CLI: другой поставщик,
+        # другой счёт лимитов, и отказ там приходится не на то же место.
+        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,claude:claude-opus-5",
         "formatter": "gemini-3.6-flash-low,claude-sonnet-4-6",
         "ocrfixer": "gemini-3.6-flash-low,claude-sonnet-4-6",
     },

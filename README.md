@@ -451,7 +451,8 @@ key for each would double their number.
 | `--model` | every pass at once, save the last two |
 
 Name nothing and the agent's set applies (`PRESETS` in `cli.py`): with agy the
-meaning-bearing passes run Gemini with Opus and Sonnet behind it, while
+meaning-bearing passes run Gemini with Opus behind it and Claude Code's own
+Opus last — a different provider refuses in different places — while
 markup and OCR repair run a cheap Flash with Sonnet behind it. What you name
 explicitly always beats the set.
 
