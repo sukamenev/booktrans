@@ -534,6 +534,18 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             for line in text.splitlines() or [""]:
                 pre = len(line) - len(line.lstrip(" "))
                 w(f"<p><code>{' ' * pre}{esc(line.strip())}</code></p>")
+        elif b["kind"] == "table":
+            close_poem()
+            if not open_sec:
+                w("<section>")
+                open_sec = True
+            w("<table>")
+            for row in text.splitlines():
+                cells = [c.strip() for c in re.split(r"(?<!\\)\|", row)]
+                w("<tr>" + "".join(
+                    f"<td>{esc(c.replace(chr(92) + '|', '|'), b.get('links'), notes_map)}</td>"
+                    for c in cells) + "</tr>")
+            w("</table>")
         elif b["kind"] == "break":
             if in_poem:
                 w("</stanza><stanza>")       # пустая строка делит строфы

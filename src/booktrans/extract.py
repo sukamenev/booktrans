@@ -302,7 +302,8 @@ VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link",
 # html десятки; берём те, без которых дерево заваливается набок.
 BLOCK = {"p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "ul", "ol",
          "table", "blockquote", "section", "article", "hr"}
-CLOSES = dict({"p": BLOCK, "li": {"li"}, "dd": {"dd", "dt"}, "dt": {"dd", "dt"}},
+CLOSES = dict({"p": BLOCK, "li": {"li"}, "dd": {"dd", "dt"}, "dt": {"dd", "dt"},
+               "td": {"td", "th", "tr"}, "th": {"td", "th", "tr"}, "tr": {"tr"}},
               **{h: BLOCK for h in ("h1", "h2", "h3", "h4", "h5", "h6")})
 DROP = {"script", "style", "template"}
 
@@ -452,6 +453,30 @@ def _html(path, styles=None, encoding=None, ask=None):
 
 # ---------------------------------------------------------------- EPUB
 
+# Таблица: строки через перевод строки, ячейки через « | ». Так она проходит
+# через перевод одним блоком и собирается обратно — вид у неё один и в fb2, и
+# в html. Заголовочные ячейки помечаются жирным: отдельного вида у ячейки в
+# блоке нет, а `<b>` переживает перевод наравне с остальной разметкой.
+CELL = " | "
+
+
+def _cell(el):
+    t = _inner(el)[0].replace("|", "\\|")
+    return f"<b>{t}</b>" if re.sub(r"\{.*?\}", "", el.tag) == "th" and t else t
+
+
+def _table_text(el):
+    rows = []
+    for tr in el.iter():
+        if re.sub(r"\{.*?\}", "", tr.tag) != "tr":
+            continue
+        cells = [_cell(td) for td in tr
+                 if re.sub(r"\{.*?\}", "", td.tag) in ("td", "th")]
+        if any(c.strip() for c in cells):
+            rows.append(CELL.join(cells))
+    return "\n".join(rows)
+
+
 def _bare(t):
     return re.sub(r"<[^>]+>", "", t).strip()
 
@@ -471,7 +496,9 @@ def _doc_blocks(root, styles, get_image, stats):
     inside_note = set()
     prev_anchor = ""
     for el in root.iter():
-        if _epub_type(el) in NOTE_TYPES:
+        # Таблицу берём целиком, как и сноску: иначе её абзацы выйдут ещё и
+        # порознь, вне таблицы.
+        if _epub_type(el) in NOTE_TYPES or re.sub(r"\{.*?\}", "", el.tag) == "table":
             for ch in el.iter():
                 if ch is not el:
                     inside_note.add(id(ch))
@@ -499,6 +526,11 @@ def _doc_blocks(root, styles, get_image, stats):
             text, links = _inner(el)
             if text:
                 got.append(("note", text, links, el.get("id") or ""))
+            continue
+        if tag == "table":
+            t = _table_text(el)
+            if t:
+                got.append(("table", t, [], ""))
             continue
         if tag == "pre":
             # Листинг. Раньше сюда не заглядывали вовсе, и в книге по
@@ -720,6 +752,10 @@ def _fb2(path, encoding=None, ask=None):
                 t, lk = _inner(el)
                 if t:
                     blocks.append(("verse", t, lk, note_anchor[0]))
+            elif tag == "table":
+                t = _table_text(el)
+                if t:
+                    blocks.append(("table", t, [], ""))
             elif tag == "image":
                 href = (el.get("{http://www.w3.org/1999/xlink}href") or "").lstrip("#")
                 if href:

@@ -75,7 +75,7 @@ def _cut_points(blocks):
 def _split_section(blocks):
     """Одну секцию — на примерно равные части, а не «до предела и огрызок»."""
     total = sum(words(b["text"]) for b in blocks)
-    n_blocks = sum(1 for b in blocks if b["kind"] in ("p", "verse", "note"))
+    n_blocks = sum(1 for b in blocks if b["kind"] in ("p", "verse", "note", "table"))
     if total <= MAX_WORDS and n_blocks <= MAX_BLOCKS:
         return [blocks]
     n = max(1, round(total / TARGET_WORDS))
@@ -93,7 +93,7 @@ def _split_section(blocks):
         # Предел по блокам сильнее предполагаемого числа частей: стихи
         # сбиваются в конец главы, и без этого весь остаток лёг бы
         # в последний кусок одной кучей.
-        n_cur = sum(1 for x in cur if x["kind"] in ("p", "verse", "note"))
+        n_cur = sum(1 for x in cur if x["kind"] in ("p", "verse", "note", "table"))
         n_verse = sum(1 for x in cur if x["kind"] == "verse")
         if n_verse >= MAX_VERSE and rest > 0 and i in ok:
             parts.append(cur)              # стихов набралось предельно
@@ -179,10 +179,15 @@ def translatable(blocks):
     промпта и теряет. Помеченное `asis` (список литературы) не идёт вовсе:
     оно попадёт в книгу как есть."""
     return [b for b in blocks
-            if b["kind"] in ("p", "verse", "note") and not b.get("asis")]
+            if b["kind"] in ("p", "verse", "note", "table") and not b.get("asis")]
 
 
 # ---------------------------------------------------------------- общее
+
+# Чем помечается блок в запросе: проза, стих, таблица. Метка нужна модели —
+# по ней видно, что строки не разрывать и разделители не трогать.
+MARK = {"verse": "V", "table": "T"}
+
 
 def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
     tail = ""
@@ -192,7 +197,7 @@ def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
             tail = m.group(1).strip()
         out = re.split(rf"<<<{extra_tag}>>>", out)[0]
     got = {}
-    for m in re.finditer(r"<<<[PV]\s+(\S+?)>>>\s*(.*?)(?=<<<[PV]\s+\S+?>>>|$)", out, re.S):
+    for m in re.finditer(r"<<<[PVT]\s+(\S+?)>>>\s*(.*?)(?=<<<[PVT]\s+\S+?>>>|$)", out, re.S):
         got[m.group(1)] = m.group(2).strip()
     empty = [k for k, v in got.items() if not v]
     if expected is not None:
@@ -395,7 +400,7 @@ def condense(state, upto, agent, retries, log):
 def translate_prompt(chunk, nxt, summary, tail, terms, task):
     # стихи помечаем отдельно: иначе модель их не отличит и переведёт прозой,
     # а редактор потом «выправит» ритм окончательно
-    src = "\n".join(f"<<<{'V' if b['kind'] == 'verse' else 'P'} {b['id']}>>>\n{b['text']}"
+    src = "\n".join(f"<<<{MARK.get(b['kind'], 'P')} {b['id']}>>>\n{b['text']}"
                     for b in translatable(chunk["blocks"]))
     parts = [task, f"Фрагмент {chunk['index']}."
                    + (f" Раздел: {chunk['label']}." if chunk["label"] else "")]
@@ -751,7 +756,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 st, 1 << 30, " ".join(b["text"] for b in translatable(c["blocks"])))
         # только русский текст: оригинал намеренно не показываем, иначе
         # правка идёт в сторону чужого синтаксиса, а не хорошего русского
-        pairs = [f"<<<{'V' if b['kind'] == 'verse' else 'P'} {b['id']}>>>\n{draft[b['id']]}"
+        pairs = [f"<<<{MARK.get(b['kind'], 'P')} {b['id']}>>>\n{draft[b['id']]}"
                  for b in translatable(c["blocks"]) if b["id"] in draft]
         parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
         if digest:
@@ -1228,7 +1233,7 @@ def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
     p = f"{work}/ocrfix.json"
     done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     todo = [b for b in blocks if b["id"] not in done and not b.get("asis")
-            and b["kind"] in ("p", "verse", "note", "title") and b["text"].strip()]
+            and b["kind"] in ("p", "verse", "note", "table", "title") and b["text"].strip()]
     if not todo:
         if done:
             log("  " + T("fix_known", sum(len(v) for v in done.values())))

@@ -505,13 +505,24 @@ the network, and the book is somebody else's file. It stays a link: in html
 output it arrives and displays for the reader, and into fb2 or epub there is
 nowhere to put it anyway.
 
-What html does not yield: tables. Nor does the epub reader — that is a gap
-in both, not a property of the format.
-
 A lone html has no chapters, so it is cut into sections by its headings, by the
 same rules as an epub, through the style census.
 
 To check without calling a model: `python3 tests/html_check.py`.
+
+## Tables
+
+Read from epub, fb2 and html, written into every output format — fb2 has
+tables in its own schema.
+
+A table travels through the pipeline as one block: a row of the table to a
+line, cells separated by ` | `. The cell contents are translated and the
+separator is left alone — the translation and editing prompts say so, and the
+block carries the marker `<<<T>>>` the way verse carries `<<<V>>>`. Header
+cells come out bold: a block has no separate kind for a cell, whereas `<b>`
+survives translation along with the rest of the markup.
+
+To check without calling a model: `python3 tests/table_check.py`.
 
 ## Encodings
 

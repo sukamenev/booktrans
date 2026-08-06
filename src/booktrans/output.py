@@ -44,6 +44,19 @@ def _plain(s):
 
 # ---------------------------------------------------------------- txt
 
+def _cells(row):
+    """Ячейки строки таблицы. Разделитель — « | »; экранированный не считается."""
+    return [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", row)]
+
+
+def _table_html(text, inline):
+    rows = []
+    for row in text.splitlines():
+        rows.append("<tr>" + "".join(f"<td>{_inline(c, inline)}</td>"
+                                     for c in _cells(row)) + "</tr>")
+    return "<table>" + "".join(rows) + "</table>"
+
+
 def write_txt(path, meta, items, notes, images, note_prefix, st=None):
     st = st or {}
     out = []
@@ -65,6 +78,8 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None):
             out.append("    " + _plain(text))
         elif kind == "code":
             out += ["    " + l for l in text.splitlines()] + [""]
+        elif kind == "table":
+            out += ["   ".join(_cells(row)) for row in text.splitlines()] + [""]
         elif kind == "image":
             out.append("[" + st.get("illustration", "иллюстрация: {alt}").format(alt=text) + "]")
         else:
@@ -126,6 +141,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None):
             o.append(f'<img src="data:{_mime(text)};base64,{data}" alt="">')
         elif kind == "image" and re.match(r"https?://|//", text):
             o.append(f'<img src="{escape(text)}" alt="">')   # картинка по сети
+        elif kind == "table":
+            o.append(_table_html(text, HTML_INLINE))
         elif kind == "verse":
             o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
         elif kind == "code":
@@ -189,6 +206,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
                 o.append("<hr/>")
             elif kind == "image" and text in images:
                 o.append(f'<img src="img/{escape(text)}" alt=""/>')
+            elif kind == "table":
+                o.append(_table_html(text, HTML_INLINE))
             elif kind == "verse":
                 o.append(f'<p class="v">{_inline(text, HTML_INLINE)}</p>')
             elif kind == "code":
