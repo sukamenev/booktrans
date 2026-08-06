@@ -2,6 +2,7 @@
 import collections
 import difflib
 import concurrent.futures as cf
+import hashlib
 import json
 import os
 import re
@@ -49,6 +50,22 @@ def words(s):
 
 def strip(s):
     return re.sub(r"<[^>]+>", "", s)
+
+
+def fingerprint(t):
+    """Отпечаток исходного текста блока.
+
+    Идентификатор блока позиционный: `s51.b0002` — это пятьдесят первый
+    раздел, второй абзац. Стоит книге перечитаться с другой разметкой — и
+    тот же идентификатор указывает уже на другой текст. Готовность считалась
+    по одним идентификаторам, поэтому кусок объявлялся переведённым, а перевод
+    доставался чужому абзацу: на живой статье так съехало восемнадцать блоков,
+    и в книгу они попали с чужим текстом, молча.
+
+    Отпечаток кладётся рядом с переводом и сверяется при возобновлении.
+    """
+    return hashlib.sha1(
+        re.sub(r"\s+", " ", strip(t)).strip().encode("utf-8")).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------- нарезка
@@ -522,11 +539,17 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
     state = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {"sum": {}, "terms": {}}
     # готовность считаем по блокам, а не по именам файлов: если нарезка
     # изменилась, старый файл покроет не те блоки и оставит дыру
-    have = set()
+    have, old = {}, False
     if os.path.isdir(f"{work}/tr"):
         for n in sorted(os.listdir(f"{work}/tr")):
-            if n.endswith(".json"):
-                have |= set(json.load(open(f"{work}/tr/{n}", encoding="utf-8"))["tr"])
+            if not n.endswith(".json"):
+                continue
+            x = json.load(open(f"{work}/tr/{n}", encoding="utf-8"))
+            fp = x.get("src") or {}
+            old = old or not fp
+            have.update({k: fp.get(k) for k in x["tr"]})
+    if old:
+        log("  " + T("no_fingerprint"))
 
     done = skipped = 0
     refused = [0]
@@ -535,7 +558,12 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         if only and idx not in only:
             continue
         out_path = f"{work}/tr/{idx:04d}.json"
-        if not only and all(b["id"] in have for b in translatable(c["blocks"])):
+        # Готово — это когда и блок тот же, и текст в нём тот же. Отпечатка
+        # нет только у файлов от прежних версий: там верим на слово.
+        if not only and all(
+                b["id"] in have
+                and have[b["id"]] in (None, fingerprint(b["text"]))
+                for b in translatable(c["blocks"])):
             skipped += 1
             continue
         summary = condense(state, idx, agent, retries, log)
@@ -593,8 +621,10 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             log("\n    " + T("regrown", n_grew))
         summ, terms = _split_meta(extra)
         _save(out_path, {"index": idx, "model": meta["model"],
-                         "cost_usd": meta["cost_usd"],
-                         "footnotes": found, "tr": res})
+                         "cost_usd": meta["cost_usd"], "footnotes": found,
+                         "tr": res,
+                         "src": {b["id"]: fingerprint(b["text"])
+                                 for b in translatable(c["blocks"])}})
         # Пустой конспект — признак сломанного протокола, а не молчания
         # модели: значит, служебные ярлыки в ответе не совпали с теми, что
         # ищет разборщик. Молча это не проходит, потому что конспект и список
@@ -667,7 +697,10 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             x = json.load(open(f"{d}/{n}", encoding="utf-8"))
             bl = x.get("blocks") or []
             at = x.get("stopped_at") or len(bl)
-            ready.update(bl[:at])
+            fp = x.get("src") or {}
+            # Правка сделана по переводу; перевели заново — править надо снова.
+            ready.update(i for i in bl[:at]
+                         if fp.get(i) in (None, fingerprint(raw.get(i, ""))))
             for i in bl[at:]:
                 stuck[i] = x.get("model") or ""
 
@@ -819,6 +852,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 stopped = _stopped(res, ids)
         out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
                "notes": notes, "blocks": ids,
+               "src": {k: fingerprint(v) for k, v in draft.items()},
                "edits": {k: {"old": draft[k], "new": v} for k, v in res.items()}}
         if stopped:
             # Помечаем в файле: предупреждение в выводе живёт до конца

@@ -101,6 +101,7 @@
   "qa_total": "TOTAL remarks: {0}   (blocking ones are sections 1, 2 and 5)",
   "prompt_own": "own prompt: {0}",
   "prompt_lost": "WARNING: protocol tokens missing from it: {0}. The parser looks for exactly those — footnotes, digest and terms will vanish without a sound.",
+  "no_fingerprint": "some finished chunks come from an older version: there is nothing to check them against, so they are taken on trust. To redo them for certain, delete work/tr and work/ed",
   "lim_wait": "rate limit reached, waiting {0} min (waited {1} min so far)",
   "notes_already": "notes were processed earlier ({0} chunks), nothing to do",
   "delete_to_redo": "(delete {0} to redo it)",
