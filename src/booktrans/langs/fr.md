@@ -43,6 +43,8 @@ str.untitled: Livre
 str.translator: traduction automatique
 str.about_notes: Les notes et les explications sont elles aussi l'œuvre de la machine. Elles peuvent comporter des imprécisions et parfois de véritables erreurs : dates, noms et références aux sources méritent d'être vérifiés par vous-même.
 str.about_disclaimer: Cette traduction est fournie telle quelle, sans garantie d'aucune sorte. Ni l'auteur de la chaîne de traitement ni celui qui l'a exécutée ne répondent des conséquences de l'usage de ce texte, y compris des décisions prises sur la foi d'un sens rendu de façon inexacte.
+str.source_caveat: La traduction à laquelle cette citation est attribuée a été nommée par la machine et n'a pas été vérifiée sur l'édition.
+str.details_sources: Les citations suivent des traductions publiées. C'est la machine qui les a nommées, sans vérification sur les éditions — vérifiez si cela compte :
 str.details_title: Détails de la traduction
 str.details_scout: Passe de reconnaissance : {models}.
 str.details_translate: Traduction : {models}.

@@ -11,6 +11,12 @@ from . import lang, output
 from .pipeline import all_notes, all_translations, strip
 
 CAPTION = 160       # длиннее строка под снимком — уже не подпись
+# Оговорка у цитаты, приведённой по чужому переводу. Умолчание на случай,
+# если в правилах языка строки нет: молчать тут нельзя — читатель примет
+# цитату за сверенную.
+SOURCE_CAVEAT = "Перевод цитаты назван машиной и с изданием не сверен."
+# Вводная строка к списку цитат в «Деталях перевода».
+DETAILS_SOURCES = ("Цитаты приведены по опубликованным переводам. Названы они машиной и с изданиями не сверены — проверьте, если это важно:")
 
 
 def _date(ts, code="ru"):
@@ -204,6 +210,14 @@ def details_lines(work, st, blocks):
     if not body:
         return "", []
     body.append(st["details_caveat"])
+    # Цитаты по чужим переводам — списком, чтобы взявшийся сверять видел
+    # объём работы, а не искал сноски по всей книге. У самой цитаты стоит
+    # своя оговорка; здесь она не повторяется.
+    src = _by_work(_source_items(work))
+    if src:
+        body.append(st.get("details_sources", DETAILS_SOURCES))
+        for work_name, group in src:
+            body.append("— " + _cut(group[0]["text"], 200))
     return st["details_title"], body
 
 
@@ -384,6 +398,12 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
     if missing:
         log("  " + lang.T("preview_left", len(missing)))
 
+    # Строки для читателя — на языке перевода, и нужны они обоим путям: и
+    # сборщику fb2 ниже, и писателям остальных форматов. Берутся до сносок:
+    # оговорка у цитаты — тоже строка для читателя.
+    code = meta.get("target_lang", "ru")
+    st = lang.book_strings(code)
+
     order = {b["id"]: i for i, b in enumerate(blocks)}
     notes = all_notes(work, order)
     notes = {k: v for k, v in notes.items() if k in tr}
@@ -403,16 +423,15 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
             a = f"n{len(note_seq) + 1}"
             nid[b["id"]] = a
             v = notes[b["id"]]
+            if isinstance(v, dict) and v.get("source"):
+                say = st.get("source_caveat", SOURCE_CAVEAT)
+                if say and say not in v["text"]:
+                    v = dict(v, text=v["text"].rstrip() + " " + say)
             note_seq.append((a, len(note_seq) + 1,
                              v["text"] if isinstance(v, dict) else v,
                              bool(isinstance(v, dict) and v.get("source_only"))))
     if notes:
         log("  " + lang.T("notes_n", len(notes)))
-
-    # Строки для читателя — на языке перевода, и нужны они обоим путям:
-    # и сборщику fb2 ниже, и писателям остальных форматов.
-    code = meta.get("target_lang", "ru")
-    st = lang.book_strings(code)
 
     # формат по расширению: fb2 собирается ниже, остальные — в output.py
     ext = os.path.splitext(dest)[1].lower()
@@ -811,6 +830,23 @@ def unfinished_edits(work, log, T=None):
 # психологии“, глава IX, перевод И. И. Лапшина», — и название единственное,
 # что в этих пояснениях стоит одинаково.
 WORK = re.compile(r"[«\"“„]([^«»\"“”„]{3,80})[»\"”“]|\*([^*\n]{3,80})\*")
+
+
+def _source_items(work):
+    """Цитаты, приведённые по чужому переводу: по одной на понятие."""
+    out, seen = [], set()
+    for sub, key in (("tr", "footnotes"), ("ed", "footnotes"), ("nt", "notes")):
+        d = os.path.join(work, sub)
+        if not os.path.isdir(d):
+            continue
+        for n in sorted(os.listdir(d)):
+            if not n.endswith(".json"):
+                continue
+            for it in json.load(open(os.path.join(d, n), encoding="utf-8")).get(key) or []:
+                if it.get("kind") == "source" and it["term"].lower() not in seen:
+                    seen.add(it["term"].lower())
+                    out.append(it)
+    return out
 
 
 def _by_work(items):

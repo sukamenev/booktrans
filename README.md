@@ -298,8 +298,11 @@ translation and into the finished file; the editor knows it is verse and does
 not straighten inversion into prose.
 
 **Quotations follow recognised translations** — Scripture, classics and
-official documents from published versions. The machine cannot verify them, so
-every such place is listed at the end of the run.
+official documents from published versions. The machine cannot verify them and
+says so twice: in a footnote at the quotation itself, so the reader does not
+take it for checked, and as a list in "Translation details", so that whoever
+sets out to check sees the size of the job instead of hunting footnotes through
+the book. The run prints that list as well.
 
 ## Instructions file
 

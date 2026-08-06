@@ -40,6 +40,8 @@ str.untitled: 書籍
 str.translator: 機械翻訳
 str.about_notes: 注や解説も機械が作成したものです。不正確な記述や、まれに明白な誤りが含まれることがあります。日付・人名・出典はご自身でお確かめください。
 str.about_disclaimer: 本翻訳は現状のまま提供され、いかなる保証もありません。パイプラインの作成者も、それを実行した者も、本文の利用によって生じたいかなる結果についても責任を負いません。不正確に伝えられた内容に基づく判断についても同様です。
+str.source_caveat: この引用の出典訳は機械が示したものであり、原典との照合は行っていません。
+str.details_sources: 引用は既刊の翻訳によります。訳者名は機械が示したもので、原典との照合は行っていません。必要なら確認してください：
 str.details_title: 翻訳の詳細
 str.details_scout: 下読み: {models}。
 str.details_translate: 翻訳: {models}。
