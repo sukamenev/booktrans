@@ -452,14 +452,26 @@ def _tex_preamble(meta, st, code):
            r"\usepackage[normalem]{ulem}",
            r"\usepackage{multirow}",
            r"\usepackage{titlesec}",
-           r"\usepackage[hidelinks]{hyperref}"]
+           # Длинный адрес — вторая причина строк, вылезающих за поле:
+           # разбить его без этого нечем.
+           r"\PassOptionsToPackage{hyphens}{url}",
+           r"\usepackage[hidelinks]{hyperref}",
+           # Последнее средство: где перенести нельзя, TeX растянет пробелы,
+           # а не вытолкнет строку на поля.
+           # Правил переноса для языка может не оказаться (в texlive они
+           # отдельным пакетом), и тогда длинное слово вытолкнет строку на
+           # поле. Разрядка между словами — цена меньшая, чем текст за полем.
+           r"\emergencystretch=4em",
+           r"\sloppy",
+           r"\hbadness=10000"]
     if lang:
-        # Строкой-подсказкой, а не подключением: языковые данные babel
-        # ставятся отдельными пакетами, и без них сборка падает на первой же
-        # строке. Переносы важны, но не ценой несобираемого файла.
-        out.append(r"%% переносы: раскомментируйте, если стоит babel-%s"
-                   % lang)
-        out.append(r"%% \usepackage[%s]{babel}" % lang)
+        # Babel подключаем, только если языковые данные и правда стоят: без
+        # них он падает на первой же строке. Без переносов русское слово не
+        # разбить, и строка вылезает за поле — на одной книге так поехали
+        # сотни строк.
+        out.append(r"\IfFileExists{babel-%s.tex}{\usepackage[%s]{babel}}"
+                   r"{\IfFileExists{%sb.ldf}{\usepackage[%s]{babel}}{}}"
+                   % (lang, lang, lang, lang))
     # Свои подписи вместо английских: babel закомментирован, и без этого
     # оглавление в русской книге называется Contents.
     out += [r"\renewcommand{\contentsname}{%s}"
