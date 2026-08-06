@@ -39,8 +39,8 @@ str.untitled: 书
 str.translator: 机器翻译
 str.about_notes: 注释与说明同样由机器生成，可能存在不确切之处，偶尔也会出现明显错误：日期、人名和出处请自行核对。
 str.about_disclaimer: 本译本按现状提供，不作任何担保。流水线的作者与运行者均不对使用本文所产生的任何后果承担责任，包括依据表达不准确的内容所作出的判断。
-str.source_caveat: 此引文所依据的译本由机器指出，未与原书核对。
-str.details_sources: 引文依据已出版的译本。译者由机器指出，均未与原书核对，如有需要请自行查证：
+str.source_caveat: 译者归属出自机器的记忆，未与原书核对。
+str.details_sources: 引文依据已出版的译本。译者归属出自机器的记忆，均未与原书核对，如有需要请自行查证：
 str.details_title: 翻译详情
 str.details_scout: 通读侦查：{models}。
 str.details_translate: 翻译：{models}。
