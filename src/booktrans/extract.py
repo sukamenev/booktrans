@@ -226,7 +226,13 @@ def _inner(el, keep=KEEP_INLINE, note=False):
     if el.text:
         out.append(el.text)
     walk(el)
-    txt = re.sub(r"\s+", " ", "".join(out)).strip()
+    txt = "".join(out)
+    # Слово, разорванное переносом строки: «self-\n\ndefense». Перенос в html
+    # значит пробел, и после схлопывания выходило «self- defense». Настоящий
+    # висячий дефис — «short- or long-term» — пишется через пробел, а не через
+    # перенос: по этому их и различаем.
+    txt = re.sub(r"(?<=[^\W\d_])-[ \t]*\n\s*(?=[^\W\d_])", "-", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
     if note:
         txt = NOTE_HEAD.sub("", txt).strip()
         # «Проект Гутенберг» заворачивает тело сноски в квадратные скобки —
@@ -284,7 +290,7 @@ def scan_styles(path):
     if path.lower().endswith((".html", ".htm")):
         seen = {}
         _scan_doc(_html_tree(open(path, "rb").read()), seen)
-        return sorted(seen.values(), key=lambda r: -r["count"])
+        return _spread(seen)
     if not path.lower().endswith(".epub"):
         return []
     zf = zipfile.ZipFile(path)
@@ -306,7 +312,28 @@ def scan_styles(path):
         except (KeyError, ET.ParseError):
             continue
         _scan_doc(root, seen)
-    return sorted(seen.values(), key=lambda r: -r["count"])
+    return _spread(seen)
+
+
+POOL, SHOW = 60, 3      # столько примеров копим и столько показываем
+
+
+def _spread(seen):
+    """Примеры стиля — из разных мест книги, а не первые попавшиеся.
+
+    Один и тот же стиль книга часто носит на разном: `li` — это и оглавление
+    в начале, и содержательные пункты в середине. Три первых примера приходят
+    из оглавления, модель отвечает `skip`, и вместе с оглавлением молча
+    пропадают все списки книги. На живой статье так потерялись 56 пунктов.
+    """
+    out = []
+    for r in sorted(seen.values(), key=lambda r: -r["count"]):
+        s = r["samples"]
+        if len(s) > SHOW:
+            step = (len(s) - 1) / (SHOW - 1)
+            s = [s[round(i * step)] for i in range(SHOW)]
+        out.append(dict(r, samples=s))
+    return out
 
 
 def _scan_doc(root, seen):
@@ -324,7 +351,7 @@ def _scan_doc(root, seen):
         rec = seen.setdefault(key, {"tag": key[0], "cls": key[1],
                                     "count": 0, "samples": []})
         rec["count"] += 1
-        if len(rec["samples"]) < 3:
+        if len(rec["samples"]) < POOL:
             rec["samples"].append(txt[:90])
 
 

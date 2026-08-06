@@ -50,6 +50,9 @@ def f(x):      # комментарий
 <img src="https://example.com/pictures/whale.jpg" alt="по сети">
 <ul><li>первый пункт<li>второй пункт</ul>
 <p>Строка с<br>переносом.
+<p>Слово self-
+defense разорвано переносом, а short- or long-term нет.
+<ul><li>пункт первый<li>пункт второй<li>пункт третий<li>пункт четвёртый</ul>
 <script>var x = "этого в книге быть не должно";</script>
 </body></html>
 """
@@ -105,6 +108,14 @@ def main():
     ok("пункты списка не пропали",
        [t for k, t in kinds if t in ("первый пункт", "второй пункт")]
        == ["первый пункт", "второй пункт"], kinds)
+    # Перенос строки внутри слова — след старых конвертеров. Настоящий
+    # висячий дефис пишется через пробел, и его трогать нельзя.
+    ok("слово, разорванное переносом, срослось",
+       any("self-defense" in t for k, t in kinds),
+       [t for k, t in kinds if "defense" in t])
+    ok("висячий дефис не тронут",
+       any("short- or long-term" in t for k, t in kinds),
+       [t for k, t in kinds if "short-" in t])
     ok("<br> не склеивает слова",
        any("с переносом" in t for k, t in kinds),
        [t for k, t in kinds if "перенос" in t])
@@ -134,9 +145,15 @@ def main():
     ok("перепись стилей собрана",
        {(r["tag"], r["cls"]) for r in rows} >= {("h1", ""), ("h2", ""), ("p", "")},
        [(r["tag"], r["cls"], r["count"]) for r in rows])
+    # Примеры берутся из разных мест книги: у списка первые пункты — это
+    # оглавление, и по ним модель отвечает «skip», унося с ним все списки.
+    li = next((r for r in rows if r["tag"] == "li"), None)
+    ok("примеры стиля не все из начала",
+       li and li["samples"][-1] != li["samples"][0]
+       and "четвёртый" in li["samples"][-1], li["samples"] if li else "нет li")
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 21   с расхождениями: {bad}")
+    print(f"\nслучаев: 24   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
