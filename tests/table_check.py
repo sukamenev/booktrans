@@ -31,6 +31,19 @@ PAGE = """<html><head><title>С таблицей</title></head><body>
 </body></html>
 """
 
+# Вложенная таблица: ею в старой вёрстке разбивали страницу на колонки.
+NEST = """<html><head><title>Вложенная</title></head><body>
+<h1>Глава</h1>
+<table>
+<thead><tr><th>Раз</th><th>Два</th></tr></thead>
+<tbody>
+<tr><td>внешняя A</td><td><table><tr><td>внутри 1</td><td>внутри 2</td></tr></table></td></tr>
+<tr><td>внешняя B</td><td>обычная</td></tr>
+</tbody></table>
+<p>После.</p>
+</body></html>
+"""
+
 # Та же таблица, свёрстанная небрежно: строки и ячейки не закрыты.
 DIRTY = """<html><head><title>Небрежно</title></head><body>
 <h1>Глава</h1>
@@ -101,7 +114,18 @@ def main():
        == [["раз", "два"], ["три", "четыре"]],
        tbl[0]["text"] if tbl else "")
 
-    print(f"\nслучаев: 12   с расхождениями: {bad}")
+    meta, blocks, cover, imgs = read(NEST)
+    tbl = [b for b in blocks if b["kind"] == "table"]
+    ok("вложенная таблица не задвоила строки", len(tbl) == 1
+       and len(tbl[0]["text"].splitlines()) == 3,
+       [t["text"] for t in tbl])
+    ok("ячейки вложенной не склеились",
+       tbl and "внутри 1 внутри 2" in tbl[0]["text"], tbl[0]["text"] if tbl else "")
+    ok("thead и tbody не мешают",
+       tbl and tbl[0]["text"].splitlines()[0] == "<b>Раз</b> | <b>Два</b>",
+       tbl[0]["text"].splitlines()[:1] if tbl else "")
+
+    print(f"\nслучаев: 15   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

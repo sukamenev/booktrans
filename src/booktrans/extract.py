@@ -197,8 +197,13 @@ def _inner(el, keep=KEEP_INLINE, note=False):
                     out.append(ch.text)
                 walk(ch)
                 out.append(f"</{t}>")
-            elif tag == "br":
-                out.append(" ")            # иначе слова по краям склеятся
+            elif tag in ("br", "td", "th", "tr", "li", "p", "div"):
+                # Соседние ячейки и абзацы, попавшие внутрь одного блока,
+                # разделяем пробелом: иначе слова по краям склеятся.
+                out.append(" ")
+                if ch.text:
+                    out.append(ch.text)
+                walk(ch)
             elif tag == "a" and (_epub_type(ch) == "backlink" or note):
                 pass                       # «вернуться к тексту» — служебное
             elif tag == "a" and _href(ch) and (
@@ -503,11 +508,27 @@ def _cell(el):
     return f"<b>{t}</b>" if re.sub(r"\{.*?\}", "", el.tag) == "th" and t else t
 
 
+def _own_rows(el, out):
+    """Строки этой таблицы, но не вложенной в неё.
+
+    Вложенная таблица — обычное дело в старой вёрстке, ею разбивали страницу
+    на колонки. Обходом по всем потомкам её строки попадали во внешнюю
+    таблицу, и содержимое выходило дважды: и в ячейке, и отдельными строками.
+    """
+    for ch in el:
+        tag = re.sub(r"\{.*?\}", "", ch.tag)
+        if tag == "table":
+            continue
+        if tag == "tr":
+            out.append(ch)
+        else:
+            _own_rows(ch, out)
+    return out
+
+
 def _table_text(el):
     rows = []
-    for tr in el.iter():
-        if re.sub(r"\{.*?\}", "", tr.tag) != "tr":
-            continue
+    for tr in _own_rows(el, []):
         cells = [_cell(td) for td in tr
                  if re.sub(r"\{.*?\}", "", td.tag) in ("td", "th")]
         if any(c.strip() for c in cells):
