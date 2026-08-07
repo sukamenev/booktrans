@@ -57,7 +57,6 @@
   "shr_no": "condensing refused — {0}",
   "shr_long": "the answer is no shorter than the original ({0} chars)",
   "shr_short": "the answer is under half of what was asked ({0} instead of {1})",
-  "shr_rows": "{0} table rows of {1} went missing, and no more than {2} may",
   "scout_condense": "reference too big: {0} chars instead of {1}, condensing ... ",
   "scout_condense_ok": "condensed: {0} -> {1} chars, rows {2} -> {3}",
   "scout_condense_no": "condensing rejected: {0} of {1} rows lost — keeping the original",

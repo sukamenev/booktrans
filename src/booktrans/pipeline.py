@@ -1806,15 +1806,12 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     if len(merged) <= SCOUT_MAX:
         return merged
     log("  " + T("scout_condense", len(merged), SCOUT_BUDGET), end="")
-    # Строки таблиц запоминаем на начало и сверяем с ними каждый заход, а не с
-    # предыдущим: по трети за раз от трёх заходов — это две трети имён.
-    keep = _rows(merged)
     t0, cost, model, now = time.time(), 0.0, "?", merged
     for _ in range(SCOUT_ROUNDS):
         if len(now) <= SCOUT_BUDGET:
             break
         short, meta, why = _shrink(now, _floor(now, len(now) - SCOUT_BUDGET),
-                                   keep, who, system, retries, log)
+                                   who, system, retries, log)
         cost += meta.get("cost_usd") or 0
         model = meta.get("model") or model
         if not short:
@@ -1837,12 +1834,18 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     return now
 
 
-def _shrink(part, want, keep, who, system, retries, log):
+def _shrink(part, want, who, system, retries, log):
     """Ужать справочник. Вернуть (сжатое, meta, причина отказа).
 
-    Ответ принимается не на слово: вычеркнуть таблицы — самый простой способ
-    уложиться в предел, и обнаружилось бы это уже в переводе, где одно имя
-    пишется по-разному в разных главах.
+    Строки таблиц прежде сверялись с исходными: пропало больше трети — ответ
+    отвергался. Проверка снята, потому что спорила с самим заданием. Первой
+    ступенью лестницы стоит «выбросить очевидное», а очевидное — это как раз
+    строки таблиц: «Aldous Huxley = Олдос Хаксли» переводчик передаст и без
+    подсказки. На живой книге модель выбросила 45 строк из 107, и это была
+    работа по заданию, а не порча, — но ответ отвергался целиком.
+
+    Остаётся мера по длине: ответ короче половины запрошенного — это не
+    сжатие, а выброшенный справочник.
     """
     ask = (
         f"Это справочник по книге. Он уходит в каждый запрос на перевод, "
@@ -1874,9 +1877,6 @@ def _shrink(part, want, keep, who, system, retries, log):
         "- свойства существ, вещей и мест, от которых зависит выбор слова;\n"
         "- как говорит тот, у кого есть прямая речь;\n"
         "- опасные места, цитаты и канонические переводы.\n\n"
-        "Строку таблицы можно укоротить, но не выбросить, и первую её ячейку "
-        "оставить дословно, вместе с оформлением: по ней сверяется, что ни "
-        "одно имя и ни один термин не пропали.\n\n"
         "Заголовки разделов сохранить, новых не заводить, порядок строк не "
         "менять. Ничего не дописывать: нового сведения появиться не должно. "
         "В ответе — только сам справочник, с первой же его строки: ни "
@@ -1897,14 +1897,10 @@ def _shrink(part, want, keep, who, system, retries, log):
     # бы это уже в переводе. А в разделе без таблиц стеречь вовсе нечего: там
     # мерой служит сама длина, потому что ответ короче половины запрошенного —
     # это не сжатие, а выброшенный раздел.
-    now = _rows(short)
     if len(short) >= len(part):
         return None, meta, T("shr_long", len(short))
     if len(short) < want / 2:
         return None, meta, T("shr_short", len(short), want)
-    if len(keep - now) > len(keep) / 3:
-        return None, meta, T("shr_rows", len(keep - now), len(keep),
-                             int(len(keep) / 3))
     return short, meta, ""
 
 
