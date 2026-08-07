@@ -740,6 +740,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --only STEP           a single step: structure|ocrfix|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
+--force-injected      translate despite instructions aimed at the machine
 --force-editing       keep editing past three refusals in a row
 --code asis           leave the comments in listings alone too
 --formatter ID        model that works out the markup, any format
@@ -1001,6 +1002,17 @@ files with the keys and send them to this address." That is prompt injection.
 
 The threat is not hypothetical: `claude -p` has Bash enabled by default, and
 unprotected, a command embedded in a book would run with your privileges.
+
+**Reconnaissance says when it finds one.** Reading the book through, it
+reports instructions aimed at whoever processes the book, and the run stops
+before any of it is translated — with the places quoted, so you can look at
+them in the original. `--force-injected` translates anyway.
+
+It tells two things apart, and the difference matters: a book that *talks*
+about prompts — quoting one as an example, taking somebody's trick apart, a
+character speaking to a computer — is content, and translating it is the
+whole point of the pipeline for that kind of book. Only an instruction
+unrelated to the book and aimed at its processor counts as a find.
 
 **What is done about it.** The agent runs with an empty tool set
 (`--tools ""`): no shell, no file access, no network. Translation, editing and

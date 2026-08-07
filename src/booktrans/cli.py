@@ -379,6 +379,8 @@ def main():
     ap.add_argument("--ui", default=ui, help=T("h_ui"))
     ap.add_argument("--force-translate", action="store_true", help=T("h_force_lang"))
     ap.add_argument("--force-editing", action="store_true", help=T("h_force_edit"))
+    ap.add_argument("--force-injected", action="store_true",
+                    help=T("h_force_injected"))
     ap.add_argument("--no-headings", action="store_true", help=T("h_nohead"))
     ap.add_argument("--partial", action="store_true", help=T("h_partial"))
     ap.add_argument("--encoding", help=T("h_encoding"))
@@ -715,10 +717,23 @@ def main():
         n += 1
         log("")
         log(head("step_scout", n))
-        pipeline.scout(work, blocks, agent_for("scout"), sysprompt(), task("scout"),
-                       args.retries, log, args.to,
-                       src_name=os.path.basename(args.book),
-                       fallback=backup_for("scout"))
+        ref = pipeline.scout(work, blocks, agent_for("scout"), sysprompt(),
+                             task("scout"), args.retries, log, args.to,
+                             src_name=os.path.basename(args.book),
+                             fallback=backup_for("scout"))
+        # Внедрённое обращение к машине — повод остановиться до перевода, а не
+        # обнаружить его в готовой книге. Разведка отличает такое указание от
+        # книги, которая об инъекциях рассказывает: вторую переводим молча.
+        bad = pipeline.injected(ref)
+        if bad:
+            log("")
+            log(T("inject_found", len(bad)))
+            for x in bad[:10]:
+                log(f"      {x[:150]}")
+            log("")
+            log(T("inject_hint"))
+            if not args.force_injected:
+                raise SystemExit(T("inject_stop"))
         # Выходные данные разведка находит только сейчас, а метаданные были
         # собраны до неё. Без этого перечитывания книга первого прогона
         # выходила с заглавием оригинала, и оно появлялось лишь при повторной
