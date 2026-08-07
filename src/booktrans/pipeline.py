@@ -993,7 +993,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     на каждый.
     """
     os.makedirs(f"{work}/nt", exist_ok=True)
-    who = [agent] + _backups(fallback)
+    chain = [agent] + _backups(fallback)
     todo, skipped = [], 0
     for c in chunks:
         idx = c["index"]
@@ -1051,7 +1051,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                                   "term": term.strip(), "text": " ".join(text.split())})
             return items, ""
 
-        (items, _), meta, dt = _chain_run(who, system, prompt, retries,
+        (items, _), meta, dt = _chain_run(chain, system, prompt, retries,
                                           parse_notes, log)
         _save(out_path, {"index": idx, "model": meta["model"],
                          "cost_usd": meta["cost_usd"], "notes": items})
@@ -1732,7 +1732,7 @@ def _condense_scout(merged, who, system, retries, log, out_path):
         # отвергнуть. Проза ужимается и вдвое.
         floor = len(parts[i]) * 2 // 3 if _rows(parts[i]) else len(parts[i]) // 2
         short, meta = _shrink(parts[i], max(len(parts[i]) - over, floor),
-                              agent, system, retries, log)
+                              who, system, retries, log)
         cost += meta.get("cost_usd") or 0
         model = meta.get("model") or model
         if short:
@@ -1752,7 +1752,7 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     return now
 
 
-def _shrink(part, want, agent, system, retries, log):
+def _shrink(part, want, who, system, retries, log):
     """Сжать один раздел справочника. Вернуть его же, если вышло плохо."""
     ask = (
         f"Это раздел справочника по книге. Справочник уходит в каждый запрос "

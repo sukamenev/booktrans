@@ -395,7 +395,7 @@ TEX_BABEL = {"ru": "russian", "en": "english", "de": "german", "fr": "french",
 
 def _tex(s, links=None):
     """Текст в TeX: экранирование и разворот инлайновой разметки."""
-    out, marks = [], {}
+    marks = {}
     # Ярлыки разметки прячем, чтобы экранирование их не тронуло.
     def hide(m):
         marks[len(marks)] = m.group()

@@ -472,8 +472,9 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
     au = (meta.get("author_target") or meta.get("author") or "").split()
     first, last = (au[0], " ".join(au[1:])) if len(au) > 1 else ("", au[0] if au else "")
     w(f"<author><first-name>{esc(first)}</first-name><last-name>{esc(last)}</last-name></author>")
-    w(f"<book-title>{esc(meta.get('title_target') or meta.get('title')
-                or st.get('untitled', 'Без названия'))}</book-title>")
+    name = (meta.get("title_target") or meta.get("title")
+            or st.get("untitled", "Без названия"))
+    w(f"<book-title>{esc(name)}</book-title>")
     if cover:
         w('<coverpage><image l:href="#cover.jpg"/></coverpage>')
     w(f"<lang>{esc(meta.get('target_lang', 'ru'))}</lang>")

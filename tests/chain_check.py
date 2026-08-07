@@ -13,7 +13,9 @@
 """
 import inspect
 import os
+import shutil
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
@@ -24,6 +26,53 @@ from booktrans.agent import AgentError, Fatal               # noqa: E402
 # Каждый проход, который обращается к модели, обязан принимать цепочку.
 PASSES = ("translate", "edit", "notes", "scout", "code_comments", "headings",
           "detect_structure", "format_marks", "fix_ocr", "condense")
+
+
+def hush(m="", end="\n"):
+    pass
+
+
+BLOCKS = [{"id": "s01.b0001", "kind": "title", "text": "Chapter One"},
+          {"id": "s01.b0002", "kind": "p", "text": "Пробный абзац с dеfектом."},
+          {"id": "s01.b0003", "kind": "code", "text": "x = 1  # count them"}]
+CHUNKS = [{"index": 1, "label": "Проба", "words": 3, "blocks": BLOCKS}]
+STYLES = [{"tag": "p", "cls": "tx", "count": 40, "samples": ["Проза."]}]
+
+# Что должна ответить запасная модель, чтобы её ответ разобрался.
+ANSWERS = {
+    "scout": "## ИМЕНА\n\nПётр = Пётр\n",
+    "notes": "<<<NOTE s01.b0002 term>>>\nTERM: дефект\nTEXT: Пояснение.\n",
+    "fix_ocr": "<<<F s01.b0002>>>\nORIG: dеfектом\nFIX: дефектом\n",
+    "headings": "1. Глава первая\n",
+    "detect_structure": "p|tx = p\n",
+    "code_comments": "<<<C s01.b0003 1>>>\nORIG: count them\nTR: сосчитать их\n",
+}
+
+
+def _tr(work):
+    """Готовый перевод: сноскам и комментариям без него работать не над чем."""
+    os.makedirs(f"{work}/tr", exist_ok=True)
+    import json
+    json.dump({"index": 1, "model": "стенд", "cost_usd": 0, "footnotes": [],
+               "tr": {b["id"]: "перевод" for b in BLOCKS}},
+              open(f"{work}/tr/0001.json", "w", encoding="utf-8"),
+              ensure_ascii=False)
+
+
+RUNS = {
+    "scout": lambda d, a, b: P.scout(d, BLOCKS, a, "", "з", 1, hush,
+                                     fallback=[b]),
+    "notes": lambda d, a, b: (_tr(d), P.notes(d, CHUNKS, a, "", "з", 1, hush,
+                                              fallback=[b])),
+    "fix_ocr": lambda d, a, b: P.fix_ocr(d, BLOCKS, a, "", "з", 1, hush,
+                                         fallback=[b]),
+    "headings": lambda d, a, b: P.headings(d, BLOCKS, a, "", 1, hush,
+                                           fallback=[b]),
+    "detect_structure": lambda d, a, b: P.detect_structure(d, STYLES, a, "з", 1,
+                                                           hush, fallback=[b]),
+    "code_comments": lambda d, a, b: P.code_comments(d, BLOCKS, a, "", "з", 1,
+                                                     hush, fallback=[b]),
+}
 
 
 class Says:
@@ -99,7 +148,25 @@ def main():
            fn is not None and "fallback" in inspect.signature(fn).parameters,
            "нет такого прохода" if fn is None else "нет параметра fallback")
 
-    print(f"\nслучаев: {6 + len(PASSES)}   с расхождениями: {bad}")
+    # А теперь каждый проход прогоняется по-настоящему. Одной подписи мало:
+    # цепочка может быть принята и не дойти до вызова — переименованная
+    # переменная, затёртое имя. Такое видно только на живом прогоне, и оба
+    # раза оно вылезало у человека, а не здесь.
+    for name, run in RUNS.items():
+        first = Says("первая", boom=AgentError("agy вернул 1: high traffic"))
+        second = Says("вторая", answer=ANSWERS[name])
+        d = tempfile.mkdtemp()
+        os.makedirs(f"{d}/prompts", exist_ok=True)   # это делает cli
+        try:
+            run(d, first, second)
+            done = second.calls > 0
+            why = "запасную не позвали"
+        except Exception as e:                              # noqa: BLE001
+            done, why = False, f"{type(e).__name__}: {e}"
+        ok(f"проход {name} доходит до запасной модели", done, why)
+        shutil.rmtree(d, ignore_errors=True)
+
+    print(f"\nслучаев: {6 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
