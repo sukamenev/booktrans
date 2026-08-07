@@ -439,6 +439,42 @@ the expensive model is not held waiting through the whole first pass, and you
 get to look at what was refused before paying for it.
 
 
+## Profiles
+
+Four roles, each with a chain of two or three models, do not fit on one line.
+A profile is a file holding the same keys you would have typed:
+
+```
+# profiles/agy.txt — Gemini in front, Claude behind it
+--agent agy
+--translator gemini-3.1-pro-high,claude:claude-opus-5
+--editor     gemini-3.1-pro-high,claude:claude-sonnet-5
+--jobs 5
+```
+
+```bash
+./booktrans book.epub --profile agy --to ru
+./booktrans book.epub --profile agy --to ru --editor claude:claude-opus-5
+```
+
+The second line shows the whole rule: **what you name by hand beats the
+profile, and the profile beats the agent's set.** Three levels, one rule — the
+keys of the profile are simply put at the front of the command line.
+
+Ready-made ones ship with the package: `agy`, `claude`, and `cheap` for
+checking that the machinery works rather than the quality of the translation.
+`--profile` takes a name or a path; a name is looked for next to
+`BOOKTRANS_PROFILES`, then in the settings folder (`~/.config/booktrans/
+profiles`, and its equivalent on Windows and macOS), then in the package.
+Your own profile therefore survives an update.
+
+A profile inside a profile is not expanded — one level is enough.
+
+**A profile is executable configuration, not data.** It can carry
+`--agent-cmd 'any command'`, so treat a profile you did not write the way you
+would treat somebody else's script. To check without calling a model:
+`python3 tests/profile_check.py`.
+
 ## Per-pass models
 
 ```bash
@@ -675,6 +711,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 ## Keys
 
 ```
+--profile NAME        a file of keys: a name from profiles/ or a path
 -p, --prompt FILE     translator's instructions
 -pt, --prompt-text S  the same as a string; may be combined with -p
 -o, --out FILE        output file; format follows the extension

@@ -46,6 +46,7 @@ jobs:
           from importlib.resources import files
           assert lang.rules("ru"), "нет правил целевого языка"
           assert (files("booktrans") / "prompts" / "translate.md").is_file(), "нет промптов"
+          assert (files("booktrans") / "profiles" / "agy.txt").is_file(), "нет профилей"
           print("данные на месте")
           PY
 

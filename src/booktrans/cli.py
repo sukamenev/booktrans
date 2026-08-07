@@ -16,6 +16,7 @@ import atexit
 import json
 import os
 import re
+import shlex
 import sys
 
 from . import build, doctor, extract, lang, pipeline
@@ -120,6 +121,69 @@ def prompt_roots():
     out = [os.environ.get("BOOKTRANS_PROMPTS"),
            os.path.join(config_dir(), "prompts"), PROMPTS]
     return [p for p in out if p]
+
+
+def profile_roots():
+    """Где искать профили, от старшего к младшему. Как у промптов."""
+    out = [os.environ.get("BOOKTRANS_PROFILES"),
+           os.path.join(config_dir(), "profiles"),
+           os.path.join(HERE, "profiles")]
+    return [p for p in out if p]
+
+
+def read_profile(name, roots=None):
+    """Ключи из профиля: те же, что в командной строке, по одному на строку.
+
+    Своего синтаксиса у файла нет намеренно. Строки разбираются как командная
+    строка и вставляются в неё же — значит любой ключ работает сразу, включая
+    те, что появятся потом, и перечислять их отдельным списком не нужно.
+
+        # умный набор для antigravity
+        --agent agy
+        --translator gemini-3.1-pro-high,claude:claude-opus-5
+
+    Имя ищется по папкам, путь берётся как есть.
+    """
+    tried = [name]
+    if not os.path.exists(name):
+        for root in roots or profile_roots():
+            tried += [os.path.join(root, name), os.path.join(root, name + ".txt")]
+    path = next((p for p in tried if os.path.isfile(p)), None)
+    if path is None:
+        raise SystemExit(lang.T("prof_nofile", name,
+                                ", ".join(roots or profile_roots())))
+    out = []
+    for line in open(path, encoding="utf-8"):
+        line = line.split("#", 1)[0].strip()
+        if line:
+            out += shlex.split(line)
+    # Профиль в профиле — путь к кольцу и к отладке чужого конфига. Одна
+    # ступень, и хватит.
+    if any(a == "--profile" or a.startswith("--profile=") for a in out):
+        raise SystemExit(lang.T("prof_nested", path))
+    return out
+
+
+def with_profiles(argv):
+    """Ключи профиля — в начало командной строки.
+
+    Именно в начало: argparse берёт последнее вхождение ключа, поэтому
+    названное руками само собой оказывается сильнее профиля, а профиль —
+    сильнее набора агента. Три уровня, и помнить нужно одно правило.
+    """
+    keys, rest, i = [], [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--profile" and i + 1 < len(argv):
+            keys += read_profile(argv[i + 1])
+            i += 2
+        elif a.startswith("--profile="):
+            keys += read_profile(a.split("=", 1)[1])
+            i += 1
+        else:
+            rest.append(a)
+            i += 1
+    return keys + rest
 
 
 def prompt(name, to=None, roots=None):
@@ -249,18 +313,27 @@ def _chain(s, agent=None):
     return out
 
 
+def _ui_of(argv, ui):
+    """Язык интерфейса из командной строки, если он там назван."""
+    for i, a in enumerate(argv):
+        if a == "--ui" and i + 1 < len(argv):
+            ui = argv[i + 1]
+        elif a.startswith("--ui="):
+            ui = a.split("=", 1)[1]
+    return ui
+
+
 def main():
     # Язык справки выбирается до разбора ключей: argparse печатает её сам,
     # и к этому мигу --ui уже должен быть известен.
     # Умолчания берутся из окружения: так booktrans_ru задаёт русские,
     # ничего не дублируя, а явный ключ всё равно сильнее.
-    ui = os.environ.get("BT_UI", "en")
-    for i, a in enumerate(sys.argv[1:]):
-        if a == "--ui" and i + 2 <= len(sys.argv) - 1:
-            ui = sys.argv[i + 2]
-        elif a.startswith("--ui="):
-            ui = a.split("=", 1)[1]
-    T = lang.set_ui(ui)
+    ui = _ui_of(sys.argv[1:], os.environ.get("BT_UI", "en"))
+    lang.set_ui(ui)              # чтобы ошибка профиля вышла на нужном языке
+    # Профиль разворачиваем до разбора: дальше всё идёт так, будто человек
+    # написал эти ключи руками. Язык перечитываем — профиль мог назвать свой.
+    sys.argv[1:] = with_profiles(sys.argv[1:])
+    T = lang.set_ui(_ui_of(sys.argv[1:], ui))
 
     ap = argparse.ArgumentParser(
         description=T("h_desc"),
@@ -268,6 +341,7 @@ def main():
         epilog=T("h_epilog"))
     ap.add_argument("book", nargs="?", help=T("h_book"))
     ap.add_argument("--check", action="store_true", help=T("h_check"))
+    ap.add_argument("--profile", help=T("h_profile"))
     ap.add_argument("-p", "--prompt", help=T("h_prompt"))
     ap.add_argument("-pt", "--prompt-text", help=T("h_prompt_text"))
     ap.add_argument("-o", "--out", help=T("h_out"))

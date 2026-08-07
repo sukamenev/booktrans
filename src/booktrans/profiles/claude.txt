@@ -1,0 +1,10 @@
+# Claude Code: Opus переводит, Sonnet правит и размечает.
+#
+#   ./booktrans книга.epub --profile claude --to ru
+--agent claude
+--translator claude-opus-5
+--editor     claude-sonnet-5
+--scout      claude-opus-5
+--formatter  claude-sonnet-5
+--ocrfixer   claude-sonnet-5
+--jobs 5
