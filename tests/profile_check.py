@@ -41,7 +41,7 @@ def main():
         bad += not cond
 
     d = tempfile.mkdtemp()
-    p = os.path.join(d, "проба.txt")
+    p = os.path.join(d, "проба.conf")
     open(p, "w", encoding="utf-8").write(PROFILE)
 
     keys = cli.read_profile(p)
@@ -51,8 +51,8 @@ def main():
 
     ok("имя ищется по папкам",
        cli.read_profile("проба", roots=[d]) == keys)
-    ok("имя без .txt тоже находится",
-       cli.read_profile("проба.txt", roots=[d]) == keys)
+    ok("имя с расширением тоже находится",
+       cli.read_profile("проба.conf", roots=[d]) == keys)
 
     # Явный ключ обязан быть сильнее профиля, а для этого профиль встаёт в
     # начало строки: argparse берёт последнее вхождение.
@@ -69,7 +69,7 @@ def main():
     ok("форма --profile=имя понимается",
        cli.with_profiles([f"--profile={p}", "книга.epub"])[:2] == ["--agent", "agy"])
 
-    two = os.path.join(d, "второй.txt")
+    two = os.path.join(d, "второй.conf")
     open(two, "w", encoding="utf-8").write("--jobs 9\n")
     got = cli.with_profiles(["--profile", p, "--profile", two, "книга.epub"])
     ok("два профиля разворачиваются по порядку",
@@ -77,7 +77,7 @@ def main():
 
     # Профиль в профиле не разворачивается: это путь к кольцу и к отладке
     # чужого конфига.
-    nested = os.path.join(d, "вложенный.txt")
+    nested = os.path.join(d, "вложенный.conf")
     open(nested, "w", encoding="utf-8").write("--profile проба\n--jobs 2\n")
     try:
         cli.read_profile(nested)
@@ -95,10 +95,10 @@ def main():
     plain = ["книга.epub", "--to", "ru"]
     ok("без профиля строка не трогается", cli.with_profiles(plain) == plain)
 
-    # Готовые профили в пакете обязаны читаться: они идут в колесе, и
+    # Готовые профили в пакете обязаны читаться: они уезжают в сборку, и
     # опечатка в них видна только на запуске.
-    root = os.path.join(os.path.dirname(HERE), "src", "booktrans", "profiles")
-    names = sorted(n[:-4] for n in os.listdir(root) if n.endswith(".txt"))
+    root = os.path.join(os.path.dirname(HERE), "profiles")
+    names = sorted(n[:-5] for n in os.listdir(root) if n.endswith(".conf"))
     ok("готовые профили на месте", len(names) >= 3, names)
     for n in names:
         keys = cli.read_profile(n, roots=[root])

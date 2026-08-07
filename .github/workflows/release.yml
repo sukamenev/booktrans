@@ -36,8 +36,8 @@ jobs:
 
       # Промпты и правила языков — такие же части программы, как модули.
       # Один раз они уже терялись при сборке, и обнаружилось бы это у
-      # пользователя на первом запуске. Проверяем на готовом колесе.
-      - name: Данные доехали в колесо
+      # пользователя на первом запуске. Проверяем на собранном пакете.
+      - name: Данные доехали в пакет
         run: |
           uv venv /tmp/v
           VIRTUAL_ENV=/tmp/v uv pip install dist/*.whl
@@ -46,7 +46,7 @@ jobs:
           from importlib.resources import files
           assert lang.rules("ru"), "нет правил целевого языка"
           assert (files("booktrans") / "prompts" / "translate.md").is_file(), "нет промптов"
-          assert (files("booktrans") / "profiles" / "agy.txt").is_file(), "нет профилей"
+          assert (files("booktrans") / "profiles" / "agy.conf").is_file(), "нет профилей"
           print("данные на месте")
           PY
 

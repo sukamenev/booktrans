@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "booktrans"
-version = "1.8.24"
+version = "1.8.25"
 description = "Whole book translation pipeline: reads epub/fb2/html/pdf/txt, translates chapter by chapter with a running glossary, edits monolingually, assembles the result as epub/fb2/html/txt/tex/pdf"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,6 +37,12 @@ booktrans = "booktrans.cli:run"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/booktrans"]
+
+# Профили лежат в корне репозитория, рядом с обёртками: их правят руками, и
+# место им там же, где README, а не в исходниках. В сборку их кладём внутрь
+# пакета — установленному booktrans корень репозитория неоткуда взять.
+[tool.hatch.build.targets.wheel.force-include]
+"profiles" = "booktrans/profiles"
 
 
 # В архив с исходниками не должно попасть ничего из рабочих папок и книг:

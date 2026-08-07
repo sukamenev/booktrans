@@ -445,7 +445,7 @@ Four roles, each with a chain of two or three models, do not fit on one line.
 A profile is a file holding the same keys you would have typed:
 
 ```
-# profiles/agy.txt — Gemini in front, Claude behind it
+# profiles/agy.conf — Gemini in front, Claude behind it
 --agent agy
 --translator gemini-3.1-pro-high,claude:claude-opus-5
 --editor     gemini-3.1-pro-high,claude:claude-sonnet-5
@@ -461,12 +461,12 @@ The second line shows the whole rule: **what you name by hand beats the
 profile, and the profile beats the agent's set.** Three levels, one rule — the
 keys of the profile are simply put at the front of the command line.
 
-Ready-made ones ship with the package: `agy`, `claude`, and `cheap` for
-checking that the machinery works rather than the quality of the translation.
-`--profile` takes a name or a path; a name is looked for next to
-`BOOKTRANS_PROFILES`, then in the settings folder (`~/.config/booktrans/
-profiles`, and its equivalent on Windows and macOS), then in the package.
-Your own profile therefore survives an update.
+Ready-made ones ship with the package, in `profiles/`: `agy`, `claude`, and
+`cheap` for checking that the machinery works rather than the quality of the
+translation. `--profile` takes a name or a path — a name gets `.conf` appended
+and is looked for next to `BOOKTRANS_PROFILES`, then in the settings folder
+(`~/.config/booktrans/profiles`, and its equivalent on Windows and macOS), then
+in the package. Your own profile therefore survives an update.
 
 A profile inside a profile is not expanded — one level is enough.
 

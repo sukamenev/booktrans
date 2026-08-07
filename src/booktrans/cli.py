@@ -124,11 +124,17 @@ def prompt_roots():
 
 
 def profile_roots():
-    """Где искать профили, от старшего к младшему. Как у промптов."""
+    """Где искать профили, от старшего к младшему. Как у промптов.
+
+    Последних две — одна и та же папка, увиденная с двух сторон: у
+    установленного пакета профили лежат внутри него, а в рабочей копии — в
+    корне репозитория, откуда их и забирает сборка пакета.
+    """
     out = [os.environ.get("BOOKTRANS_PROFILES"),
            os.path.join(config_dir(), "profiles"),
-           os.path.join(HERE, "profiles")]
-    return [p for p in out if p]
+           os.path.join(HERE, "profiles"),
+           os.path.join(HERE, os.pardir, os.pardir, "profiles")]
+    return [p for p in out if p and os.path.isdir(p)]
 
 
 def read_profile(name, roots=None):
@@ -147,7 +153,7 @@ def read_profile(name, roots=None):
     tried = [name]
     if not os.path.exists(name):
         for root in roots or profile_roots():
-            tried += [os.path.join(root, name), os.path.join(root, name + ".txt")]
+            tried += [os.path.join(root, name), os.path.join(root, name + ".conf")]
     path = next((p for p in tried if os.path.isfile(p)), None)
     if path is None:
         raise SystemExit(lang.T("prof_nofile", name,
