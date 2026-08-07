@@ -11,6 +11,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import threading
 import time
 
 from .lang import T
@@ -56,11 +57,61 @@ def reset_after(msg):
     return h * 3600 + mi * 60 + sec
 
 
-class WaitingAgent:
-    """Оборачивает агента: упёрлись в лимит — ждём и пробуем снова.
+class Limits:
+    """Кто из моделей сейчас под лимитом и до какого времени.
 
-    Для многочасового прогона это обязательно. Иначе процесс упадёт на
-    середине книги, и придётся сидеть и следить за ним руками.
+    Общий на весь прогон. Без него каждый кусок заново упирался бы в ту же
+    исчерпанную модель: узнать об этом стоит запроса, а на книге в двести
+    кусков — двухсот.
+
+    Ключ — «агент: модель», а не агент целиком. Лимит у поставщика обычно на
+    счёт, и по-хорошему следовало бы гасить сразу все его модели, — но если
+    квоты всё же раздельные (у Antigravity Gemini и Claude выглядят именно
+    так), мы отключили бы работающее на часы. Пусть лучше каждая модель
+    узнаёт про запрет сама, ценой одного запроса.
+
+    Под замком: при `--jobs 5` в него пишут пять потоков.
+    """
+
+    def __init__(self):
+        self._until = {}
+        self._lock = threading.Lock()
+
+    def note(self, key, seconds):
+        """Запомнить, что эта модель занята столько-то секунд."""
+        with self._lock:
+            self._until[key] = max(self._until.get(key, 0),
+                                   time.time() + max(seconds, 0))
+
+    def left(self, key):
+        """Сколько ей ещё быть занятой. 0 — свободна."""
+        with self._lock:
+            return max(0, self._until.get(key, 0) - time.time())
+
+    def forget(self):
+        with self._lock:
+            self._until.clear()
+
+
+LIMITS = Limits()
+
+
+def key_of(a):
+    """Ключ модели в реестре лимитов."""
+    return f"{getattr(a, 'kind', '?')}:{getattr(a, 'model', None) or '—'}"
+
+
+def limit_left(a):
+    return LIMITS.left(key_of(a))
+
+
+class WaitingAgent:
+    """Оборачивает агента: помнит лимиты и не тратит запрос впустую.
+
+    Ждать здесь нельзя. Ожидание внутри модели не видно снаружи, и цепочка
+    не узнаёт, что первая встала: прогон послушно спал по четыре часа, а
+    запасная модель стояла рядом свободная. Поэтому здесь только учёт —
+    сколько ждать и ждать ли вообще, решает тот, кто держит всю цепочку.
     """
 
     def __init__(self, inner, interval=900, max_wait=86400, log=print):
@@ -75,23 +126,23 @@ class WaitingAgent:
         отдаёт его на редактуру той же модели."""
         return getattr(self.inner, "model", None)
 
+    @property
+    def kind(self):
+        return getattr(self.inner, "kind", "?")
+
     def run(self, system, user):
-        waited = 0
-        while True:
-            try:
-                return self.inner.run(system, user)
-            except RateLimited as e:
-                if waited >= self.max_wait:
-                    raise AgentError(T("lim_gave_up", waited // 3600, e))
-                # Названо точное время снятия — ждём его, а не вслепую по
-                # четверти часа. Полминуты сверху: часы у нас и у поставщика
-                # расходятся, а лишний отказ стоит целой попытки.
-                pause = reset_after(str(e))
-                pause = min(pause + 30, self.max_wait - waited) if pause \
-                    else self.interval
-                self.log("\n    " + T("lim_wait", max(pause // 60, 1), waited // 60))
-                time.sleep(pause)
-                waited += pause
+        left = LIMITS.left(key_of(self))
+        if left:
+            raise RateLimited(T("lim_known", self.model, max(int(left) // 60, 1)))
+        try:
+            return self.inner.run(system, user)
+        except RateLimited as e:
+            # Названо точное время снятия — берём его, а не четверть часа
+            # вслепую. Полминуты сверху: часы у нас и у поставщика расходятся,
+            # а лишний отказ стоит целой попытки.
+            pause = reset_after(str(e))
+            LIMITS.note(key_of(self), pause + 30 if pause else self.interval)
+            raise
 
 
 class Agent:
@@ -102,6 +153,8 @@ class Agent:
 
 class ClaudeAgent(Agent):
     """claude -p с json-конвертом: оттуда видно, какая модель отработала."""
+
+    kind = "claude"
 
     def __init__(self, model=None, timeout=1800, tools="", effort=None):
         self.model = model
@@ -185,6 +238,8 @@ class CommandAgent(Agent):
     Если ни один не указан, системный промпт приклеивается к началу stdin.
     """
 
+    kind = "cmd"
+
     def __init__(self, template, timeout=1800):
         self.template = template
         self.timeout = timeout
@@ -221,6 +276,8 @@ class CommandAgent(Agent):
 
 class AgyAgent(Agent):
     """Antigravity CLI (agy)."""
+
+    kind = "agy"
 
     def __init__(self, model=None, timeout=1800, effort=None):
         self.model = model
@@ -261,6 +318,8 @@ class AgyAgent(Agent):
 
 class CodexAgent(Agent):
     """OpenAI / Codex CLI."""
+
+    kind = "codex"
 
     def __init__(self, model=None, timeout=1800, effort=None):
         self.model = model

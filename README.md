@@ -364,8 +364,14 @@ Progress lives in `<book>.work`. Interrupt at any point: finished work is
 skipped on restart. Readiness is judged **by blocks**, not by file names, so a
 change in chunking cannot leave a silent gap.
 
-Hit your subscription limits and it **waits and carries on by itself**, by
-default every 15 minutes for up to a day. Disable with `--wait 0`.
+Hit your subscription limits and the chunk goes to **the next model of the
+chain**, and the exhausted one is set aside until the provider says it will
+lift the ban. It is not asked again in the meantime: finding out costs a
+request, and on a book of two hundred chunks it would cost two hundred.
+
+Waiting only happens when every model of the chain is out, and then it waits
+for the one that recovers soonest, not for its own — by default up to a day.
+Disable with `--wait 0`.
 
 ## Parallelism
 

@@ -106,6 +106,7 @@
   "pdf_done": "done",
   "pdf_failed": "the build failed; the source {0} and the error log are beside it",
   "pdf_no_engine": "{0} is ready but there is nothing to build it with: {1} is needed. Install it (on Debian and Ubuntu the package is texlive-luatex) and run: lualatex {0}",
+  "lim_known": "{0} is rate-limited for about {1} min more — skipping",
   "lim_wait": "rate limit reached, waiting {0} min (waited {1} min so far)",
   "notes_already": "notes were processed earlier ({0} chunks), nothing to do",
   "delete_to_redo": "(delete {0} to redo it)",

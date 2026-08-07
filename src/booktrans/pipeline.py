@@ -9,7 +9,8 @@ import re
 import threading
 import time
 
-from .agent import Fatal
+from . import agent as agent_mod
+from .agent import AgentError, Fatal
 
 # Прерывание с клавиатуры. При работе в несколько потоков одного Ctrl+C мало:
 # рабочие потоки не видят исключения главного, продолжают запросы, и человек
@@ -475,23 +476,54 @@ def _backups(fallback):
     return list(fallback) if isinstance(fallback, (list, tuple)) else [fallback]
 
 
+def _hold(who, waited, log):
+    """Сколько ждать, когда под лимитом вся цепочка. 0 — кто-то свободен.
+
+    Ждать раньше умела сама модель, и это было хуже: ожидание не видно
+    снаружи, прогон спал по четыре часа, а запасная модель стояла рядом
+    свободная. Ждём только когда ждать больше нечего, и не своей модели, а
+    ближайшей освобождающейся.
+    """
+    pause = min((agent_mod.limit_left(a) for a in who), default=0)
+    if not pause:
+        return 0
+    top = getattr(who[0], "max_wait", 86400)
+    if waited >= top:
+        return 0
+    pause = int(min(pause, top - waited)) + 1
+    log("")
+    log("    " + T("lim_wait", max(pause // 60, 1), int(waited) // 60))
+    time.sleep(pause)
+    return pause
+
+
 def _chain_run(who, system, prompt, retries, parse, log):
     """`_run` по цепочке: следующая модель подхватывает и отказ, и сбой.
 
     Проход, работающий одним запросом на большой кусок книги, без этого падал
     целиком: поставщик отвечал «high traffic» пять попыток подряд, и прогон
     кончался, хотя вторая модель цепочки была задана и стояла рядом.
+
+    Модель, упёршуюся в лимит, пропускаем не спрашивая: об этом знает общий
+    реестр, и переспрашивать её на каждом куске значит платить запросом за
+    уже известный ответ.
     """
-    last = None
-    for k, a in enumerate(who):
-        if k:
-            log("")
-            log("    " + T("refused_retry", getattr(a, "model", "?")), end="")
-        try:
-            return _run(a, system, prompt, retries, parse, log)
-        except (Refused, RuntimeError, Fatal) as e:
-            last = e
-    raise last
+    waited, last = 0, None
+    while True:
+        for k, a in enumerate(who):
+            if agent_mod.limit_left(a):
+                continue
+            if k:
+                log("")
+                log("    " + T("refused_retry", getattr(a, "model", "?")), end="")
+            try:
+                return _run(a, system, prompt, retries, parse, log)
+            except (Refused, RuntimeError, Fatal) as e:
+                last = e
+        pause = _hold(who, waited, log)
+        if not pause:
+            raise last or AgentError(T("lim_gave_up", waited // 3600, ""))
+        waited += pause
 
 
 def _stop_row(refused, log, force=False, what="translate"):
@@ -602,6 +634,14 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         expected = [b["id"] for b in translatable(c["blocks"])]
         log(f"[{idx:04d}/{len(chunks):04d}] {c['label'][:24]:24s} "
             + T("words_n", f"{c['words']:5d}") + " ... ", end="")
+        # Вся цепочка под лимитом — переждать; иначе кусок объявили бы
+        # непереведённым, а через три таких прогон бы встал.
+        held = 0
+        while agent_mod.limit_left(agent):
+            step = _hold([agent] + _backups(fallback), held, log)
+            if not step:
+                break
+            held += step
         try:
             (res, extra), meta, dt = _run(
                 agent, system, prompt, retries,
@@ -626,6 +666,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             backups = _backups(fallback)
             got, last = None, getattr(e, "first", "?")
             for fb in backups:
+                if agent_mod.limit_left(fb):
+                    continue
                 log("    " + T("refused_retry", getattr(fb, "model", "?")))
                 try:
                     got = _run(fb, system, prompt, retries,
@@ -859,6 +901,14 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         def parse(o):
             return parse_blocks(o, allowed=set(draft), extra_tag="NOTES")
 
+        # Заняты все — переждать. Прогон не встанет: три подряд «не взялись»
+        # останавливают редактуру, а лимит — не отказ и пройдёт сам.
+        held = 0
+        while True:
+            step = _hold([mine] + _backups(fallback), held, log)
+            if not step:
+                break
+            held += step
         try:
             (res, notes), meta, dt = _run(mine, system, prompt, retries, parse, log)
         except (Refused, RuntimeError, Fatal) as e:
@@ -874,6 +924,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             failed = False
         stopped = _stopped(res, ids)
         for fb in _backups(fallback):
+            if agent_mod.limit_left(fb):
+                continue
             # Оборвалась правка — передаём кусок следующей модели цепочки, как
             # и при отказе перевода. Иначе кусок остался бы наполовину
             # нетронутым, а при следующем запуске зачёлся бы готовым: файл-то
@@ -1149,11 +1201,21 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
 
     who = [agent] + _backups(fallback)
 
+    held = [0]
+
     def run(body, k=0):
-        if k:
+        # Все под лимитом — переждать: окно, брошенное на полпути, встанет в
+        # `marks.part.json` недоделанным, и разметка выйдет дырявой.
+        while all(agent_mod.limit_left(a) for a in who):
+            step = _hold(who, held[0], log)
+            if not step:
+                break
+            held[0] += step
+        a = next((x for x in who[k:] if not agent_mod.limit_left(x)), who[k])
+        if a is not who[0]:
             log("")
-            log("  " + T("refused_retry", getattr(who[k], "model", "?")), end="")
-        out, meta = who[k].run("", task + "\n\n---\n\n" + body)
+            log("  " + T("refused_retry", getattr(a, "model", "?")), end="")
+        out, meta = a.run("", task + "\n\n---\n\n" + body)
         cost[0] += meta.get("cost_usd") or 0
         return out
 

@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
 from booktrans import pipeline as P                         # noqa: E402
+from booktrans import agent as A                            # noqa: E402
 from booktrans.agent import AgentError, Fatal               # noqa: E402
 
 # Каждый проход, который обращается к модели, обязан принимать цепочку.
@@ -142,6 +143,27 @@ def main():
        meta["model"] == "в" and [w.calls for w in who] == [1, 1, 1],
        [w.calls for w in who])
 
+    # Лимит одной модели не должен останавливать прогон, пока в цепочке есть
+    # свободные, а узнав о нём однажды, спрашивать её снова незачем.
+    A.LIMITS.forget()
+    tired = Says("уставшая", boom=A.RateLimited("usage limit reached, resets in 4h"))
+    tired.kind, fresh = "стенд", Says("свежая")
+    fresh.kind = "стенд"
+    tired = A.WaitingAgent(tired, log=hush)
+    fresh = A.WaitingAgent(fresh, log=hush)
+    (res, _), meta, _ = P._chain_run([tired, fresh], "", "п", 1, plain, log)
+    ok("лимит уводит на запасную, а не в сон",
+       res == "готово" and meta["model"] == "свежая", meta)
+    ok("время до перезарядки взято из ответа",
+       3.9 * 3600 < A.limit_left(tired) <= 4 * 3600 + 60,
+       f"{A.limit_left(tired):.0f} с")
+    was = tired.inner.calls
+    P._chain_run([tired, fresh], "", "п", 1, plain, log)
+    ok("занятую модель больше не спрашивают",
+       tired.inner.calls == was, f"звали ещё {tired.inner.calls - was} раз")
+    A.LIMITS.forget()
+    ok("после перезарядки модель снова свободна", A.limit_left(tired) == 0)
+
     for name in PASSES:
         fn = getattr(P, name, None)
         ok(f"проход {name} принимает цепочку",
@@ -166,7 +188,7 @@ def main():
         ok(f"проход {name} доходит до запасной модели", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\nслучаев: {6 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
+    print(f"\nслучаев: {10 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
