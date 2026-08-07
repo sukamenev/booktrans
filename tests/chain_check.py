@@ -21,6 +21,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
 from booktrans import pipeline as P                         # noqa: E402
+
+P.RETRY_PAUSE = 0          # выдержка между попытками проверке только мешает
 from booktrans import agent as A                            # noqa: E402
 from booktrans.agent import AgentError, Fatal               # noqa: E402
 

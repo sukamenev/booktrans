@@ -269,6 +269,9 @@ class Truncated(ValueError):
                          f"не хватает {n} из {total}")
 
 
+RETRY_PAUSE = 5         # секунд перед повтором после сбоя у поставщика
+
+
 def _run(agent, system, prompt, retries, parse_fn, log):
     cur = prompt
     stops, last = [], None
@@ -301,6 +304,12 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             raise
         except Exception as e:
             log("\n    " + T("retry", attempt, e))
+            # Сбой на стороне поставщика — переждать. «Please try again in a
+            # minute» пять раз подряд за одну секунду это не пять попыток, а
+            # одна: сервер за это время не разгрузился. На разборе ответа
+            # пауза, наоборот, лишняя — там дело не в сервере, а в тексте.
+            if isinstance(e, AgentError) and attempt < retries:
+                time.sleep(min(RETRY_PAUSE * attempt, RETRY_PAUSE * 4))
             cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
                             "Верни РОВНО требуемые идентификаторы, каждый один раз.")
     if last is not None:
@@ -1819,16 +1828,25 @@ def _condense_scout(merged, who, system, retries, log, out_path):
             over = sum(map(len, parts)) - SCOUT_BUDGET
             if over <= 0 or len(parts[i]) < SECTION_MIN:
                 break
-            short, meta = _shrink(parts[i], _floor(parts[i], over), keep[i],
-                                  who, system, retries, log)
+            short, meta, why = _shrink(parts[i], _floor(parts[i], over), keep[i],
+                                       who, system, retries, log)
             cost += meta.get("cost_usd") or 0
             model = meta.get("model") or model
+            # О судьбе каждого раздела говорим вслух. Проход идёт десятком
+            # запросов по нескольку минут, и без этого не видно ни того, что
+            # он движется, ни того, что модель отвечает, а её ответ отвергают.
+            head = next((l for l in parts[i].splitlines() if l.startswith("#")),
+                        "?").lstrip("# ")[:28]
             if short:
+                log("\n    " + T("shr_ok", head, len(parts[i]), len(short),
+                                 meta.get("model") or "?"), end="")
                 parts[i] = short
+            else:
+                log("\n    " + T("shr_no", head, why), end="")
         if sum(map(len, parts)) >= was:
             break
     now = "".join(parts)
-    log(T("took", f"{time.time() - t0:.0f}",
+    log("\n  " + T("took", f"{time.time() - t0:.0f}",
           model + (f", ${cost:.2f}" if cost else "")))
     if now == merged:
         log("  " + T("scout_condense_no", len(_rows(merged)), len(_rows(merged))))
@@ -1891,10 +1909,13 @@ def _shrink(part, want, keep, who, system, retries, log):
     # мерой служит сама длина, потому что ответ короче половины запрошенного —
     # это не сжатие, а выброшенный раздел.
     now = _rows(short)
-    if len(short) >= len(part) or len(short) < want / 2 \
-            or len(keep - now) > len(keep) / 3:
-        return None, meta
-    return short, meta
+    if len(short) >= len(part):
+        return None, meta, T("shr_long", len(short))
+    if len(short) < want / 2:
+        return None, meta, T("shr_short", len(short), want)
+    if len(keep - now) > len(keep) / 3:
+        return None, meta, T("shr_rows", len(keep), len(now))
+    return short, meta, ""
 
 
 def _forked(merged, to):
