@@ -755,6 +755,26 @@ them from photographs is the short side, the aspect ratio, and repetition
 across pages. A book with more than three pictures per page is set as pictures
 or scanned, and then nothing is pulled at all.
 
+**A book set in columns is read differently.** `pdftotext -layout` keeps the
+physical placement, and the stripping of running heads leans on it — but on a
+two- or three-column page it glues fragments of neighbouring columns into one
+line, and no paragraph survives. So pages are examined first, and a book that
+turns out to be set in columns is read in plain reading order instead: one
+column through, then the next. The decision is taken over the whole book,
+because paragraph breaks — an indent or a blank line — are worked out over the
+whole text at once. To check without calling a model:
+`python3 tests/columns_check.py`.
+
+**A book set in columns is read differently.** `pdftotext -layout` keeps the
+physical placement, and the stripping of running heads leans on it — but on a
+two- or three-column page it glues fragments of neighbouring columns into one
+line, and no paragraph survives. So pages are examined first, and a book that
+turns out to be set in columns is read in plain reading order instead: one
+column through, then the next. The decision is taken over the whole book,
+because paragraph breaks — an indent or a blank line — are worked out over the
+whole text at once. To check without calling a model:
+`python3 tests/columns_check.py`.
+
 A pdf with no text layer is refused outright, with a hint to run OCR
 (`ocrmypdf in.pdf out.pdf`) — silently translating an empty book is worse.
 

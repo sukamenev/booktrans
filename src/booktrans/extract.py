@@ -1324,6 +1324,45 @@ def _unglue(txt, heads):
     return txt
 
 
+# Граница колонок: провал в три пробела и более, за которым идёт проза —
+# два слова подряд. Условие про прозу отсекает оглавление и таблицы, где
+# справа от такого же провала стоит номер страницы или одно слово.
+COLGAP = re.compile(r"(?<=\S)[ \t]{3,}(?=[^\W\d_]\S*[ \t]+[^\W\d_])")
+COL_LINES = 0.10        # столько склеенных строк — и страница многоколоночная
+COL_PAGES = 0.15        # столько таких страниц — и книга читается иначе
+
+
+def _columned(page):
+    """Многоколоночная ли страница по тексту от `pdftotext -layout`."""
+    lines = [l for l in page.splitlines() if len(l.strip()) > 30]
+    if len(lines) < 8:
+        return False
+    n = sum(bool(COLGAP.search(l)) for l in lines)
+    return n >= 3 and n >= len(lines) * COL_LINES
+
+
+def _multicolumn(txt):
+    """Книга ли в колонках — по тексту от `pdftotext -layout`.
+
+    Считаем по страницам с текстом: титул, шмуцтитулы и страницы под одну
+    картинку статистику только портят. Замерено: у романов и научпопа
+    таких страниц 0–1%, у учебника с колонками и словарём на полях — 74%.
+    """
+    pages = [p for p in txt.split("\f")
+             if len([l for l in p.splitlines() if len(l.strip()) > 30]) >= 8]
+    return bool(pages) and sum(map(_columned, pages)) >= len(pages) * COL_PAGES
+
+
+def _pdf_run(path, layout):
+    cmd = ["pdftotext"] + (["-layout"] if layout else []) \
+        + ["-enc", "UTF-8", path, "-"]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 and not r.stdout.strip():
+        raise BadBook(f"pdftotext не смог прочитать {os.path.basename(path)}: "
+                      + (r.stderr.strip().splitlines() or ["неизвестная ошибка"])[-1])
+    return r.stdout
+
+
 @functools.lru_cache(maxsize=4)
 def _pdf_text(path):
     """Текст pdf. Отдельно от разбора: та же выжимка нужна и разметке.
@@ -1331,18 +1370,28 @@ def _pdf_text(path):
     Держим в памяти: за один прогон он спрашивается трижды — разметкой,
     номерами страниц и чтением книги, — а стоит каждый раз разбора всего
     файла и просеивания колонтитулов.
+
+    `-layout` сохраняет расположение на листе, и на нём держится снятие
+    колонтитулов: они стоят отбитыми, а слова фразы — через один пробел.
+    Но на книге в две-три колонки он же склеивает строки соседних колонок в
+    одну, и абзаца в блоке не остаётся вовсе: на живом учебнике так вышло у
+    половины блоков, а модель потом собирала из этого салата осмысленный
+    текст и дописывала недостающее от себя.
+
+    Поэтому у многоколоночной книги берём обычный вывод: он идёт в порядке
+    чтения — колонка целиком, затем следующая. Решаем по книге, а не по
+    странице: разметка абзацев (отступ или пустая строка) определяется по
+    всему тексту сразу, и смешанные страницы порезались бы вкривь.
     """
     if not _which("pdftotext"):
         raise SystemExit("для pdf нужен pdftotext (пакет poppler-utils)")
-    r = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", path, "-"],
-                       capture_output=True, text=True)
-    if r.returncode != 0 and not r.stdout.strip():
-        raise BadBook(f"pdftotext не смог прочитать {os.path.basename(path)}: "
-                      + (r.stderr.strip().splitlines() or ["неизвестная ошибка"])[-1])
+    txt = _fix_mojibake(_pdf_run(path, layout=True))
+    if _multicolumn(txt):
+        txt = _fix_mojibake(_pdf_run(path, layout=False))
     # Pdf от программы распознавания считаем грязным весь, без разбора: чистый
     # текстовый слой она не делает, а мерить порчу по самому тексту нечем —
     # имена собственные шумят сильнее ошибок (см. ocr_made).
-    txt = _strip_running(_unspace(_fix_mojibake(r.stdout)), dirty=bool(ocr_made(path)))
+    txt = _strip_running(_unspace(txt), dirty=bool(ocr_made(path)))
     if not txt.strip():
         raise BadBook(
             f"в {os.path.basename(path)} нет текстового слоя — это скан или "
