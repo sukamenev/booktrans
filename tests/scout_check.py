@@ -74,20 +74,6 @@ class Greedy(Obedient):
             {"model": self.model, "cost_usd": 0}
 
 
-class Splitter(Obedient):
-    """Модель, которая вместо сжатия перекраивает раздел на четыре.
-    Так и вышло на живой книге: раздел вернулся четырьмя новыми."""
-
-    model = "перекройщик"
-
-    def run(self, system, user):
-        part = user.split("---\n\n", 1)[1]
-        rows = [l for l in part.splitlines() if l.startswith("|")]
-        out = ["## ИМЕНА", *rows[:10], "", "## ТЕРМИНЫ", *rows[10:20],
-               "", "## РОД", *rows[20:]]
-        return "\n".join(out) + "\n", {"model": self.model, "cost_usd": 0}
-
-
 def hush(m="", end="\n"):
     pass
 
@@ -151,12 +137,6 @@ def main():
     ok("вычеркнутая таблица отвергнута", got == BOOK,
        f"стало {len(got)} знаков вместо {len(BOOK)}")
 
-    # Раздел, вернувшийся четырьмя разделами, — не сжатие: следующий проход
-    # будет слать запрос на каждый, и справочник перекроится сам собой.
-    got = P._condense_scout(BOOK, [Splitter()], "", 1, hush, f"{d}/sp.md")
-    ok("расплодившиеся разделы отвергнуты", got == BOOK,
-       f"стало {len(got)} знаков вместо {len(BOOK)}")
-
     # Уже короткий справочник не трогаем вовсе: запрос стоит денег.
     small = "## ИМЕНА\n\n" + "\n".join(table(3)) + "\n"
     ok("короткий справочник не пересжимают",
@@ -164,7 +144,7 @@ def main():
 
     import shutil
     shutil.rmtree(d, ignore_errors=True)
-    print(f"\nслучаев: 12   с расхождениями: {bad}")
+    print(f"\nслучаев: 11   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

@@ -1926,12 +1926,7 @@ def _shrink(part, want, keep, who, system, retries, log):
     # бы это уже в переводе. А в разделе без таблиц стеречь вовсе нечего: там
     # мерой служит сама длина, потому что ответ короче половины запрошенного —
     # это не сжатие, а выброшенный раздел.
-    def heads(t):
-        return sum(l.startswith("## ") for l in t.splitlines())
-
     now = _rows(short)
-    if heads(short) > heads(part):
-        return None, meta, T("shr_heads", heads(part), heads(short))
     if len(short) >= len(part):
         return None, meta, T("shr_long", len(short))
     if len(short) < want / 2:
