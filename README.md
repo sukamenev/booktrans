@@ -167,6 +167,9 @@ Roles: `title` — a section heading (the book is chunked on these), `subtitle` 
 time and place, epigraph, `p` — prose, `skip` — navigation, advertising,
 watermarks.
 
+The census goes to the `--formatter` model — the same recognition job as
+marking up a pdf, and the same key names it.
+
 To redo it, delete the file or run `--only structure`. If the file exists the
 pass is skipped.
 
@@ -446,7 +449,7 @@ key for each would double their number.
 | `--scout` | reconnaissance: the reference about the book |
 | `--translator` | translation |
 | `--editor` | editing and footnotes |
-| `--formatter` | markup detection in pdf and txt |
+| `--formatter` | markup detection: epub and fb2 styles, pdf and txt pieces |
 | `--ocrfixer` | repairing OCR damage |
 | `--model` | every pass at once, save the last two |
 
@@ -455,6 +458,10 @@ meaning-bearing passes run Gemini with Opus behind it and Claude Code's own
 Opus last — a different provider refuses in different places — while
 markup and OCR repair run a cheap Flash with Sonnet behind it. What you name
 explicitly always beats the set.
+
+**A chain covers a failure of any kind.** A refusal, a 502 from the provider,
+a connection that dropped — the chunk goes to the next model, and the error
+only ends the run when every model of the chain has failed it.
 
 Translation carries the literary quality and the responsibility for meaning;
 editing is more mechanical, and its every change is visible in `--diff` and
@@ -674,7 +681,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --chunks 5,6,7        only these chunks; a range works too: 41-93
 --force-editing       keep editing past three refusals in a row
 --code asis           leave the comments in listings alone too
---formatter ID        model that marks up pdf and txt
+--formatter ID        model that works out the markup, any format
 --ocrfixer ID         model that repairs recognition damage in the original
 --model ID            model for every pass
 --scout / --translator / --editor ID   model for one pass

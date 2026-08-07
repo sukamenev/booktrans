@@ -379,7 +379,7 @@ def accumulated_terms(state, upto, text=None):
     return out
 
 
-def condense(state, upto, agent, retries, log):
+def condense(state, upto, agent, retries, log, fallback=None):
     """Накопительный конспект вместо скользящего окна.
 
     Окно последних N сводок теряет начало книги: при переводе 51-го куска
@@ -406,7 +406,8 @@ def condense(state, upto, agent, retries, log):
         "## Конспект\n\n" + (digest or "(пока пусто)") +
         "\n\n## Что было дальше\n\n" + "\n\n".join(fresh))
     log("  " + T("digest_go"), end="")
-    (new, _), meta, dt = _run(agent, "", prompt, retries, lambda o: (o.strip(), ""), log)
+    (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
+                                    retries, lambda o: (o.strip(), ""), log)
     state["digest"] = new
     state["digest_upto"] = upto - 1
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
@@ -516,7 +517,7 @@ def _stop_row(refused, log, force=False, what="translate"):
 LOSS_LOW, LOSS_HIGH, LOSS_MIN = 0.5, 2.5, 60
 
 
-def _regrow(agent, system, task, blocks, res, retries, log):
+def _regrow(agent, system, task, blocks, res, retries, log, fallback=None):
     """Переспросить блоки, чья длина разошлась с оригиналом.
 
     Разбор следит только за тем, чтобы идентификаторы были на месте, а что
@@ -537,8 +538,9 @@ def _regrow(agent, system, task, blocks, res, retries, log):
               "или попала чужая. Переведи их заново, целиком, ничего не "
               "пропуская и не добавляя от себя.\n\n" + body)
     try:
-        (again, _), _, _ = _run(agent, system, prompt, retries,
-                                lambda o: parse_blocks(o, expected=bad), log)
+        (again, _), _, _ = _chain_run([agent] + _backups(fallback), system, prompt,
+                                      retries,
+                                      lambda o: parse_blocks(o, expected=bad), log)
     except (Refused, RuntimeError, Fatal):
         return res, 0
     # Берём новое только там, где оно ближе к длине оригинала: переспрос
@@ -585,7 +587,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 for b in translatable(c["blocks"])):
             skipped += 1
             continue
-        summary = condense(state, idx, agent, retries, log)
+        summary = condense(state, idx, agent, retries, log, fallback)
         tail = ""
         prev = f"{work}/tr/{idx - 1:04d}.json"
         if os.path.exists(prev):
@@ -604,26 +606,32 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             (res, extra), meta, dt = _run(
                 agent, system, prompt, retries,
                 lambda o: _parse_translate(o, expected), log)
-        except Refused as e:
-            # Показываем сам текст: по нему сразу видно, почему модель встала,
-            # и не нужно гадать про размеры кусков и бюджеты токенов.
-            src = next((b["text"] for b in c["blocks"] if b["id"] == e.first), "")
-            src = re.sub(r"<[^>]+>", "", src)[:150]
+        except (Refused, RuntimeError, Fatal) as e:
+            # Отказ и сбой поставщика тут равны: кусок не переведён, а
+            # следующая модель цепочки может и взяться. Прежде ловился один
+            # отказ, и «исчерпаны попытки» валили прогон при живой запасной.
             log("")
-            log("    " + T("refused", e.first, e.n, e.total))
-            log(f"      {src}…")
+            if isinstance(e, Refused):
+                # Показываем сам текст: по нему сразу видно, почему модель
+                # встала, и не нужно гадать про размеры кусков и бюджеты.
+                src = next((b["text"] for b in c["blocks"] if b["id"] == e.first), "")
+                src = re.sub(r"<[^>]+>", "", src)[:150]
+                log("    " + T("refused", e.first, e.n, e.total))
+                log(f"      {src}…")
+            else:
+                log("    " + T("chunk_failed", e))
             # Подстраховка: то же задание следующей модели цепочки. Отказ —
             # свойство модели, а не текста, и у следующей такого запрета может
             # не быть. Идём по цепочке до первой, которая возьмётся.
             backups = _backups(fallback)
-            got, last = None, e.first
+            got, last = None, getattr(e, "first", "?")
             for fb in backups:
                 log("    " + T("refused_retry", getattr(fb, "model", "?")))
                 try:
                     got = _run(fb, system, prompt, retries,
                                lambda o: _parse_translate(o, expected), log)
                     break
-                except (Refused, RuntimeError) as e2:
+                except (Refused, RuntimeError, Fatal) as e2:
                     last = getattr(e2, "first", last)
             if got is None:
                 log("    " + (T("refused_both", last) if backups
@@ -635,7 +643,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
         extra, found = extra
         res, n_grew = _regrow(agent, system, task, translatable(c["blocks"]),
-                              res, retries, log)
+                              res, retries, log, fallback)
         if n_grew:
             log("\n    " + T("regrown", n_grew))
         summ, terms = _split_meta(extra)
@@ -847,28 +855,56 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             return last if (len(ids) - last) / len(ids) > 0.6 else 0
 
         ids = list(draft)          # ключи словаря и есть идентификаторы
-        (res, notes), meta, dt = _run(
-            mine, system, prompt, retries,
-            lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
+
+        def parse(o):
+            return parse_blocks(o, allowed=set(draft), extra_tag="NOTES")
+
+        try:
+            (res, notes), meta, dt = _run(mine, system, prompt, retries, parse, log)
+        except (Refused, RuntimeError, Fatal) as e:
+            # Сбой — не то же, что «править нечего»: пустой результат нельзя
+            # записать как готовый кусок, иначе следующий запуск сочтёт его
+            # сделанным. Идём по цепочке, как и при обрыве.
+            with lock:
+                log("    " + T("chunk_failed", e))
+            (res, notes), dt = ({}, []), 0.0
+            meta = {"model": getattr(mine, "model", "?"), "cost_usd": 0}
+            failed = True
+        else:
+            failed = False
         stopped = _stopped(res, ids)
         for fb in _backups(fallback):
             # Оборвалась правка — передаём кусок следующей модели цепочки, как
             # и при отказе перевода. Иначе кусок остался бы наполовину
             # нетронутым, а при следующем запуске зачёлся бы готовым: файл-то
             # записан.
-            if not stopped:
+            if not stopped and not failed:
                 break
             if fb is mine:
                 continue          # этой моделью кусок только что и правился
             with lock:
-                log("    " + T("edit_stopped", stopped, len(ids)))
+                if stopped:
+                    log("    " + T("edit_stopped", stopped, len(ids)))
                 log("    " + T("refused_retry", getattr(fb, "model", "?")))
-            (res2, notes2), meta2, dt2 = _run(
-                fb, system, prompt, retries,
-                lambda o: parse_blocks(o, allowed=set(draft), extra_tag="NOTES"), log)
-            if len(res2) > len(res):
+            try:
+                (res2, notes2), meta2, dt2 = _run(fb, system, prompt, retries,
+                                                  parse, log)
+            except (Refused, RuntimeError, Fatal) as e:
+                with lock:
+                    log("    " + T("chunk_failed", e))
+                continue
+            if len(res2) > len(res) or failed:
                 res, notes, meta, dt = res2, notes2, meta2, dt2
+                failed = False
                 stopped = _stopped(res, ids)
+        if failed:
+            # Никто не взялся. Файла не пишем вовсе: пустая правка легла бы
+            # как готовая, и следующий запуск обошёл бы кусок стороной.
+            # Непроредактированный кусок остаётся переведённым и читаемым.
+            with lock:
+                log("    " + T("edit_failed", idx))
+                halt[0] = _stop_row(refused, log, force, "edit")
+            return
         out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
                "notes": notes, "blocks": ids,
                "src": {k: fingerprint(v) for k, v in draft.items()},
@@ -946,7 +982,8 @@ def all_translations(work):
 
 # ---------------------------------------------------------------- сноски
 
-def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
+def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
+          fallback=None):
     """Предложение сносок и проверка фактов.
 
     Идёт по кускам, накапливая уже предложенное: одно и то же понятие не должно
@@ -956,6 +993,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
     на каждый.
     """
     os.makedirs(f"{work}/nt", exist_ok=True)
+    who = [agent] + _backups(fallback)
     todo, skipped = [], 0
     for c in chunks:
         idx = c["index"]
@@ -1013,7 +1051,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1):
                                   "term": term.strip(), "text": " ".join(text.split())})
             return items, ""
 
-        (items, _), meta, dt = _run(agent, system, prompt, retries, parse_notes, log)
+        (items, _), meta, dt = _chain_run(who, system, prompt, retries,
+                                          parse_notes, log)
         _save(out_path, {"index": idx, "model": meta["model"],
                          "cost_usd": meta["cost_usd"], "notes": items})
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
@@ -1195,7 +1234,8 @@ def _parse_code(out, allowed):
     return got
 
 
-def code_comments(work, blocks, agent, system, task, retries, log):
+def code_comments(work, blocks, agent, system, task, retries, log,
+                  fallback=None):
     """Перевод комментариев в листингах. Код остаётся байт в байт.
 
     Комментарии ищет модель — знаков комментария у языков сотни, разбором их
@@ -1207,6 +1247,7 @@ def code_comments(work, blocks, agent, system, task, retries, log):
     только новые листинги.
     """
     from . import code as C
+    who = [agent] + _backups(fallback)
     p = f"{work}/code.json"
     done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
     todo = [b for b in blocks if b["kind"] == "code" and b["id"] not in done]
@@ -1223,8 +1264,9 @@ def code_comments(work, blocks, agent, system, task, retries, log):
             "\n".join(f"{k}| {l}" for k, l in enumerate(b["text"].split("\n"), 1))
             for b in part)
         try:
-            (got, _), meta, _ = _run(agent, system, task + "\n\n---\n\n" + body,
-                                     retries, lambda o: (_parse_code(o, ids), ""), log)
+            (got, _), meta, _ = _chain_run(who, system,
+                                           task + "\n\n---\n\n" + body, retries,
+                                           lambda o: (_parse_code(o, ids), ""), log)
         except (Refused, RuntimeError):
             # Комментарии — не та потеря, ради которой стоит валить прогон:
             # непереведённый останется на языке оригинала, и это видно.
@@ -1325,16 +1367,15 @@ def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
         ids = {b["id"] for b in part}
         body = "\n\n".join(f"<<<F {b['id']}>>>\n{strip(b['text'])}" for b in part)
         got = None
-        for k, who in enumerate([agent] + _backups(fallback)):
-            if k:
-                log("")
-                log("  " + T("refused_retry", getattr(who, "model", "?")), end="")
-            try:
-                (got, _), meta, _ = _run(who, system, task + "\n\n---\n\n" + body,
-                                         retries, lambda o: (_parse_fix(o, ids), ""), log)
-                break
-            except (Refused, RuntimeError, Fatal):
-                pass
+        try:
+            (got, _), meta, _ = _chain_run(
+                [agent] + _backups(fallback), system,
+                task + "\n\n---\n\n" + body, retries,
+                lambda o: (_parse_fix(o, ids), ""), log)
+        except (Refused, RuntimeError, Fatal):
+            # Правка распознавания — не та потеря, ради которой стоит валить
+            # прогон: неисправленный дефект останется в тексте, и его видно.
+            got = None
         if got is None:
             log("")
             log("  " + T("fix_failed", len(part)))
@@ -1854,7 +1895,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
 
 # ---------------------------------------------------------------- заголовки
 
-def headings(work, blocks, agent, system, retries, log):
+def headings(work, blocks, agent, system, retries, log, fallback=None):
     """Заголовки и подзаголовки — одним запросом на всю книгу.
 
     Их немного (десятки), и они обязаны совпадать дословно между собой:
@@ -1900,7 +1941,8 @@ def headings(work, blocks, agent, system, retries, log):
             raise ValueError(f"не переведено {len(missing)} заголовков: {short}")
         return got, ""
 
-    (got, _), meta, dt = _run(agent, system, prompt, retries, parse_heads, log)
+    (got, _), meta, dt = _chain_run([agent] + _backups(fallback), system, prompt,
+                                    retries, parse_heads, log)
     have.update(got)
     json.dump(have, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
@@ -1910,7 +1952,7 @@ def headings(work, blocks, agent, system, retries, log):
 
 # ---------------------------------------------------------------- структура
 
-def detect_structure(work, styles, agent, task, retries, log):
+def detect_structure(work, styles, agent, task, retries, log, fallback=None):
     """Определение вёрстки моделью: какой стиль чем является.
 
     Эвристика по именам классов всегда угадывает — у каждого издательства
@@ -1947,7 +1989,8 @@ def detect_structure(work, styles, agent, task, retries, log):
             raise ValueError("не разобрал ни одной строки вида тег|класс = вид")
         return got, ""
 
-    (got, _), meta, dt = _run(agent, "", prompt, retries, parse_map, log)
+    (got, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
+                                    retries, parse_map, log)
 
     known = {f'{r["tag"]}|{r["cls"]}' for r in styles}
     got = {k: v for k, v in got.items() if k in known}

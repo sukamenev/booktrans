@@ -465,9 +465,13 @@ def main():
                     sys.exit(1)
             log("")
             log(head("step_structure"))
+            # Перепись стилей — работа опознавательная, та же, что разметка
+            # pdf: посмотреть на образцы и сказать, что здесь заголовок.
+            # Потому и модель та же, из `--formatter`.
             styles_map = pipeline.detect_structure(
-                work, extract.scan_styles(args.book), agent,
-                task("structure"), args.retries, log)
+                work, extract.scan_styles(args.book), agent_for("formatter"),
+                task("structure"), args.retries, log,
+                fallback=backup_for("formatter"))
             log("")
         elif os.path.exists(f"{work}/structure.json"):
             styles_map = {k: v for k, v in
@@ -650,7 +654,8 @@ def main():
         n += 1
         log("")
         log(head("step_translate", n))
-        pipeline.headings(work, blocks, agent_for("translator"), sysprompt(), args.retries, log)
+        pipeline.headings(work, blocks, agent_for("translator"), sysprompt(),
+                          args.retries, log, fallback=backup_for("translator"))
         d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
                                   args.retries, log, only_chunks,
                                   fallback=backup_for("translator"))
@@ -658,7 +663,8 @@ def main():
         # читателю нужны они, а не английский подстрочник в коде.
         if args.code == "comments" and any(b["kind"] == "code" for b in blocks):
             pipeline.code_comments(work, blocks, agent_for("translator"),
-                                   sysprompt(), task("code"), args.retries, log)
+                                   sysprompt(), task("code"), args.retries, log,
+                                   fallback=backup_for("translator"))
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
 
     if "edit" in steps:
@@ -676,7 +682,8 @@ def main():
         log("")
         log(head("step_notes", n))
         d, s, t = pipeline.notes(work, chunks, agent_for("editor"), sysprompt(), task("notes"),
-                                 args.retries, log, only_chunks, args.jobs)
+                                 args.retries, log, only_chunks, args.jobs,
+                                 fallback=backup_for("editor"))
         log("  " + (T("done_notes", d, s, t) if d else T("notes_already", s)))
         log("")
 
