@@ -164,6 +164,20 @@ def main():
     A.LIMITS.forget()
     ok("после перезарядки модель снова свободна", A.limit_left(tired) == 0)
 
+    # Лимит — не осечка запроса, а состояние времени: до срока модель ответит
+    # тем же самым. Повторы тут ничего не меняют, только печатают о лимите
+    # столько раз, сколько задано попыток.
+    A.LIMITS.forget()
+    once = Says("одна", boom=A.RateLimited("quota reached, resets in 4h"))
+    once.kind = "стенд"
+    wrapped = A.WaitingAgent(once, log=hush)
+    try:
+        P._run(wrapped, "", "п", 5, plain, hush)
+    except A.RateLimited:
+        pass
+    ok("лимит не повторяют попытками", once.calls == 1,
+       f"обращений {once.calls} вместо одного")
+
     for name in PASSES:
         fn = getattr(P, name, None)
         ok(f"проход {name} принимает цепочку",
@@ -188,7 +202,7 @@ def main():
         ok(f"проход {name} доходит до запасной модели", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\nслучаев: {10 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
+    print(f"\nслучаев: {11 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

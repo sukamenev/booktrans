@@ -10,7 +10,7 @@ import threading
 import time
 
 from . import agent as agent_mod
-from .agent import AgentError, Fatal
+from .agent import AgentError, Fatal, RateLimited
 
 # Прерывание с клавиатуры. При работе в несколько потоков одного Ctrl+C мало:
 # рабочие потоки не видят исключения главного, продолжают запросы, и человек
@@ -293,8 +293,12 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             last = e
             cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
                             "Верни РОВНО требуемые идентификаторы, каждый один раз.")
-        except Fatal:
-            raise                       # повторять нечего: беда не в тексте
+        except (Fatal, RateLimited):
+            # Повторять нечего. У Fatal беда не в тексте, а лимит — вообще не
+            # осечка запроса, а состояние времени: до срока модель ответит
+            # тем же самым, и пять попыток подряд отличаются только тем, что
+            # печатают о лимите пять раз.
+            raise
         except Exception as e:
             log("\n    " + T("retry", attempt, e))
             cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
