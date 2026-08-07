@@ -467,19 +467,19 @@ Six ship with the package, in `profiles/`:
 |---|---|
 | `agy` | Antigravity alone: Gemini Pro in front, its Opus behind |
 | `agy-claude` | the same, with Claude Code's own Opus as the last link |
-| `agy-cheap` | Flash — for checking the machinery, not for reading |
+| `agy-probe` | Flash — a probe run of the machinery, not for reading |
 | `claude` | Claude Code alone: Opus translates and edits |
 | `claude-agy` | the same, with Antigravity's models as the last link |
-| `claude-cheap` | Sonnet — for checking the machinery, not for reading |
+| `claude-probe` | Sonnet — a probe run of the machinery, not for reading |
 
 The paired ones (`agy-claude`, `claude-agy`) reach across providers: a
 separate quota, and refusals that fall in different places. Both halves have
 to be installed.
 
-**The cheap two are a test harness, and their files say so.** They exist to
-run a whole book through in minutes and see that the markup, footnotes,
-images and assembly are all there. A book translated by them is not worth
-reading.
+**The two probes check the machinery of translation on cheap models**, which
+is what their files say in the first line. They exist to run a whole book
+through in minutes and see that the markup, footnotes, images and assembly
+are all there. A book translated by them is not worth reading.
 
 `--profile` takes a name or a path — a name gets `.conf` appended
 and is looked for next to `BOOKTRANS_PROFILES`, then in the settings folder
