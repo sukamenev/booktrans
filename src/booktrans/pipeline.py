@@ -1646,10 +1646,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         # Готовый справочник всё равно проверяем на двоящиеся термины: он мог
         # быть собран прежней версией, а платить за разведку заново незачем.
         merged = open(out_path, encoding="utf-8").read()
-        merged = _condense_scout(merged, who, system, retries, log, out_path)
+        merged = _condense_scout(merged, who, "", retries, log, out_path)
         forked = _forked(merged, to)
         if forked:
-            merged = _unfork(merged, forked, who, system, retries, log, out_path)
+            merged = _unfork(merged, forked, who, "", retries, log, out_path)
         return merged
 
     paras = [b for b in blocks if b["kind"] in ("p", "title")]
@@ -1724,7 +1724,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     json.dump({"model": meta.get("model")},
               open(f"{work}/scout.json", "w", encoding="utf-8"), ensure_ascii=False)
     log("  " + T("scout_ref", out_path, len(merged)))
-    merged = _condense_scout(merged, who, system, retries, log, out_path)
+    merged = _condense_scout(merged, who, "", retries, log, out_path)
 
     # Двоящиеся термины ловим до перевода, а не после. Запись вида
     # «одиночка / синглтон» — это не решение, и переводчик, работая кусками,
@@ -1737,7 +1737,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     # термин один, а вариантов перевода несколько.
     forked = _forked(merged, to)
     if forked:
-        merged = _unfork(merged, forked, who, system, retries, log, out_path)
+        merged = _unfork(merged, forked, who, "", retries, log, out_path)
         forked = _forked(merged, to)
     if forked:
         log("  " + T("scout_forked", len(forked)))
@@ -1794,6 +1794,14 @@ def _sections(md):
 
 def _condense_scout(merged, who, system, retries, log, out_path):
     """Пересжать справочник, если он перерос предел.
+
+    Системный промпт сюда идёт пустой, и это важно. В обычном промпте лежит
+    сам справочник целиком — он уходит в каждый запрос на перевод, — и,
+    получив его вместе с заданием «ужми этот раздел», модель считает себя
+    вправе переписать всё. На живой книге она так и сделала: раздел на 27 887
+    знаков вернулся четырьмя новыми разделами, семь строк задвоилось. Плюс за
+    двенадцать запросов справочник уехал бы на вход двенадцать раз — полмиллиона
+    знаков служебного входа там, где хватает одного раздела.
 
     Просьба «уложиться в столько-то знаков» стоит в промпте сведения, но
     исполняется она плохо: на одной книге вышло полтора предела. А платится

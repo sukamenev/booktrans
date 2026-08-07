@@ -104,7 +104,18 @@ def main():
     d = tempfile.mkdtemp()
     out = f"{d}/scout.md"
 
-    got = P._condense_scout(BOOK, [Obedient()], "", 1, hush, out)
+    # Системный промпт обязан быть пуст: иначе справочник уезжает на вход по
+    # разу на каждый запрос, а модель, увидев его целиком, перекраивает всё.
+    seen = []
+
+    class Watch(Obedient):
+        def run(self, system, user):
+            seen.append(system)
+            return Obedient.run(self, system, user)
+
+    got = P._condense_scout(BOOK, [Watch()], "", 1, hush, out)
+    ok("справочник не уезжает в системный промпт",
+       seen and not any(x.strip() for x in seen), seen[:1])
     ok("справочник уложился в предел", len(got) <= P.SCOUT_BUDGET,
        f"{len(got)} знаков при пределе {P.SCOUT_BUDGET}")
     ok("ни одно имя не потерялось", P._rows(BOOK) == P._rows(got),
@@ -133,7 +144,7 @@ def main():
 
     import shutil
     shutil.rmtree(d, ignore_errors=True)
-    print(f"\nслучаев: 10   с расхождениями: {bad}")
+    print(f"\nслучаев: 11   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
