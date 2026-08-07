@@ -461,9 +461,27 @@ The second line shows the whole rule: **what you name by hand beats the
 profile, and the profile beats the agent's set.** Three levels, one rule — the
 keys of the profile are simply put at the front of the command line.
 
-Ready-made ones ship with the package, in `profiles/`: `agy`, `claude`, and
-`cheap` for checking that the machinery works rather than the quality of the
-translation. `--profile` takes a name or a path — a name gets `.conf` appended
+Six ship with the package, in `profiles/`:
+
+| | |
+|---|---|
+| `agy` | Antigravity alone: Gemini Pro in front, its Opus behind |
+| `agy-claude` | the same, with Claude Code's own Opus as the last link |
+| `agy-cheap` | Flash — for checking the machinery, not for reading |
+| `claude` | Claude Code alone: Opus translates and edits |
+| `claude-agy` | the same, with Antigravity's models as the last link |
+| `claude-cheap` | Sonnet — for checking the machinery, not for reading |
+
+The paired ones (`agy-claude`, `claude-agy`) reach across providers: a
+separate quota, and refusals that fall in different places. Both halves have
+to be installed.
+
+**The cheap two are a test harness, and their files say so.** They exist to
+run a whole book through in minutes and see that the markup, footnotes,
+images and assembly are all there. A book translated by them is not worth
+reading.
+
+`--profile` takes a name or a path — a name gets `.conf` appended
 and is looked for next to `BOOKTRANS_PROFILES`, then in the settings folder
 (`~/.config/booktrans/profiles`, and its equivalent on Windows and macOS), then
 in the package. Your own profile therefore survives an update.
