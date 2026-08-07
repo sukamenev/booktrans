@@ -474,6 +474,25 @@ def _backups(fallback):
     return list(fallback) if isinstance(fallback, (list, tuple)) else [fallback]
 
 
+def _chain_run(who, system, prompt, retries, parse, log):
+    """`_run` по цепочке: следующая модель подхватывает и отказ, и сбой.
+
+    Проход, работающий одним запросом на большой кусок книги, без этого падал
+    целиком: поставщик отвечал «high traffic» пять попыток подряд, и прогон
+    кончался, хотя вторая модель цепочки была задана и стояла рядом.
+    """
+    last = None
+    for k, a in enumerate(who):
+        if k:
+            log("")
+            log("    " + T("refused_retry", getattr(a, "model", "?")), end="")
+        try:
+            return _run(a, system, prompt, retries, parse, log)
+        except (Refused, RuntimeError, Fatal) as e:
+            last = e
+    raise last
+
+
 def _stop_row(refused, log, force=False, what="translate"):
     """Три отказа подряд.
 
@@ -1495,7 +1514,7 @@ def scout_meta(work):
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
-          src_name=None):
+          src_name=None, fallback=None):
     """Крупноблочный проход ДО перевода.
 
     Собирает голоса персонажей, имена собственные и повторяющиеся термины.
@@ -1505,15 +1524,16 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     один раз на всю книгу, а не заново в каждом куске.
     """
     out_path = f"{work}/scout.md"
+    who = [agent] + _backups(fallback)
     if os.path.exists(out_path):
         log("  " + T("scout_done_already"))
         # Готовый справочник всё равно проверяем на двоящиеся термины: он мог
         # быть собран прежней версией, а платить за разведку заново незачем.
         merged = open(out_path, encoding="utf-8").read()
-        merged = _condense_scout(merged, agent, system, retries, log, out_path)
+        merged = _condense_scout(merged, who, system, retries, log, out_path)
         forked = _forked(merged, to)
         if forked:
-            merged = _unfork(merged, forked, agent, system, retries, log, out_path)
+            merged = _unfork(merged, forked, who, system, retries, log, out_path)
         return merged
 
     paras = [b for b in blocks if b["kind"] in ("p", "title")]
@@ -1546,7 +1566,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         prompt = (f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}\n\n{text}")
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")
-        (res, _), meta, dt = _run(agent, system, prompt, retries, lambda o: (o, ""), log)
+        (res, _), meta, dt = _chain_run(who, system, prompt, retries,
+                                        lambda o: (o, ""), log)
         findings.append(res)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
@@ -1575,7 +1596,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             "выбросить;\n"
             "- формат разделов тот же, что в разборах.\n\n---\n\n"
             + "\n\n---\n\n".join(findings))
-        (merged, _), meta, dt = _run(agent, system, merge, retries, lambda o: (o, ""), log)
+        (merged, _), meta, dt = _chain_run(who, system, merge, retries,
+                                           lambda o: (o, ""), log)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
     else:
@@ -1586,7 +1608,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     json.dump({"model": meta.get("model")},
               open(f"{work}/scout.json", "w", encoding="utf-8"), ensure_ascii=False)
     log("  " + T("scout_ref", out_path, len(merged)))
-    merged = _condense_scout(merged, agent, system, retries, log, out_path)
+    merged = _condense_scout(merged, who, system, retries, log, out_path)
 
     # Двоящиеся термины ловим до перевода, а не после. Запись вида
     # «одиночка / синглтон» — это не решение, и переводчик, работая кусками,
@@ -1599,7 +1621,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     # термин один, а вариантов перевода несколько.
     forked = _forked(merged, to)
     if forked:
-        merged = _unfork(merged, forked, agent, system, retries, log, out_path)
+        merged = _unfork(merged, forked, who, system, retries, log, out_path)
         forked = _forked(merged, to)
     if forked:
         log("  " + T("scout_forked", len(forked)))
@@ -1632,7 +1654,7 @@ def _sections(md):
     return out
 
 
-def _condense_scout(merged, agent, system, retries, log, out_path):
+def _condense_scout(merged, who, system, retries, log, out_path):
     """Пересжать справочник, если он перерос предел.
 
     Просьба «уложиться в столько-то знаков» стоит в промпте сведения, но
@@ -1721,7 +1743,8 @@ def _shrink(part, want, agent, system, retries, log):
         "дописывать: нового сведения появиться не должно. В ответе — только "
         "сам раздел, с первой же его строки: ни вступления, ни повторения "
         "этих указаний.\n\n---\n\n" + part)
-    (short, _), meta, _dt = _run(agent, system, ask, retries, lambda o: (o, ""), log)
+    (short, _), meta, _dt = _chain_run(who, system, ask, retries,
+                                       lambda o: (o, ""), log)
 
     # Всё, что модель приписала перед разделом, отрезаем по его заголовку.
     # Замерено: один прогон вернул справочник, а перед ним — весь системный
@@ -1766,7 +1789,7 @@ def _forked(merged, to):
     return out
 
 
-def _unfork(merged, forked, agent, system, retries, log, out_path):
+def _unfork(merged, forked, who, system, retries, log, out_path):
     """Выбрать по одному переводу за человека и переписать справочник.
 
     Раздвоенная запись — не решение, а отложенный выбор, и делать его будет
@@ -1781,7 +1804,8 @@ def _unfork(merged, forked, agent, system, retries, log, out_path):
            "Ответ — только строками вида `термин = выбранный перевод`, "
            "по одной на каждый случай, без пояснений.\n\n"
            + "\n".join(line for _, line in forked))
-    (res, _), meta, dt = _run(agent, system, ask, retries, lambda o: (o, ""), log)
+    (res, _), meta, dt = _chain_run(who, system, ask, retries,
+                                    lambda o: (o, ""), log)
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
     log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
 

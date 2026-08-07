@@ -633,7 +633,8 @@ def main():
         log(head("step_scout", n))
         pipeline.scout(work, blocks, agent_for("scout"), sysprompt(), task("scout"),
                        args.retries, log, args.to,
-                       src_name=os.path.basename(args.book))
+                       src_name=os.path.basename(args.book),
+                       fallback=backup_for("scout"))
         # Выходные данные разведка находит только сейчас, а метаданные были
         # собраны до неё. Без этого перечитывания книга первого прогона
         # выходила с заглавием оригинала, и оно появлялось лишь при повторной
