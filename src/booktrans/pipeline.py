@@ -1742,6 +1742,22 @@ def _rows(text):
 
 
 SECTION_MIN = 1500      # раздел мельче не сжимаем: возни больше, чем выгоды
+SCOUT_ROUNDS = 3        # столько заходов; дальше модель уже не уступает
+
+
+def _floor(part, over):
+    """До скольких знаков позволено ужать раздел за один заход.
+
+    Мера берётся по прозе: строки таблиц стережёт отдельная проверка, и
+    урезать их заданием мы не просим вовсе, а проза уходит на две трети.
+    Прежде мера бралась от всего раздела разом — и раздел, где две трети
+    занимают биографии, а треть таблица имён, запрещалось ужимать больше чем
+    на треть. На живой книге из-за этого не сходилась сама арифметика: даже
+    послушайся модель дословно, справочник остался бы в полтора предела.
+    """
+    tbl = sum(len(l) + 1 for l in part.splitlines() if l.startswith("|"))
+    prose = max(len(part) - tbl, 0)
+    return max(len(part) - over, tbl + prose // 3)
 
 
 def _sections(md):
@@ -1783,22 +1799,30 @@ def _condense_scout(merged, who, system, retries, log, out_path):
         return merged
     log("  " + T("scout_condense", len(merged), SCOUT_BUDGET), end="")
     parts = _sections(merged)
+    # Строки таблиц запоминаем на начало и сверяем с ними каждый заход, а не
+    # с предыдущим: по трети за раз от трёх заходов — это две трети имён.
+    keep = [_rows(p) for p in parts]
+    order = sorted(range(len(parts)), key=lambda k: -len(parts[k]))
     t0, cost, model = time.time(), 0.0, "?"
-    for i in sorted(range(len(parts)), key=lambda k: -len(parts[k])):
-        over = sum(map(len, parts)) - SCOUT_BUDGET
-        if over <= 0 or len(parts[i]) < SECTION_MIN:
+    # Заходов несколько: модель уступает не сразу и за раз отдаёт меньше, чем
+    # просят. Останавливаемся, как только уложились или очередной заход не дал
+    # ничего — дальше он только жжёт деньги.
+    for _ in range(SCOUT_ROUNDS):
+        was = sum(map(len, parts))
+        if was <= SCOUT_BUDGET:
             break
-        # Сколько просить, зависит от природы раздела. Таблица имён короче
-        # строк не станет, а строку из неё разрешено потерять только каждую
-        # третью — больше трети с неё и не спрашиваем, иначе ответ придётся
-        # отвергнуть. Проза ужимается и вдвое.
-        floor = len(parts[i]) * 2 // 3 if _rows(parts[i]) else len(parts[i]) // 2
-        short, meta = _shrink(parts[i], max(len(parts[i]) - over, floor),
-                              who, system, retries, log)
-        cost += meta.get("cost_usd") or 0
-        model = meta.get("model") or model
-        if short:
-            parts[i] = short
+        for i in order:
+            over = sum(map(len, parts)) - SCOUT_BUDGET
+            if over <= 0 or len(parts[i]) < SECTION_MIN:
+                break
+            short, meta = _shrink(parts[i], _floor(parts[i], over), keep[i],
+                                  who, system, retries, log)
+            cost += meta.get("cost_usd") or 0
+            model = meta.get("model") or model
+            if short:
+                parts[i] = short
+        if sum(map(len, parts)) >= was:
+            break
     now = "".join(parts)
     log(T("took", f"{time.time() - t0:.0f}",
           model + (f", ${cost:.2f}" if cost else "")))
@@ -1814,7 +1838,7 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     return now
 
 
-def _shrink(part, want, who, system, retries, log):
+def _shrink(part, want, keep, who, system, retries, log):
     """Сжать один раздел справочника. Вернуть его же, если вышло плохо."""
     ask = (
         f"Это раздел справочника по книге. Справочник уходит в каждый запрос "
@@ -1857,12 +1881,14 @@ def _shrink(part, want, who, system, retries, log):
     if head and head in short:
         short = short[short.index(head):]
 
-    # Сжатие принимаем не на слово. Вычеркнуть таблицу целиком — самый простой
-    # способ уложиться в предел, и обнаружилось бы это уже в переводе. Порог
-    # широкий: очевидные строки выбрасываются по заданию, и придирчивая мера
-    # запретила бы ровно то, ради чего сжатие затевалось.
-    was, now = _rows(part), _rows(short)
-    if len(short) >= len(part) or len(was - now) > len(was) / 3:
+    # Сжатие принимаем не на слово, и стеречь надо с двух сторон. Вычеркнуть
+    # таблицу целиком — самый простой способ уложиться в предел, и обнаружилось
+    # бы это уже в переводе. А в разделе без таблиц стеречь вовсе нечего: там
+    # мерой служит сама длина, потому что ответ короче половины запрошенного —
+    # это не сжатие, а выброшенный раздел.
+    now = _rows(short)
+    if len(short) >= len(part) or len(short) < want / 2 \
+            or len(keep - now) > len(keep) / 3:
         return None, meta
     return short, meta
 
