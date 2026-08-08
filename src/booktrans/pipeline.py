@@ -42,6 +42,7 @@ TERMS_BUDGET = 6000
 TERMS_TAIL = 1200      # сколько сверх отобранного добавить свежих терминов
 DIGEST_EVERY = 8        # как часто пересжимать конспект
 DIGEST_BUDGET = 4000    # предел его размера в знаках
+DIGEST_MIN = 400        # короче — не конспект книги, а обрывок
 HEAD_KINDS = ("title", "subtitle")
 
 
@@ -393,6 +394,31 @@ def accumulated_terms(state, upto, text=None):
     return out
 
 
+# Служебный вывод агента: попытка позвать инструмент, размышление вслух,
+# ответ оболочки. В конспект такое попадать не должно ни при каких условиях.
+TOOLCALL = re.compile(
+    r"<invoke\s+name=|</?function_calls>|<parameter\s+name=|"
+    r"<tool_use|antml:|File does not exist", re.I)
+
+
+def _parse_digest(out):
+    """Конспект ли это.
+
+    На живой книге агент вернул вместо конспекта собственное размышление с
+    вызовом инструмента — «сейчас загляну в файл… File does not exist», — и
+    эти триста знаков ушли в каждый запрос на перевод начиная с
+    семьдесят-третьего куска. Конвейер принял их молча: конспект нигде не
+    сверяется, он просто текст. Заметил редактор, и то потому, что читал.
+    """
+    out = out.strip()
+    m = TOOLCALL.search(out)
+    if m:
+        raise ValueError(f"не конспект, а служебный вывод агента: {m.group()!r}")
+    if len(out) < DIGEST_MIN:
+        raise ValueError(f"конспект короче {DIGEST_MIN} знаков: {out[:80]!r}")
+    return out, ""
+
+
 def condense(state, upto, agent, retries, log, fallback=None):
     """Накопительный конспект вместо скользящего окна.
 
@@ -420,8 +446,15 @@ def condense(state, upto, agent, retries, log, fallback=None):
         "## Конспект\n\n" + (digest or "(пока пусто)") +
         "\n\n## Что было дальше\n\n" + "\n\n".join(fresh))
     log("  " + T("digest_go"), end="")
-    (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
-                                    retries, lambda o: (o.strip(), ""), log)
+    try:
+        (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
+                                        retries, _parse_digest, log)
+    except (Refused, RuntimeError, Fatal) as e:
+        # Прежний конспект целее негодного нового: он уходит в каждый запрос
+        # на перевод и ошибётся не однажды, а на всём остатке книги.
+        log("")
+        log("    " + T("digest_kept", e))
+        return (digest + "\n\n" + "\n\n".join(fresh)).strip()
     state["digest"] = new
     state["digest_upto"] = upto - 1
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""

@@ -180,6 +180,23 @@ def main():
     ok("лимит не повторяют попытками", once.calls == 1,
        f"обращений {once.calls} вместо одного")
 
+    # Конспект уходит в каждый запрос на перевод, и негодный портит не один
+    # кусок, а весь остаток книги. На живой книге агент вернул вместо него
+    # собственное размышление с вызовом инструмента, и конвейер это принял.
+    good = "Автор рассказывает о старении и о способах его измерить. " * 10
+    for name, text, want in (
+            ("вызов инструмента", 'Сейчас загляну.\n<invoke name="Read">\n'
+                                  '</invoke>\nFile does not exist.', False),
+            ("ответ оболочки", good + "\nFile does not exist.", False),
+            ("обрывок", "Коротко.", False),
+            ("настоящий конспект", good, True)):
+        try:
+            P._parse_digest(text)
+            got = True
+        except ValueError:
+            got = False
+        ok(f"конспект: {name}", got == want, "принят" if got else "отвергнут")
+
     for name in PASSES:
         fn = getattr(P, name, None)
         ok(f"проход {name} принимает цепочку",
@@ -204,7 +221,7 @@ def main():
         ok(f"проход {name} доходит до запасной модели", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\nслучаев: {11 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
+    print(f"\nслучаев: {15 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

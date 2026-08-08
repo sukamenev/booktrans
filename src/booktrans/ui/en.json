@@ -39,6 +39,7 @@
   "done_notes": "processed {0}, already done {1}, notes proposed {2}",
   "retry": "attempt {0}: {1}",
   "digest_go": "condensing the digest ... ",
+  "digest_kept": "digest refused ({0}) — keeping the previous one",
   "digest_done": "{0} chars in {1} s [{2}]",
   "words_n": "{0} words",
   "ready_in": "done in {0} s [{1}]",
