@@ -12,6 +12,7 @@
     python3 tests/chain_check.py
 """
 import inspect
+import json
 import os
 import shutil
 import sys
@@ -197,6 +198,52 @@ def main():
             got = False
         ok(f"конспект: {name}", got == want, "принят" if got else "отвергнут")
 
+    # Объяснение лежит в json-конверте, а не в его первых знаках. По конверту
+    # решалось, лимит это или сбой, и в лог уходило `{"is_error":true,…` —
+    # человек не узнавал ни причины, ни того, ждать ему или менять модель.
+    stdout = type("R", (), {"stderr": ""})
+    env = json.dumps({"is_error": True, "duration_api_ms": 0,
+                      "session_id": "b652aebe", "total_cost_usd": 0,
+                      "usage": {"input_tokens": 0},
+                      "result": "Claude AI usage limit reached"})
+    stdout.stdout = env
+    ok("из конверта берут объяснение, а не служебные поля",
+       A.said(stdout) == "Claude AI usage limit reached", A.said(stdout))
+    ok("лимит виден по объяснению", bool(A.LIMIT_PAT.search(A.said(stdout))))
+    stdout.stdout = json.dumps({"is_error": True, "usage": {"input_tokens": 0},
+                                "result": "Prompt is too long"})
+    ok("обычный сбой за лимит не принимают",
+       not A.LIMIT_PAT.search(A.said(stdout)), A.said(stdout))
+
+    # Сбой у поставщика проходит сам, но не за секунду: три куска подряд без
+    # выдержки сгорают за один миг и останавливают прогон на ровном месте.
+    A.LIMITS.forget()
+    slept, real_sleep = [], P.time.sleep
+    P.time.sleep = slept.append
+    dead = Says("мёртвая", boom=AgentError("claude вернул 1: high traffic"))
+    dead.kind = "стенд"
+    d = tempfile.mkdtemp()
+    os.makedirs(f"{d}/prompts", exist_ok=True)
+    many = [{"index": i, "label": "", "words": 3, "blocks": BLOCKS}
+            for i in range(1, 6)]
+    done, _, halted = P.translate(d, many, dead, "", "", 1, hush)
+    P.time.sleep = real_sleep
+    shutil.rmtree(d, ignore_errors=True)
+    ok("после сбоя ждут, прежде чем взять следующий кусок",
+       slept[:2] == [60, 180], slept[:3])
+    ok("три сбоя подряд останавливают прогон, а не всю книгу",
+       halted and done == 0 and dead.calls == 3, (done, halted, dead.calls))
+
+    # Лимит сюда не относится: у него свои часы, и ждёт его `_hold`. Выдержка
+    # сверху удвоила бы простой.
+    A.LIMITS.note(A.key_of(dead), 900)
+    slept.clear()
+    P.time.sleep = slept.append
+    P._cool([dead], [1], hush)
+    P.time.sleep = real_sleep
+    A.LIMITS.forget()
+    ok("под лимитом лишней выдержки нет", slept == [], slept)
+
     for name in PASSES:
         fn = getattr(P, name, None)
         ok(f"проход {name} принимает цепочку",
@@ -221,7 +268,7 @@ def main():
         ok(f"проход {name} доходит до запасной модели", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\nслучаев: {15 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
+    print(f"\nслучаев: {21 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

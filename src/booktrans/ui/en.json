@@ -219,5 +219,8 @@
   "would_overwrite": "STOP: the output file would overwrite the source: {0}\n  Give it another name with -o.",
   "edits_unfinished": "UNFINISHED EDITS — {0} chunks where editing broke off",
   "edits_unfinished_item": "chunk {0}: edits stop at block {1} of {2}",
-  "edits_unfinished_hint": "They will not redo themselves: the file is written and resume counts them done. Re-edit with another model:  --only edit --chunks {0} --agent claude --model claude-opus-5"
+  "edits_unfinished_hint": "They will not redo themselves: the file is written and resume counts them done. Re-edit with another model:  --only edit --chunks {0} --agent claude --model claude-opus-5",
+  "fail_wait": "waiting {0} min after the failure, then the next chunk",
+  "no_backup": "The chain holds one model — there is nothing to fall back to.",
+  "run_halted": "Run stopped: the passes that follow call the same chain, and building a book with a hole would refuse anyway. What is done is saved, the next run picks it up."
 }

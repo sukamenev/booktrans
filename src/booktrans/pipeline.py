@@ -272,6 +272,12 @@ class Truncated(ValueError):
 
 RETRY_PAUSE = 5         # секунд перед повтором после сбоя у поставщика
 
+# Сколько ждать после куска, за который не взялась вся цепочка: минуту, потом
+# три, потом пять. Сбой у поставщика проходит сам, но не за секунду, а три
+# куска подряд без паузы сгорают за один миг — и прогон встаёт на ровном
+# месте. Лимит сюда не относится: у него свои часы, его ждёт `_hold`.
+FAIL_PAUSE = (60, 180, 300)
+
 
 def _run(agent, system, prompt, retries, parse_fn, log):
     cur = prompt
@@ -611,6 +617,20 @@ def _stop_row(refused, log, force=False, what="translate"):
     return True
 
 
+def _cool(who, refused, log):
+    """Переждать сбой, прежде чем брать следующий кусок.
+
+    Пауза только на сбое. Лимит выяснится сам: реестр знает, до какого часа
+    модель занята, и ждёт её `_hold` — накладывать сверху ещё пять минут
+    значит удваивать простой на ровном месте.
+    """
+    if all(agent_mod.limit_left(a) for a in who):
+        return
+    pause = FAIL_PAUSE[min(refused[0], len(FAIL_PAUSE)) - 1]
+    log("    " + T("fail_wait", max(pause // 60, 1)))
+    time.sleep(pause)
+
+
 # Перевод короче этой доли оригинала или длиннее этой — потеря или чужой
 # текст. Порог мягкий: на коротких строках отношение шумит, поэтому есть и
 # нижняя граница длины.
@@ -673,7 +693,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         log("  " + T("no_fingerprint"))
 
     done = skipped = 0
-    refused = [0]
+    refused, halted = [0], False
     for i, c in enumerate(chunks):
         idx = c["index"]
         if only and idx not in only:
@@ -745,9 +765,11 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                     last = getattr(e2, "first", last)
             if got is None:
                 log("    " + (T("refused_both", last) if backups
-                              else T("refused_hint", idx)))
+                              else T("no_backup") + " " + T("refused_hint", idx)))
                 if _stop_row(refused, log):
+                    halted = True
                     break
+                _cool([agent] + backups, refused, log)
                 continue
             (res, extra), meta, dt = got
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
@@ -777,7 +799,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         done += 1
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("ready_in", f"{dt:.0f}", f"{meta['model']}{cost}"))
-    return done, skipped
+    return done, skipped, halted
 
 
 def _parse_translate(out, expected):
@@ -1023,7 +1045,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             # Непроредактированный кусок остаётся переведённым и читаемым.
             with lock:
                 log("    " + T("edit_failed", idx))
-                halt[0] = _stop_row(refused, log, force, "edit")
+                # Об остановке говорим один раз: при jobs>1 сюда приходят все
+                # запущенные куски, и «ОСТАНОВКА: 7 отказа подряд» пять раз
+                # кряду выглядит так, будто счётчик сломался.
+                if not halt[0]:
+                    halt[0] = _stop_row(refused, log, force, "edit")
+            if not halt[0]:
+                _cool([mine] + _backups(fallback), refused, log)
             return
         out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
                "notes": notes, "blocks": ids,
@@ -1046,7 +1074,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 # Три оборванных куска подряд — дело уже не в книге, как и при
                 # переводе. При jobs>1 запущенные куски доработают: счёт идёт
                 # по приходящим ответам, а не по очереди.
-                halt[0] = _stop_row(refused, log, force, "edit")
+                if not halt[0]:
+                    halt[0] = _stop_row(refused, log, force, "edit")
             else:
                 refused[0] = 0
 
@@ -1065,7 +1094,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     else:
         for c in todo:
             one(c)
-    return done, skipped, total
+    return done, skipped, total, halt[0]
 
 
 def current(work, idx):

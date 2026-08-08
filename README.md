@@ -407,7 +407,14 @@ nothing already done is paid for twice.
 
 **Three refusals in a row stop the run.** One refusal is a contentious scene;
 three in a row mean it is no longer about the book — the model's policy
-changed, the quota ran out, the agent died.
+changed, the quota ran out, the agent died. The whole run stops, not just the
+pass: the passes that follow call the same chain, and building a book with a
+hole would refuse anyway.
+
+Between failures the pipeline waits — a minute, then three, then five. A
+provider's failure passes on its own, but not within a second, and three
+chunks in a row with no pause burn through in one instant. This does not apply
+to limits: those have their own time, the one the provider named.
 
 **Only editing can be forced** — with `--force-editing`. A chunk the editor
 would not touch stays readable, merely unpolished. Translation is another

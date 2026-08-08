@@ -57,6 +57,25 @@ def reset_after(msg):
     return h * 3600 + mi * 60 + sec
 
 
+def said(r):
+    """Что агент сказал, а не в чём он это принёс.
+
+    Объяснение лежит в json-конверте, в поле `result`, а первые триста знаков
+    конверта — служебные поля. Человек видел в логе
+    `{"is_error":true,"duration_api_ms":0,…` и не узнавал ни про лимит, ни про
+    запрет; по этим же знакам решалось, лимит это или сбой.
+    """
+    out = (r.stdout or "").strip()
+    try:
+        env = json.loads(out)
+        msg = env.get("result") or env.get("error") or env.get("message") or ""
+        if isinstance(msg, dict):
+            msg = msg.get("message") or json.dumps(msg, ensure_ascii=False)
+    except Exception:
+        msg = out
+    return " ".join(x for x in ((r.stderr or "").strip(), str(msg).strip()) if x)
+
+
 class Limits:
     """Кто из моделей сейчас под лимитом и до какого времени.
 
@@ -195,16 +214,10 @@ class ClaudeAgent(Agent):
         finally:
             os.unlink(tmp.name)
         if r.returncode != 0:
-            blob = (r.stderr or "") + (r.stdout or "")
-            if LIMIT_PAT.search(blob):
-                raise RateLimited(blob[:300])
             # Объяснение claude кладёт в stdout, внутрь json, а не в stderr.
-            # Брали только stderr — и человек видел пустое «вернул 1».
-            msg = (r.stderr or "").strip()
-            try:
-                msg = str(json.loads(r.stdout).get("result") or msg)
-            except Exception:
-                msg = msg or (r.stdout or "").strip()
+            msg = said(r)
+            if LIMIT_PAT.search(msg):
+                raise RateLimited(msg[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
             raise AgentError(f"claude вернул {r.returncode}: {msg[:400]}")
@@ -264,10 +277,10 @@ class CommandAgent(Agent):
             r = subprocess.run(tpl, shell=True, input=payload,
                                capture_output=True, text=True, timeout=self.timeout)
             if r.returncode != 0:
-                blob = (r.stderr or "") + (r.stdout or "")
-                if LIMIT_PAT.search(blob):
-                    raise RateLimited(blob[:300])
-                raise AgentError(f"агент вернул {r.returncode}: {r.stderr[:500]}")
+                msg = said(r)
+                if LIMIT_PAT.search(msg):
+                    raise RateLimited(msg[:300])
+                raise AgentError(f"агент вернул {r.returncode}: {msg[:400]}")
             return r.stdout, {"model": "custom", "cost_usd": None}
         finally:
             if tmp:
@@ -297,14 +310,9 @@ class AgyAgent(Agent):
         except Exception as e:
             raise AgentError(f"ошибка запуска agy: {e}")
         if r.returncode != 0:
-            blob = (r.stderr or "") + (r.stdout or "")
-            if LIMIT_PAT.search(blob):
-                raise RateLimited(blob[:300])
-            msg = (r.stderr or "").strip()
-            try:
-                msg = str(json.loads(r.stdout).get("error") or msg)
-            except Exception:
-                msg = msg or (r.stdout or "").strip()
+            msg = said(r)
+            if LIMIT_PAT.search(msg):
+                raise RateLimited(msg[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
             raise AgentError(f"agy вернул {r.returncode}: {msg[:400]}")
@@ -339,10 +347,10 @@ class CodexAgent(Agent):
         except Exception as e:
             raise AgentError(f"ошибка запуска codex: {e}")
         if r.returncode != 0:
-            blob = (r.stderr or "") + (r.stdout or "")
-            if LIMIT_PAT.search(blob):
-                raise RateLimited(blob[:300])
-            raise AgentError(f"codex вернул {r.returncode}: {r.stderr[:500]}")
+            msg = said(r)
+            if LIMIT_PAT.search(msg):
+                raise RateLimited(msg[:300])
+            raise AgentError(f"codex вернул {r.returncode}: {msg[:400]}")
         return r.stdout, {"model": self.model or "codex-default", "cost_usd": None}
 
 

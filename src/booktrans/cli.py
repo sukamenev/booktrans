@@ -751,9 +751,9 @@ def main():
         log(head("step_translate", n))
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(),
                           args.retries, log, fallback=backup_for("translator"))
-        d, s = pipeline.translate(work, chunks, agent_for("translator"), sysprompt(), task("translate"),
-                                  args.retries, log, only_chunks,
-                                  fallback=backup_for("translator"))
+        d, s, halted = pipeline.translate(
+            work, chunks, agent_for("translator"), sysprompt(), task("translate"),
+            args.retries, log, only_chunks, fallback=backup_for("translator"))
         # Листинги в перевод не идут, но комментарии в них — проза, и
         # читателю нужны они, а не английский подстрочник в коде.
         if args.code == "comments" and any(b["kind"] == "code" for b in blocks):
@@ -761,16 +761,29 @@ def main():
                                    sysprompt(), task("code"), args.retries, log,
                                    fallback=backup_for("translator"))
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
+        # Дальше идти незачем: следующие проходы зовут ту же цепочку, которая
+        # только что перестала отвечать, а сборка книги с дырой всё равно
+        # откажется. Прежде прогон послушно шёл до конца и печатал ещё десяток
+        # сбоев, за которыми терялась причина.
+        if halted:
+            log("")
+            log("  " + T("run_halted"))
+            return
 
     if "edit" in steps:
         n += 1
         log("")
         log(head("step_edit", n))
-        d, s, t = pipeline.edit(work, chunks, agent_for("editor"), sysprompt(), task("edit"),
-                                args.retries, log, only_chunks, args.jobs,
-                                fallback=backup_for("editor"),
-                                force=args.force_editing)
-        log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
+        d, s, t, halted = pipeline.edit(
+            work, chunks, agent_for("editor"), sysprompt(), task("edit"),
+            args.retries, log, only_chunks, args.jobs,
+            fallback=backup_for("editor"), force=args.force_editing)
+        if d or not halted:
+            log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
+        if halted:
+            log("")
+            log("  " + T("run_halted"))
+            return
 
     if "notes" in steps:
         n += 1
