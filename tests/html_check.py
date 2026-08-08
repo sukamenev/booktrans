@@ -53,6 +53,7 @@ def f(x):      # комментарий
 <p>Слово self-
 defense разорвано переносом, а short- or long-term нет.
 <ul><li>пункт первый<li>пункт второй<li>пункт третий<li>пункт четвёртый</ul>
+<ul><li class="c"><p class="c">пункт в обёртке абзаца</p></li></ul>
 <script>var x = "этого в книге быть не должно";</script>
 </body></html>
 """
@@ -79,6 +80,12 @@ def main():
     d = book()
     meta, blocks, cover, imgs = E.read_book(os.path.join(d, "book.html"))
     kinds = [(b["kind"], b["text"]) for b in blocks]
+
+    # `<li><p>текст</p></li>` — обычная вёрстка издательств, и брать текст надо
+    # из одного из двух. На живой книге брали из обоих: 173 повтора из 1130
+    # блоков, каждый переведён и оплачен дважды, и в книге он стоял два раза.
+    once = [t for k, t in kinds if t == "пункт в обёртке абзаца"]
+    ok("вложенный абзац не удваивает пункт", len(once) == 1, f"{len(once)} раза")
 
     ok("заглавие из <title>", meta.get("title") == "Пробная книга", meta)
     ok("автор из <meta>", meta.get("author") == "Иван Петров", meta)
@@ -153,7 +160,7 @@ def main():
        and "четвёртый" in li["samples"][-1], li["samples"] if li else "нет li")
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 24   с расхождениями: {bad}")
+    print(f"\nслучаев: 25   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
