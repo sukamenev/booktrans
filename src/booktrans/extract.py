@@ -346,7 +346,7 @@ def _spread(seen):
 def _scan_doc(root, seen):
     for el in root.iter():
         tag = re.sub(r"\{.*?\}", "", el.tag)
-        if tag not in ("h1", "h2", "h3", "h4", "p", "div", "li"):
+        if tag not in ("h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "li"):
             continue
         if _is_container(el):
             continue
@@ -678,7 +678,7 @@ def _doc_blocks(root, styles, get_image, stats):
             if t:
                 got.append(("code", t, [], ""))
             continue
-        if tag not in ("h1", "h2", "h3", "h4", "p", "div", "li"):
+        if tag not in ("h1", "h2", "h3", "h4", "h5", "h6", "p", "div", "li"):
             continue
         if _is_container(el):
             continue                      # контейнер, а не абзац
@@ -704,7 +704,12 @@ def _doc_blocks(root, styles, get_image, stats):
             continue
         if tag in ("h1", "h2"):
             kind = "title"
-        elif tag in ("h3", "h4"):
+        elif tag in ("h3", "h4", "h5", "h6"):
+            # h5 и h6 сюда не заглядывали вовсе, и в книге пропадали все
+            # подзаголовки внутри главы — на живой книге 142 штуки
+            # («Микроперерывы», «Учимся сосредоточиваться»). Пропажу выдал
+            # оставшийся от них шов: два одинаковых пункта подряд, конец
+            # одного списка и начало следующего, а заголовка между ними нет.
             kind = "subtitle"
         elif SUB_CLASS.search(cls):
             kind = "subtitle"        # раньше TITLE_CLASS: «Chap-Epigraph»

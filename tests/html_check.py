@@ -138,6 +138,24 @@ def main():
        sorted({b["id"].split(".")[0] for b in blocks}))
     shutil.rmtree(d)
 
+    # Подзаголовки внутри главы верстают и h5, и h6. Их не читали вовсе, и на
+    # живой книге пропало 142 штуки — вместе с ними исчезали границы между
+    # списками, и два одинаковых пункта оказывались соседями.
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "мелкие.html")
+    open(p, "w", encoding="utf-8").write(
+        "<html><body><h1>Глава</h1><p>Проза.</p>"
+        "<h5>Микроперерывы</h5><p>Ещё проза.</p>"
+        "<h6>Совсем мелкий</h6><p>И ещё.</p></body></html>")
+    _, small, _, _ = E.read_book(p)
+    got = [(b["kind"], b["text"]) for b in small]
+    ok("h5 и h6 доходят до книги подзаголовками",
+       ("subtitle", "Микроперерывы") in got
+       and ("subtitle", "Совсем мелкий") in got, got)
+    ok("перепись стилей видит h5", any(r["tag"] == "h5" for r in E.scan_styles(p)),
+       [r["tag"] for r in E.scan_styles(p)])
+    shutil.rmtree(d)
+
     # Картинок рядом не положили — читается всё равно.
     d = book(with_file=False)
     meta, blocks, cover, imgs = E.read_book(os.path.join(d, "book.html"))
@@ -160,7 +178,7 @@ def main():
        and "четвёртый" in li["samples"][-1], li["samples"] if li else "нет li")
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 25   с расхождениями: {bad}")
+    print(f"\nслучаев: 27   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
