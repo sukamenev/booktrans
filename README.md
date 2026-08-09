@@ -89,6 +89,8 @@ translation, adds footnotes and assembles the file.
 - **edits in a second pass**, deliberately without seeing the original;
 - **renders verse as verse**, quotes canonical texts from recognised
   translations;
+- **converts units** to the system the target reader uses — except inside
+  quotations, names and clinical measures;
 - **carries over** images, links, front and back matter, publication data;
 - **leaves code alone** in programming books, but translates the comments
   inside it;
