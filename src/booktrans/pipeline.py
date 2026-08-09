@@ -515,6 +515,34 @@ REFUSE_ROW = 3
 BY_BLOCK = ("tr", "src", "edits")
 
 
+def chunk_files(d):
+    """Файлы кусков в порядке записи: старые раньше, свежие позже.
+
+    Один и тот же блок лежит в двух файлах, когда нарезка сдвинулась: убрали
+    из книги повторы — и блок из пятьдесят девятого куска стал блоком
+    пятьдесят восьмого, а прежний файл остаётся лежать (стирать его нельзя,
+    там работа по другим блокам). Читали такие файлы по имени, и побеждал не
+    свежий перевод, а больший номер: кусок переводился заново, а в книгу шёл
+    прежний текст — молча и за деньги.
+
+    Порядок берём из отметки времени внутри файла; у файлов от прежних версий
+    её нет, для них — время самого файла.
+    """
+    if not os.path.isdir(d):
+        return []
+    out = []
+    for n in sorted(os.listdir(d)):
+        if not n.endswith(".json"):
+            continue
+        p = f"{d}/{n}"
+        try:
+            at = json.load(open(p, encoding="utf-8")).get("saved")
+        except Exception:                                 # noqa: BLE001
+            at = None
+        out.append((at if at is not None else os.path.getmtime(p), n, p))
+    return [(n, p) for _, n, p in sorted(out, key=lambda x: x[0])]
+
+
 def _save(path, obj, keep=True):
     """Записать файл куска целиком или никак.
 
@@ -539,6 +567,7 @@ def _save(path, obj, keep=True):
         for k in BY_BLOCK:
             if isinstance(was.get(k), dict) and isinstance(obj.get(k), dict):
                 obj[k] = {**was[k], **obj[k]}
+    obj["saved"] = time.time()      # по ней разрешается спор двух файлов
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1)
@@ -688,14 +717,11 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
     # готовность считаем по блокам, а не по именам файлов: если нарезка
     # изменилась, старый файл покроет не те блоки и оставит дыру
     have, old = {}, False
-    if os.path.isdir(f"{work}/tr"):
-        for n in sorted(os.listdir(f"{work}/tr")):
-            if not n.endswith(".json"):
-                continue
-            x = json.load(open(f"{work}/tr/{n}", encoding="utf-8"))
-            fp = x.get("src") or {}
-            old = old or not fp
-            have.update({k: fp.get(k) for k in x["tr"]})
+    for _, p_ in chunk_files(f"{work}/tr"):
+        x = json.load(open(p_, encoding="utf-8"))
+        fp = x.get("src") or {}
+        old = old or not fp
+        have.update({k: fp.get(k) for k in x["tr"]})
     if old:
         log("  " + T("no_fingerprint"))
 
@@ -842,15 +868,11 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     # править нечего, пустой файл правки ложился поверх старого, и сделанная
     # редактура пропадала кусок за куском.
     raw, whose = {}, {}
-    d = f"{work}/tr"
-    if os.path.isdir(d):
-        for n in sorted(os.listdir(d)):
-            if not n.endswith(".json"):
-                continue
-            x = json.load(open(f"{d}/{n}", encoding="utf-8"))
-            for k, v in x["tr"].items():
-                raw[k] = v
-                whose[k] = x.get("model") or ""
+    for _, p_ in chunk_files(f"{work}/tr"):
+        x = json.load(open(p_, encoding="utf-8"))
+        for k, v in x["tr"].items():
+            raw[k] = v
+            whose[k] = x.get("model") or ""
 
     # Что уже отредактировано — тоже по блокам, а не по номерам файлов. Кусок,
     # на котором правка оборвалась, считаем сделанным только до места обрыва.
@@ -1119,20 +1141,13 @@ def current(work, idx):
 def all_translations(work):
     """Черновик с наложенной редактурой + счётчик правок."""
     tr, edited = {}, 0
-    d = f"{work}/tr"
-    if os.path.isdir(d):
-        for n in sorted(os.listdir(d)):
-            if n.endswith(".json"):
-                tr.update(json.load(open(f"{d}/{n}", encoding="utf-8"))["tr"])
-    d = f"{work}/ed"
-    if os.path.isdir(d):
-        for n in sorted(os.listdir(d)):
-            if not n.endswith(".json"):
-                continue
-            for k, e in json.load(open(f"{d}/{n}", encoding="utf-8"))["edits"].items():
-                if k in tr:
-                    tr[k] = e["new"]
-                    edited += 1
+    for _, p_ in chunk_files(f"{work}/tr"):
+        tr.update(json.load(open(p_, encoding="utf-8"))["tr"])
+    for _, p_ in chunk_files(f"{work}/ed"):
+        for k, e in json.load(open(p_, encoding="utf-8"))["edits"].items():
+            if k in tr:
+                tr[k] = e["new"]
+                edited += 1
     return tr, edited
 
 

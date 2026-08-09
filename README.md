@@ -366,7 +366,9 @@ nothing given and nothing found, `prose_contemporary` is used.
 
 Progress lives in `<book>.work`. Interrupt at any point: finished work is
 skipped on restart. Readiness is judged **by blocks**, not by file names, so a
-change in chunking cannot leave a silent gap.
+change in chunking cannot leave a silent gap. When two chunk files claim the
+same block, the one written later wins — the fresher work, not the higher
+chunk number.
 
 Hit your subscription limits and the chunk goes to **the next model of the
 chain**, and the exhausted one is set aside until the provider says it will

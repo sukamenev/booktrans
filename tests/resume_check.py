@@ -127,7 +127,35 @@ def main():
        got["tr"]["s01.b0001"] == "переведён заново", got["tr"])
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 9   с расхождениями: {bad}")
+    # Оборотная сторона той же бережливости: блок остаётся лежать и в старом
+    # файле, и в новом. Читали их по имени — и побеждал не свежий перевод, а
+    # больший номер: кусок переводился заново, а в книгу шёл прежний текст.
+    d = tempfile.mkdtemp()
+    os.makedirs(d + "/tr")
+    P._save(d + "/tr/0059.json", {"index": 59, "tr": {"s17.b0224": "прежний"},
+                                  "src": {"s17.b0224": "aaa"}})
+    P._save(d + "/tr/0058.json", {"index": 58, "tr": {"s17.b0224": "свежий"},
+                                  "src": {"s17.b0224": "aaa"}})
+    ok("файлы кусков читаются в порядке записи",
+       [n for n, _ in P.chunk_files(d + "/tr")] == ["0059.json", "0058.json"],
+       [n for n, _ in P.chunk_files(d + "/tr")])
+    tr, _ = P.all_translations(d)
+    ok("побеждает свежая работа, а не больший номер",
+       tr["s17.b0224"] == "свежий", tr["s17.b0224"])
+    # У файлов прежних версий отметки времени внутри нет — порядок берётся по
+    # самому файлу, и правило продолжает работать.
+    for n in ("0058", "0059"):
+        x = json.load(open(f"{d}/tr/{n}.json", encoding="utf-8"))
+        x.pop("saved")
+        json.dump(x, open(f"{d}/tr/{n}.json", "w", encoding="utf-8"), ensure_ascii=False)
+    os.utime(d + "/tr/0059.json", (1, 1))
+    os.utime(d + "/tr/0058.json", (2, 2))
+    tr, _ = P.all_translations(d)
+    ok("без отметки порядок берётся по времени файла",
+       tr["s17.b0224"] == "свежий", tr["s17.b0224"])
+    shutil.rmtree(d)
+
+    print(f"\nслучаев: 12   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
