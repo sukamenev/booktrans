@@ -100,10 +100,13 @@
   "qa4_bad": "blocks in the source script: {0} (names and titles are usually fine)",
   "qa4_none": "none",
   "qa4_skip": "skipped: source and target use the same script ({0})",
-  "qa5": "5. TERMINOLOGY CONSISTENCY",
-  "qa5_none": "no rules (create work/terms.json: {\"Original\": \"translation\"})",
-  "qa5_bad": "{0} -> expected /{1}/, missing in {2} of {3}",
-  "qa_total": "TOTAL remarks: {0}   (blocking ones are sections 1, 2 and 5)",
+  "qa5": "5. FOOTNOTE REFERENCES  (the number must survive translation)",
+  "qa5_bad": "ERROR: {0} of {1} references lost — the note will sit at the end of the book with nothing pointing to it:",
+  "qa5_ok": "every reference is in place ({0})",
+  "qa6": "6. TERMINOLOGY CONSISTENCY",
+  "qa6_none": "no rules (create work/terms.json: {\"Original\": \"translation\"})",
+  "qa6_bad": "{0} -> expected /{1}/, missing in {2} of {3}",
+  "qa_total": "TOTAL remarks: {0}   (blocking ones are sections 1, 2, 5 and 6)",
   "prompt_own": "own prompt: {0}",
   "prompt_lost": "WARNING: protocol tokens missing from it: {0}. The parser looks for exactly those — footnotes, digest and terms will vanish without a sound.",
   "no_fingerprint": "some finished chunks come from an older version: there is nothing to check them against, so they are taken on trust. To redo them for certain, delete work/tr and work/ed",
@@ -222,5 +225,6 @@
   "edits_unfinished_hint": "They will not redo themselves: the file is written and resume counts them done. Re-edit with another model:  --only edit --chunks {0} --agent claude --model claude-opus-5",
   "fail_wait": "waiting {0} min after the failure, then the next chunk",
   "no_backup": "The chain holds one model — there is nothing to fall back to.",
-  "run_halted": "Run stopped: the passes that follow call the same chain, and building a book with a hole would refuse anyway. What is done is saved, the next run picks it up."
+  "run_halted": "Run stopped: the passes that follow call the same chain, and building a book with a hole would refuse anyway. What is done is saved, the next run picks it up.",
+  "qa2_spelled": "numbers the language spells out (\"in part one\", \"the eighties\") do not count: {0} blocks"
 }

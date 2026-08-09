@@ -102,7 +102,30 @@ def main():
     ok("в epub ссылки ведут в цели", el and not (el - ei), (sorted(el), sorted(ei)))
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 10   с расхождениями: {bad}")
+    # Ссылка на сноску, потерянная в переводе. Проверка чисел ловила такое
+    # вперемешку с десятками ложных тревог, и на живой книге три настоящие
+    # потери из 1048 ссылок терялись в этом шуме.
+    import json as _json
+    import tempfile as _tmp
+    from booktrans import build as _B, lang as _lang
+    _lang.set_ui("ru")
+    d = _tmp.mkdtemp()
+    os.makedirs(f"{d}/tr")
+    bl = [{"id": "s01.b0001", "kind": "p",
+           "text": "Первый факт.<sup>1</sup> И второй.<sup>2</sup>"},
+          {"id": "s01.b0002", "kind": "p", "text": "Третий факт.<sup>3</sup>"}]
+    _json.dump({"index": 1, "model": "стенд", "cost_usd": 0,
+                "tr": {"s01.b0001": "A fact.<sup>1</sup> And a second one.",
+                       "s01.b0002": "A third fact.<sup>3</sup>"}},
+               open(f"{d}/tr/0001.json", "w", encoding="utf-8"), ensure_ascii=False)
+    said = []
+    _B.qa(d, bl, lambda x="": said.append(x), _lang.T, "ru", "en", False)
+    txt = "\n".join(said)
+    ok("потерянная ссылка на сноску названа", "s01.b0001: 2" in txt, txt[-200:])
+    ok("ссылки сосчитаны", "1 из 3" in txt, txt[-200:])
+    shutil.rmtree(d, ignore_errors=True)
+
+    print(f"\nслучаев: 12   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

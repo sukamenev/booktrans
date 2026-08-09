@@ -2040,7 +2040,9 @@ def _mark_refs(blocks):
 
 
 def strip_tags(s):
-    return re.sub(r"<[^>]+>", "", s).strip()
+    # Тег начинается с буквы или косой черты: знак «меньше» в тексте
+    # («under <13 μmol/L») тегом не считается и текст за собой не уносит.
+    return re.sub(r"</?[a-zA-Z][^>]*>", "", s).strip()
 
 
 def read_book(path, styles=None, encoding=None, ask=None, marks=None):

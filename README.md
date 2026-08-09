@@ -305,7 +305,7 @@ in `work/structure.json`. If the book genuinely has no chapters, use
 | **translation** | chunks of ~2600 words, plus footnotes | the main work |
 | **editing** | second pass: calques, officialese, word order, seams | removes the traces of translation |
 | **assembly** | book with footnotes, images, structure | |
-| **checks** | completeness, numbers, lengths, stray source text, terminology | |
+| **checks** | completeness, numbers, lengths, stray source text, footnote references, terminology | |
 
 The reconnaissance reference goes into the system prompt of **every** request,
 together with a rolling context: the plot digest, the tail of the already

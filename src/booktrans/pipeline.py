@@ -47,11 +47,18 @@ HEAD_KINDS = ("title", "subtitle")
 
 
 def words(s):
-    return len(re.sub(r"<[^>]+>", " ", s).split())
+    return len(strip(s, " ").split())
 
 
-def strip(s):
-    return re.sub(r"<[^>]+>", "", s)
+# Тег, а не знак «меньше». В тексте попадается настоящее сравнение —
+# «keeping homocysteine under <13 μmol/L», — и жадное `<[^>]+>` съедало от
+# него всё до ближайшего `>`, то есть до начала следующего тега: полторы
+# фразы с числами. Тег всегда начинается с буквы или косой черты.
+TAG = re.compile(r"</?[a-zA-Z][^>]*>")
+
+
+def strip(s, sep=""):
+    return TAG.sub(sep, s)
 
 
 def fingerprint(t):

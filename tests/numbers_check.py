@@ -48,6 +48,20 @@ OCR = [
 ]
 
 
+# (текст оригинала, число, вычитается ли как «язык пишет это словом»).
+SPELLED = [
+    ("In part 1 of this book, I will draw on my own experience.", "1", True),
+    ("As discussed in chapter 12, the brain adapts.", "12", True),
+    ("Back in the 1980s and ’90s, a group of neuroscientists", "1980", True),
+    ("Back in the 1980s and ’90s, a group of neuroscientists", "90", True),
+    # Настоящие сведения рядом с теми же словами вычитаться не должны.
+    ("Part of the group, some 12 people, stayed home.", "12", False),
+    ("The chapter cites 40 studies on sleep.", "40", False),
+    ("In 1980 the study began, and it ran for years.", "1980", False),
+    ("They walked 90 kilometres that week.", "90", False),
+]
+
+
 def main():
     bad = 0
     print("  число, слипшееся со словом:")
@@ -64,7 +78,29 @@ def main():
         print(f"    {'вычтено ' if got else 'засчитано'}  {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}"
               f"  [{n}] {text[:52]}")
         bad += not ok
-    n = len(COMPOUND) + len(OCR)
+    print("  число, которое язык пишет словом:")
+    for text, num, want in SPELLED:
+        got = B._spelled(text, num)
+        ok = got == want
+        print(f"    {'вычтено ' if got else 'засчитано'}  {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}"
+              f"  [{num}] {text[:52]}")
+        bad += not ok
+    # Знак «меньше» в тексте — не тег. Жадное снятие тегов уносило вместе с
+    # ним всё до ближайшего `>`, то есть до начала следующего тега: полторы
+    # фразы с числами, и проверка объявляла их потерянными.
+    less = "keep it under <13 μmol/L, better <b>10–11</b> μmol.<sup>87</sup>"
+    print("  знак «меньше» и номер сноски:")
+    for name, cond in (
+            ("текст за «<» уцелел", "13" in B.strip(less) and "10–11" in B.strip(less)),
+            ("теги при этом сняты", "<b>" not in B.strip(less)),
+            ("числа найдены все", set(B._nums(less)) == {"13", "10", "11", "87"}),
+            # «0,4.<sup>116</sup>» — точка тут конец фразы, а не разделитель
+            # разрядов: склеивать 4 и 116 в 4116 нельзя.
+            ("сноска не склеивается с числом",
+             set(B._nums("норма 0,4.<sup>116</sup> Дальше текст.")) == {"0", "4", "116"})):
+        print(f"    {'совпадает' if cond else 'РАСХОЖДЕНИЕ':10}  {name}")
+        bad += not cond
+    n = len(COMPOUND) + len(OCR) + len(SPELLED) + 4
     print(f"\nслучаев: {n}   с расхождениями: {bad}")
     return 1 if bad else 0
 

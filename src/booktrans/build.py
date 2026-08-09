@@ -707,7 +707,10 @@ GSEP = re.compile(rf"[{re.escape(SEPS)}]")
 
 
 def _nums(t, group=True):
-    t = strip(t)
+    # Теги заменяем пробелом, а не пустотой: «0,4.<sup>116</sup>» иначе даёт
+    # «0,4.116», и разделитель разрядов склеивает число с номером сноски в
+    # несуществующее 4116 — проверка ругалась на здоровый перевод.
+    t = strip(t, " ")
     if group:
         t = GROUPED.sub(lambda m: GSEP.sub("", m.group()), t)
     return Counter(re.findall(r"\d+", t))
@@ -726,6 +729,19 @@ def _compound(t, n):
     обязана уцелеть.
     """
     return bool(re.search(rf"(?<![\w-]){re.escape(n)}-[^\W\d_]", t))
+
+
+# «part 1», «chapter 2» — отсылка внутрь самой книги, и по-русски она пишется
+# словом: «в первой части». Десятилетие тоже: «the 1980s and ’90s» → «в
+# восьмидесятых и девяностых». Число тут не сведение, а часть речи, и терять
+# его не страшно; а вот тонуть настоящей потере среди сорока таких строк —
+# страшно: раздел перестают читать.
+SPELLED = (r"(?i)\b(?:part|chapter|book|volume|section|step|rule|principle)\s+{n}\b",
+           r"\b(?:19|20)\d0s\b", r"[’']{n}0?s\b")
+
+
+def _spelled(s, n):
+    return any(re.search(p.replace("{n}", re.escape(n)), s) for p in SPELLED)
 
 
 def _ocr_digit(s, n):
@@ -994,7 +1010,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa1_ok", len(src)) + (T("qa1_edited", edited) if edited else ""))
 
     log(T("qa2"))
-    lost, junk, word, gained = [], set(), set(), []
+    lost, junk, word, gained, spelled = [], set(), set(), [], set()
     for i, s in src.items():
         if i not in tr:
             continue
@@ -1009,6 +1025,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
             bad = [x for x in bad if not _ocr_digit(s, x)]
         word |= {i for x in bad if _compound(s, x)}
         bad = [x for x in bad if not _compound(s, x)]
+        spelled |= {i for x in bad if _spelled(s, x)}
+        bad = [x for x in bad if not _spelled(s, x)]
         if bad:
             lost.append((i, bad))
         # Обратная сторона: цифра, которой в оригинале не было. Сверить её не
@@ -1032,6 +1050,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa2_ocr", len(junk)))
     if word:
         log("   " + T("qa2_word", len(word)))
+    if spelled:
+        log("   " + T("qa2_spelled", len(spelled)))
     if gained:
         log("   " + T("qa2_new", len(gained)))
         for i, x in gained[:5]:
@@ -1092,6 +1112,29 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa4_skip", ssc or "?"))
 
     # Раздела нет вовсе, когда нет правил: строка «правил нет» в каждом
+    # Ссылка на сноску — единственное место, где потеря видна наверняка:
+    # номер стоит и в оригинале, и в переводе, сверять его не с чем не надо.
+    # Пропадает она молча, сноска остаётся в конце книги без хозяина, а
+    # проверка чисел ловила такое вперемешку с десятками ложных тревог.
+    log(T("qa5"))
+    marks = re.compile(r"<sup>\s*(\d+)\s*</sup>")
+    lost_ref = []
+    for i, s in src.items():
+        if i not in tr:
+            continue
+        gone = Counter(marks.findall(s)) - Counter(marks.findall(tr[i]))
+        if gone:
+            lost_ref.append((i, sorted(gone.elements())))
+    total_ref = sum(len(marks.findall(s)) for s in src.values())
+    if lost_ref:
+        problems += len(lost_ref)
+        log("   " + T("qa5_bad", sum(len(x[1]) for x in lost_ref), total_ref))
+        for i, ns in lost_ref[:8]:
+            log(f"     {i}: {', '.join(ns)}")
+        _more(log, len(lost_ref) - 8, T)
+    else:
+        log("   " + T("qa5_ok", total_ref))
+
     # прогоне ничего не проверяет и читается как замечание. Про terms.json
     # сказано в README, там ему и место.
     rules = {}
@@ -1100,13 +1143,13 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         rules = {k: v for k, v in json.load(open(tp, encoding="utf-8")).items()
                  if not k.startswith("_")}
     if rules:
-        log(T("qa5"))
+        log(T("qa6"))
         for en, ru in rules.items():
             ids = [i for i, s in src.items() if re.search(re.escape(en), s, re.I)]
             bad = [i for i in ids if i in tr and not re.search(ru, tr[i], re.I)]
             if bad:
                 problems += len(bad)
-                log("   " + T("qa5_bad", repr(en), ru, len(bad), len(ids)))
+                log("   " + T("qa6_bad", repr(en), ru, len(bad), len(ids)))
                 for i in bad[:4]:
                     log(f"     {i}: {strip(tr[i])[:90]}")
 
