@@ -83,7 +83,9 @@ translation, adds footnotes and assembles the file.
   gender and declension, physical properties of things, how characters change;
 - **translates in chunks**, never crossing a boundary between narrators, with
   a cumulative plot digest and a shared list of accepted terms;
-- **proposes footnotes** and flags claims that contradict reality;
+- **proposes footnotes** and flags claims that contradict reality without
+  correcting the author: the text keeps the mistake, the footnote holds the
+  truth;
 - **edits in a second pass**, deliberately without seeing the original;
 - **renders verse as verse**, quotes canonical texts from recognised
   translations;
