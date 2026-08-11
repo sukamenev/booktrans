@@ -24,6 +24,10 @@ from booktrans import extract as E                       # noqa: E402
 
 PROSE = ("Он спустился в подвал и подцепил стрелку компаса к трансформатору, "
          "а потом смотрел, как она вертится.")
+# Абзац настоящей книжной прозы. Длина тут значима: задняя часть отличается от
+# главы не только цифрами, но и размером куска — на живой книге у глав средний
+# абзац 519–914 знаков, у примечаний и указателя 92–320.
+LONG = " ".join([PROSE] * 5)
 
 
 def refs(n, first=1, year=True, cont=True):
@@ -63,6 +67,22 @@ def marked(bs):
         b.pop("asis", None)
     E._mark_refs(bs)
     E._mark_cites(bs)
+    return [b["text"] for b in bs if b.get("asis")]
+
+
+def back(head, texts, before=(), after=()):
+    """Книга: проза, раздел с этим заголовком, иногда проза за ним."""
+    bs = blocks(list(before) or [LONG] * 12)
+    bs.append({"id": "s02.b0000", "kind": "title", "text": head})
+    bs += [{"id": f"s02.b{i:04d}", "kind": "p", "text": t}
+           for i, t in enumerate(texts, 1)]
+    if after:
+        bs.append({"id": "s03.b0000", "kind": "title", "text": "Глава вторая"})
+        bs += [{"id": f"s03.b{i:04d}", "kind": "p", "text": t}
+               for i, t in enumerate(after, 1)]
+    for b in bs:
+        b.pop("asis", None)
+    E._mark_back(bs)
     return [b["text"] for b in bs if b.get("asis")]
 
 
@@ -134,8 +154,38 @@ CASES = [
 ]
 
 
+# Задняя часть книги: раздел целиком, по трём признакам сразу.
+BACK = [
+    # Назван своим именем, стоит в конце, состоит из записей — помечается.
+    ("указатель", "Index", [f"термин номер {i}, {i * 7}, {i * 9}" for i in range(1, 12)], 11),
+    ("примечания", "Notes", cites(11), 11),
+    ("литература по-русски", "Список литературы", refs(6, cont=False), 6),
+
+    # Имя то, а содержимое — проза: не трогаем. Так выглядит глава, которую
+    # автор назвал «Источники нашего беспокойства».
+    ("проза под тем же заголовком", "Sources", [LONG + f" Было это в {1900 + i} году."
+                                                for i in range(1, 12)], 0),
+    # Содержимое то, а имени нет и ряд не начат: у книги бывает глава сплошь
+    # из дат и номеров.
+    ("записи без заголовка", "Chapter Twelve",
+     [f"термин номер {i}, {i * 7}, {i * 9}" for i in range(1, 12)], 0),
+    # Всё то же, но в начале книги: задняя часть на то и задняя.
+    ("указатель в начале", "Index", [f"термин номер {i}, {i * 7}" for i in range(1, 12)], 0),
+]
+
+
 def main():
     bad = 0
+    for name, head, texts, want in BACK:
+        early = name == "указатель в начале"
+        got = back(head, texts, [LONG] if early else [LONG] * 12,
+                   [LONG] * 12 if early else ())
+        okk = len(got) == want and LONG not in got
+        print(f"  {'задняя часть: ' + name:30} {'совпадает' if okk else 'РАСХОЖДЕНИЕ'}")
+        if not okk:
+            print(f"      ждали {want}, вышло {len(got)}")
+        bad += not okk
+
     for name, bs, want in CASES:
         got = marked(bs)
         ok = len(got) == want
@@ -149,7 +199,7 @@ def main():
             print("      ЗАХВАЧЕНА ПРОЗА")
             ok = False
         bad += not ok
-    print(f"\nслучаев: {len(CASES)}   с расхождениями: {bad}")
+    print(f"\nслучаев: {len(CASES) + len(BACK)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

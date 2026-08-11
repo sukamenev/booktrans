@@ -17,10 +17,11 @@ import subprocess
 import urllib.parse
 import zipfile
 import xml.etree.ElementTree as ET
-from .tune import (CAPTION_MAX, COL_LINES, COL_PAGES, HEAD_GAP, HEAD_MAX, 
-                   HEAD_NEAR, NOTE_GAP, NOTE_RUN, PDF_MAX_PER_PAGE, 
-                   PDF_MAX_RATIO, PDF_MIN_SIDE, PDF_SAME_MAX, REFS_HOLE, 
-                   REFS_RUN, REFS_STEP, REFS_TAIL, SKIP_MAX, TOC_PAGE)
+from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
+                   COL_LINES, COL_PAGES, HEAD_GAP, HEAD_MAX, HEAD_NEAR,
+                   NOTE_GAP, NOTE_RUN, PDF_MAX_PER_PAGE, PDF_MAX_RATIO,
+                   PDF_MIN_SIDE, PDF_SAME_MAX, REFS_HOLE, REFS_RUN,
+                   REFS_STEP, REFS_TAIL, SKIP_MAX, TOC_PAGE)
 
 XH = "{http://www.w3.org/1999/xhtml}"
 OPF = "{http://www.idpf.org/2007/opf}"
@@ -2012,6 +2013,87 @@ def _prune_notes(blocks):
     return n
 
 
+# Заголовок задней части книги. Ею книга кончается, и переводить её незачем:
+# по указателю и списку источников читатель ищет страницу и издание, а не
+# читает. Описаний картинок тут нарочно нет: они текст, и читателю, который
+# слушает книгу голосом, нужны на его языке.
+BACK_HEAD = re.compile(
+    r"^\W*(?:notes?|endnotes?|references?|bibliograph\w*|works\s+cited"
+    r"|index|illustration\s+credits?|sources?"
+    r"|примечани\w*|указател\w*|библиограф\w*"
+    r"|(?:список\s+)?литератур\w*|(?:список\s+)?источник\w*"
+    r"|anmerkungen|register|quellen|literaturverzeichnis"
+    r"|notas|índice|bibliografía|fuentes"
+    r"|索引|注釈|参考文献)\b", re.I)
+
+
+def _sections(blocks):
+    """Книга разделами: [(номер заголовка или -1, [номера блоков]), ...]."""
+    out, cur = [], (-1, [])
+    for i, b in enumerate(blocks):
+        if b["kind"] == "title":
+            out.append(cur)
+            cur = (i, [])
+        else:
+            cur[1].append(i)
+    out.append(cur)
+    return [s for s in out if s[1] or s[0] >= 0]
+
+
+def _reference_like(blocks, idx):
+    """Раздел из записей, а не из прозы.
+
+    Замерено на живой книге: у глав доля кусков с цифрой 0–87% при средней
+    длине 519–914 знаков, у примечаний и указателя — 97–100% при 92–320.
+    Признаки берём оба: по одной доле цифр глава про диабет неотличима от
+    списка источников.
+    """
+    ps = [blocks[i]["text"] for i in idx if blocks[i]["kind"] == "p"]
+    if len(ps) < BACK_MIN:
+        return False
+    digits = sum(1 for t in ps if re.search(r"\d", t)) / len(ps)
+    return digits >= BACK_DIGITS and sum(map(len, ps)) / len(ps) < BACK_LEN
+
+
+def _mark_back(blocks):
+    """Пометить заднюю часть книги: её не переводят.
+
+    Правило целиком механическое, и это нарочно. Задняя часть опознаётся по
+    трём признакам сразу, и ошибиться всем трём разом трудно: раздел стоит в
+    конце книги, состоит из записей, а не из прозы, и либо назван своим именем
+    («Notes», «Указатель»), либо продолжает уже опознанный ряд — так
+    подхватываются подразделы примечаний, названные как главы («PART II
+    CHRONIC KILLERS»).
+
+    Мера предосторожности одна и простая: заголовок раздела не трогаем. Он
+    переводится, и в готовой книге видно, где начинается непереведённое.
+    """
+    words = [len(b["text"].split()) for b in blocks]
+    total = sum(words) or 1
+    seen, n, back = 0, 0, False
+    for at, idx in _sections(blocks):
+        head = blocks[at]["text"] if at >= 0 else ""
+        start = seen
+        seen += sum(words[i] for i in idx) + (words[at] if at >= 0 else 0)
+        if start < total * BACK_TAIL:
+            back = False
+            continue
+        if not (BACK_HEAD.match(strip_tags(head)) or back):
+            back = False
+            continue
+        # Раздел из одного заголовка («Notes» отдельной страницей) сам ничего
+        # не помечает, но открывает ряд: за ним идут его подразделы.
+        if idx and not _reference_like(blocks, idx):
+            back = False
+            continue
+        back = True
+        for i in idx:
+            if not blocks[i].get("asis"):
+                blocks[i]["asis"] = True
+                n += 1
+    return n
+
+
 def _mark_refs(blocks):
     """Пометить список литературы: его переводить не надо.
 
@@ -2064,6 +2146,7 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None):
     ext = os.path.splitext(path)[1].lower()
     try:
         meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks)
+        _mark_back(blocks)      # сначала разделы целиком, потом записи
         _mark_refs(blocks)
         _mark_cites(blocks)     # до _prune_notes: правило смотрит на вид блока
         _prune_notes(blocks)
