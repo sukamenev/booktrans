@@ -620,6 +620,26 @@ To check without calling a model: `python3 tests/html_check.py`.
 
 ## Links
 
+**Out of a pdf the links are taken by a second reading.** `pdftotext` hands
+over bare text and the links vanish with it: an index stops being an index, a
+doi in a note becomes a string, and "Description 2" has nothing to click. The
+same poppler can hand over the markup (`pdftohtml -xml`), so the addresses come
+from there — three seconds on a 634-page book. Measured: 5374 links of the 7435
+the source carries.
+
+A link inside a pdf aims at a **page**, not a paragraph: nothing finer exists
+in the format. The target is the first block of that page, so an index entry
+leads to the start of the page the word sits on. A link that lands on itself (a
+note on the same page) is not made.
+
+The anchor is looked for in the blocks of its own page, in order. Not found —
+silently skipped: damaged text costs more than a lost link. What goes missing
+is anchors the layout broke mid-word or set in italics.
+
+**The index therefore stays usable.** It is not translated (see
+"Bibliographies"), but you can click it: the page numbers lead into the text.
+
+
 The author's outward links — site, social media, sources — are carried over as
 they are: the addresses live in the block, never pass through the model, and
 arrive byte for byte.

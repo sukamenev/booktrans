@@ -620,6 +620,8 @@ def main():
     heads = sum(1 for b in blocks if b["kind"] == "title")
     total_words = sum(c["words"] for c in chunks)
     log("  " + T("counts", paras, total_words, len(chunks), heads))
+    if meta.get("links"):
+        log("  " + T("links_found", meta["links"]))
     share = lang.target_share(blocks, args.to)
     if share > 0.9 and not args.force_translate and paras >= 20:
         log("")

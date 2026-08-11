@@ -91,6 +91,8 @@ def check(log=print, agent="claude"):
          _install_line(POPPLER), need=False)
     line(bool(shutil.which("pdfimages")), "pdfimages", T("doc_pdfimages"),
          _install_line(POPPLER), need=False)
+    line(bool(shutil.which("pdftohtml")), "pdftohtml", T("doc_pdftohtml"),
+         _install_line(POPPLER), need=False)
     line(any(shutil.which(e) for e in ("lualatex", "xelatex")), "lualatex",
          T("doc_tex"), _install_line(TEXLIVE), need=False)
     try:

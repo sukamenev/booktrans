@@ -1390,6 +1390,164 @@ def _pdf_text(path):
     return txt
 
 
+def _pdf_links(path):
+    """Ссылки книги: {страница: [(текст якоря, куда), ...]} в порядке чтения.
+
+    `pdftotext` отдаёт голый текст, и ссылки пропадают целиком: указатель
+    перестаёт быть указателем, по «Description 2» некуда нажать, а doi в
+    примечании становится строкой. Тот же poppler умеет отдать разметку —
+    читаем книгу вторым чтением, ради одних адресов. Стоит это секунды: разбор
+    книги в 634 страницы занял три.
+
+    Куда — либо номер страницы (внутренняя ссылка), либо адрес наружу.
+    Внутрь pdf целится страницей, а не абзацем: точнее в нём и не бывает.
+    """
+    if not _which("pdftohtml"):
+        return {}
+    try:
+        r = subprocess.run(["pdftohtml", "-xml", "-i", "-stdout", path],
+                           capture_output=True, text=True, timeout=900)
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    return _links_from_xml(r.stdout)
+
+
+def _links_from_xml(xml):
+    """Разбор разметки `pdftohtml -xml`. Отдельно от запуска — ради проверок."""
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return {}
+    out = {}
+    for pg in root.findall("page"):
+        seq, prev = [], -2
+        for k, txt in enumerate(pg.iter("text")):
+            for a in txt.findall("a"):
+                s, href = "".join(a.itertext()), a.get("href") or ""
+                # Склеиваем только соседние куски одной ссылки: «98–100» и «,»
+                # приходят разными строчками разметки. По одному лишь адресу
+                # склеивать нельзя — на странице описаний картинок одна и та
+                # же ссылка стоит и в начале абзаца, и в конце.
+                if seq and seq[-1][1] == href and k - prev <= 1:
+                    seq[-1] = (seq[-1][0] + s, href)
+                else:
+                    seq.append((s, href))
+                prev = k
+        got = []
+        for s, href in seq:
+            s = " ".join(s.split()).strip(" ,.;:")
+            frag = href.split("#", 1)[1] if "#" in href else ""
+            # Якорь в один знак — мусор вёрстки: у живой книги так пришли «I»
+            # и «.», обе на одну и ту же страницу. Цифра — не мусор: в
+            # указателе это номер страницы.
+            if len(s) < 2 and not s.isdigit():
+                continue
+            if frag.isdigit():
+                got.append((s, int(frag)))
+            elif href.startswith("http"):
+                got.append((s, href))
+        if got:
+            out[int(pg.get("number"))] = got
+    return out
+
+
+MARK = re.compile(r"</?a\d+>")
+
+
+def _find(pat, text, at):
+    """Совпадение, годное под якорь.
+
+    Два запрета. Внутри слова — не якорь: буква «I» так попадала внутрь
+    «Illderly». Внутри уже поставленного ярлыка — тем более: номер страницы
+    «28» из указателя совпадал с цифрами `<a28>`, и разметка рвалась пополам.
+    Второе случается там, где блок начался на одной странице, а кончился на
+    следующей: его перебирают дважды, и во второй раз ярлыки в нём уже стоят.
+    """
+    marks = [m.span() for m in MARK.finditer(text)]
+    while True:
+        m = pat.search(text, at)
+        if not m:
+            return None
+        inside = any(a < m.end() and m.start() < b for a, b in marks)
+        tail = m.end() == len(text) or not text[m.end()].isalnum()
+        if not inside and tail:
+            return m
+        at = m.end()
+
+
+def _put_links(blocks, links):
+    """Расставить ярлыки ссылок по блокам.
+
+    Ярлык — это `<a1>текст</a1>` в самом тексте, а адрес лежит рядом, в
+    `links` блока: через модель он не проходит и доезжает побайтово. Тем же
+    способом ссылки живут у epub, так что сборщику ничего объяснять не надо.
+
+    Якорь ищем по странице, с которой он пришёл, и по порядку: страница —
+    это десяток блоков, а не книга, и совпадение в ней однозначно. Не нашли
+    (перенос, курсив посреди якоря, обрывок вроде «g. 2.1» от «Fig. 2.1») —
+    молча мимо: ссылка меньшее из зол по сравнению с испорченным текстом.
+    """
+    by_page = {}
+    for i, b in enumerate(blocks):
+        if b.get("_page"):
+            by_page.setdefault(b["_page"], []).append(i)
+    first = {p: idx[0] for p, idx in by_page.items()}
+    later = sorted(first)
+
+    def target(page):
+        """Блок, на который целится ссылка. Страница без текста — берём
+        ближайшую следующую: пустая цель хуже неточной."""
+        at = next((p for p in later if p >= page), None)
+        return blocks[first[at]]["id"] if at is not None else None
+
+    put = 0
+    for page, anchors in sorted(links.items()):
+        # Блок начинается на одной странице, а кончается на следующей, и якорь
+        # с этой страницы стоит в нём. Поэтому смотрим и предыдущую.
+        spots = sorted(by_page.get(page - 1, [])[-1:] + by_page.get(page, []))
+        if not spots:
+            continue
+        at, pos = 0, 0
+        for text, dest in anchors:
+            url = dest if isinstance(dest, str) else None
+            if url is None:
+                tgt = target(dest)
+                if tgt is None:
+                    continue
+                url = "#" + tgt
+            # Пробел в якоре мог прийти переносом строки, поэтому ищем гибко.
+            pat = re.compile(r"\s+".join(re.escape(w) for w in text.split()))
+            here, cur, m = at, pos, None
+            while here < len(spots):
+                b = blocks[spots[here]]
+                m = _find(pat, b["text"], cur)
+                # Ссылка на самого себя — не ссылка: так размечен якорь, к
+                # которому ведут откуда-то ещё.
+                if m and url == "#" + b["id"]:
+                    m = None
+                    break
+                if m:
+                    break
+                here, cur, m = here + 1, 0, None
+            if not m:
+                continue        # не нашли — молча мимо, текст дороже ссылки
+            at, b = here, blocks[spots[here]]
+            lo = m.start()
+            # Якорь приходит без начала, если слово начинается с лигатуры:
+            # у «fig. 2.1» связка «fi» — отдельный знак вёрстки, и в разметке
+            # она остаётся снаружи ссылки, а внутри лежит «g. 2.1».
+            # Дотягиваем до начала слова: ссылка на пол-слова выглядит опечаткой.
+            while lo and b["text"][lo - 1].isalnum():
+                lo -= 1
+            b.setdefault("links", []).append(url)
+            n = len(b["links"])
+            b["text"] = (b["text"][:lo] + f"<a{n}>" + b["text"][lo:m.end()]
+                         + f"</a{n}>" + b["text"][m.end():])
+            pos = m.end() + len(f"<a{n}></a{n}>")
+            put += 1
+    return put
+
+
 def _pdf(path, marks=None):
     txt = _pdf_text(path)
     pages = txt.split("\f")
@@ -1399,6 +1557,7 @@ def _pdf(path, marks=None):
     meta, blocks, cover, images = _from_text(
         txt, os.path.splitext(os.path.basename(path))[0], marks, INDENT_PDF,
         set(imgs))
+    meta["links"] = _put_links(blocks, _pdf_links(path))
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
         # Обложкой считаем картинку с первой страницы, и только если она
