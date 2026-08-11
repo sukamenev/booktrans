@@ -86,7 +86,7 @@
   "qa1_bad": "untranslated: {0} of {1}, e.g. {2}",
   "tune_changed": "settings from {0}: {1}",
   "qa1_dropped": "the source lost {0} pieces ({1} words) on the way into the book — the table of contents and running heads are dropped on purpose",
-  "qa1_undone": "the layout pass called {0} pieces longer than a paragraph a running head — the mark was undone and the text kept",
+  "qa1_undone": "the layout pass threw away {0} pieces that do not look like waste — the mark was undone and the text kept",
   "qa1_ok": "all {0} blocks translated",
   "qa1_edited": " (edits applied: {0})",
   "qa2": "2. NUMBERS  (digits in the source must stay digits)",

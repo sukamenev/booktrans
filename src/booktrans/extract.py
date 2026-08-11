@@ -1203,8 +1203,11 @@ def _continues(prev, s):
     return bool(prev) and not CLOSED.search(prev) and s[:1].islower()
 
 
-def _undo_skip(paras, marks):
-    """Вернуть в книгу куски, помеченные `skip` по ошибке.
+def _undo_drop(paras, marks):
+    """Вернуть в книгу куски, помеченные на выброс по ошибке.
+
+    Выбрасывают две пометки, `skip` и `toc`, и ошибка в них тиха: текст не
+    портится, а исчезает, и хватиться его нечем.
 
     Колонтитул — это строка, а не абзац, и не продолжение фразы. Пометка `skip`
     выбрасывает кусок насовсем, и модель порой метит ею целые абзацы авторской
@@ -1215,14 +1218,26 @@ def _undo_skip(paras, marks):
     пропало слово «profession.» из середины предложения и середина
     библиографической записи, отчего адрес статьи достался соседней.
 
+    `toc` выбрасывает строку оглавления: в книгу оно не идёт, а собирается
+    заново по заголовкам. Но указатель устроен так же — имя, провал, номер
+    страницы, — и модель принимает его за оглавление. На живой книге так ушли
+    двести строк указателя, 1461 слово, одной сплошной полосой. Оглавление
+    стоит перед тем, что перечисляет, а указатель — под своим заголовком в
+    задней части книги, и заголовки эти конвейер знает и без модели.
+
     Ошибиться в другую сторону дешевле: лишняя строка в книге видна глазом,
     пропавшая не видна ничем.
     """
-    undone, prev = 0, ""
+    undone, prev, back = 0, "", False
     for i, p in enumerate(paras, 1):
         one = " ".join(p.split())
-        if marks.get(i) == "skip" and (len(one) > SKIP_MAX
-                                       or _continues(prev, one)):
+        kind = marks.get(i)
+        if kind == "title":
+            back = bool(BACK_HEAD.match(one))
+        if kind == "skip" and (len(one) > SKIP_MAX or _continues(prev, one)):
+            marks[i] = "p"
+            undone += 1
+        elif kind == "toc" and back:
             marks[i] = "p"
             undone += 1
         if marks.get(i) not in ("skip", "toc"):
@@ -2009,7 +2024,7 @@ def _from_text(txt, title, marks=None, indent=INDENT_TEXT, imgs=()):
     cand = collections.Counter(p for p in paras if looks_like_title(p))
     running = {p for p, n in cand.items() if n > 3}
 
-    undone = _undo_skip(paras, marks) if marks else 0
+    undone = _undo_drop(paras, marks) if marks else 0
 
     # Разметка от модели сильнее правил: она видела книгу, а правила — нет.
     if marks:
