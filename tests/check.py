@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Проверка разбора книг из набора — без единого обращения к модели.
+"""Все проверки конвейера — без единого обращения к модели.
 
-Читает каждую книгу и сверяет с описью `manifest.json`. Расхождение значит
-одно из двух: либо в разборе завелась ошибка, либо разбор стал лучше и опись
-пора обновить. Различить это может только человек, поэтому скрипт не
-исправляет опись сам.
+Сначала разбор книг из набора: каждая читается и сверяется с описью
+`manifest.json`. Расхождение значит одно из двух — либо в разборе завелась
+ошибка, либо разбор стал лучше и опись пора обновить. Различить это может
+только человек, поэтому скрипт не исправляет опись сам.
 
-    python3 tests/check.py            сверить
+Потом соседние `*_check.py` — по одному на своё правило. Список их нигде не
+записан, они просто берутся из этой же папки: заводя новую проверку, о ней
+нечего забыть, а забытая проверка — это проверка, которой нет.
+
+    python3 tests/check.py            сверить всё
+    python3 tests/check.py --books    только разбор книг
     python3 tests/check.py --update   принять нынешние числа за верные
 """
 import glob
 import json
 import os
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -99,5 +105,32 @@ def main():
     return 1 if bad else 0
 
 
+def others():
+    """Соседние проверки. Каждая — отдельный процесс: они правят настройки и
+    подменяют `time.sleep`, и в одном процессе мешали бы друг другу."""
+    bad, ran = 0, 0
+    for path in sorted(glob.glob(os.path.join(HERE, "*_check.py"))):
+        name = os.path.basename(path)[:-3]
+        r = subprocess.run([sys.executable, path], capture_output=True, text=True)
+        tail = [l for l in r.stdout.splitlines() if l.strip()]
+        ran += 1
+        if r.returncode == 0:
+            print(f"  {name:22s} {tail[-1] if tail else 'молча'}")
+            continue
+        bad += 1
+        print(f"  {name:22s} РАСХОЖДЕНИЯ")
+        for line in tail:
+            if "РАСХОЖДЕНИЕ" in line or line.startswith("случаев"):
+                print(f"        {line.strip()}")
+        if r.stderr.strip():
+            print(f"        {r.stderr.strip().splitlines()[-1]}")
+    print(f"\nпроверок: {ran}   с расхождениями: {bad}")
+    return bad
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    if "--update" not in sys.argv and "--books" not in sys.argv:
+        print()
+        code = 1 if others() else code
+    sys.exit(code)

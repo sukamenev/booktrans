@@ -20,8 +20,13 @@ python3 tests/check.py
 ```
 
 Reads every book and compares it against `manifest.json`: language, paragraph
-count, verse lines, headings, footnotes, links, images, cover. No model
-requests at all; it finishes in seconds. A mismatch means one of two things —
+count, verse lines, headings, footnotes, links, images, cover. Then it runs
+every `*_check.py` beside it — one per rule of the pipeline. Their list is
+written nowhere; they are simply picked up from this folder, so a new check
+needs no registering, and a check nobody remembers to run is a check that does
+not exist. No model requests at all; the whole thing finishes in seconds.
+
+To check the books alone, without the rules: `python3 tests/check.py --books`. A mismatch means one of two things —
 either extraction has broken, or extraction has improved. Only a human can
 tell which, so the manifest is never updated on its own. Once you have
 satisfied yourself that things got better:
