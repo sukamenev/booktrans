@@ -8,6 +8,7 @@ from collections import Counter
 from xml.sax.saxutils import escape
 
 from . import lang, output
+from .pipeline import _blockmap as pipe_blockmap
 from .pipeline import all_notes, all_translations, strip
 from .tune import CAPTION
 
@@ -384,8 +385,7 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
     # Список литературы и листинги в книгу идут как есть: они не переводились
     # и непереведёнными не считаются. В листинге переведены комментарии — их
     # ставит на место code.swap, кода не касаясь.
-    cp = f"{work}/code.json"
-    listings = json.load(open(cp, encoding="utf-8")) if os.path.exists(cp) else {}
+    listings = pipe_blockmap(f"{work}/code.json")
     for b in blocks:
         if b.get("asis"):
             tr.setdefault(b["id"], listings.get(b["id"], b["text"]))

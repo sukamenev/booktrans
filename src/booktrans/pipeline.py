@@ -523,7 +523,7 @@ def chunk_files(d):
     return [(n, p) for _, n, p in sorted(out, key=lambda x: x[0])]
 
 
-def _save(path, obj, keep=True):
+def _save(path, obj, keep=True, stamp=True):
     """Записать файл куска целиком или никак.
 
     При `--jobs > 1` соседний поток читает хвост предыдущего куска ровно
@@ -547,11 +547,27 @@ def _save(path, obj, keep=True):
         for k in BY_BLOCK:
             if isinstance(was.get(k), dict) and isinstance(obj.get(k), dict):
                 obj[k] = {**was[k], **obj[k]}
-    obj["saved"] = time.time()      # по ней разрешается спор двух файлов
+    # Метка нужна там, где на один блок притязают два файла: спор решается по
+    # времени записи. У сплошных карт «блок → работа» (`ocrfix.json`,
+    # `code.json`) спорить не с кем, а метка легла бы к ним как блок с именем
+    # `saved` — и проход, считающий работу по блокам, падал на ней.
+    if stamp:
+        obj["saved"] = time.time()
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1)
     os.replace(tmp, path)
+
+
+def _blockmap(path):
+    """Карта «блок → сделанная работа». Метку времени, если она туда попала от
+    прежних выпусков, снимаем: блока с именем `saved` не бывает."""
+    try:
+        out = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out.pop("saved", None)
+    return out
 
 
 def _backups(fallback):
@@ -1409,7 +1425,7 @@ def code_comments(work, blocks, agent, system, task, retries, log,
     from . import code as C
     who = [agent] + _backups(fallback)
     p = f"{work}/code.json"
-    done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    done = _blockmap(p)
     todo = [b for b in blocks if b["kind"] == "code" and b["id"] not in done]
     if not todo:
         if done:
@@ -1438,7 +1454,7 @@ def code_comments(work, blocks, agent, system, task, retries, log,
             text, k = C.splice(b["text"], got.get(b["id"], []))
             done[b["id"]] = text
             n += k
-    _save(p, done)
+    _save(p, done, stamp=False)
     log(T("took", f"{time.time() - t:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
     log("  " + T("code_done", n, len(todo)))
@@ -1506,7 +1522,7 @@ def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
     сходятся дословно и проходят `fix_ok`. Переписать книгу она не может.
     """
     p = f"{work}/ocrfix.json"
-    done = json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+    done = _blockmap(p)
     todo = [b for b in blocks if b["id"] not in done and not b.get("asis")
             and b["kind"] in ("p", "verse", "note", "table", "title") and b["text"].strip()]
     if not todo:
@@ -1542,7 +1558,7 @@ def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
             n += len(keep)
         # Пишем после каждого окна: проход идёт десятками окон, и прерванный
         # на тридцатом не должен терять все тридцать.
-        _save(p, done)
+        _save(p, done, stamp=False)
     log(T("took", f"{time.time() - t0:.0f}",
           f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
     log("  " + T("fix_done", n, len(todo)) + (T("fix_bad", bad) if bad else ""))

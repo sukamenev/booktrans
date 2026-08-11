@@ -76,6 +76,26 @@ def main():
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
 
+    # Метка времени решает спор двух файлов кусков за один блок. У сплошных
+    # карт «блок → работа» спорить не с кем, и метка легла бы туда как блок с
+    # именем `saved`: проход, считающий работу по блокам, падал на ней с
+    # «object of type float has no len()».
+    import tempfile
+    d = tempfile.mkdtemp()
+    chunk, flat = f"{d}/0001.json", f"{d}/ocrfix.json"
+    P._save(chunk, {"index": 1, "tr": {"s01.b0001": "перевод"}})
+    P._save(flat, {"s01.b0001": ["правка"]}, stamp=False)
+    got = json.load(open(chunk, encoding="utf-8"))
+    ok("файл куска метку получает", "saved" in got, sorted(got))
+    got = json.load(open(flat, encoding="utf-8"))
+    ok("сплошная карта — нет", "saved" not in got, sorted(got))
+    # А если метка уже легла от прежнего выпуска — снимаем при чтении.
+    got["saved"] = 123.4
+    json.dump(got, open(flat, "w", encoding="utf-8"))
+    ok("прежняя метка снимается при чтении", "saved" not in P._blockmap(flat),
+       sorted(P._blockmap(flat)))
+    ok("нет файла — пустая карта", P._blockmap(f"{d}/нет.json") == {})
+
     ok("отпечаток не зависит от пробелов и разметки",
        P.fingerprint("Текст  <b>жирный</b>\nдальше")
        == P.fingerprint("Текст <b>жирный</b> дальше"))
@@ -155,7 +175,7 @@ def main():
        tr["s17.b0224"] == "свежий", tr["s17.b0224"])
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 12   с расхождениями: {bad}")
+    print(f"\nслучаев: 16   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
