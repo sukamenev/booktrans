@@ -18,7 +18,8 @@ import urllib.parse
 import zipfile
 import xml.etree.ElementTree as ET
 from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
-                   COL_LINES, COL_PAGES, HEAD_GAP, HEAD_MAX, HEAD_NEAR,
+                   COL_LINES, COL_PAGES, HEAD_GAP, HEAD_LETTERS, HEAD_MAX,
+                   HEAD_NEAR,
                    NOTE_GAP, NOTE_RUN, PDF_MAX_PER_PAGE, PDF_MAX_RATIO,
                    PDF_MIN_SIDE, PDF_SAME_MAX, REFS_HOLE, REFS_RUN,
                    REFS_STEP, REFS_TAIL, SKIP_MAX, TOC_PAGE)
@@ -1192,8 +1193,63 @@ HEAD_LINES, HEAD_SHARE, HEAD_MIN = 2, 0.15, 4
 TOC_LINE = re.compile(r"\S[ \t]{2,}\d{1,4}[ \t]*$")
 
 
+# Чем кончается закрытая фраза. Кавычки и скобки закрывающие: цитата и вставка
+# кончаются ими, а не точкой.
+CLOSED = re.compile(r"[.!?…:;»\"'’)\]]\s*$")
+
+
+def _continues(prev, s):
+    """Обрывок ли `s` незакрытой фразы `prev`."""
+    return bool(prev) and not CLOSED.search(prev) and s[:1].islower()
+
+
+def _undo_skip(paras, marks):
+    """Вернуть в книгу куски, помеченные `skip` по ошибке.
+
+    Колонтитул — это строка, а не абзац, и не продолжение фразы. Пометка `skip`
+    выбрасывает кусок насовсем, и модель порой метит ею целые абзацы авторской
+    прозы: на живой книге так пропало 53 абзаца, 2277 слов, и ни одна проверка
+    этого не увидела — они смотрят на собранную книгу, а потеря случилась
+    раньше. Второй случай той же беды: подача формы кончает абзац, и фраза,
+    перешедшая на новую страницу, приходит отдельным куском в одно слово; так
+    пропало слово «profession.» из середины предложения и середина
+    библиографической записи, отчего адрес статьи достался соседней.
+
+    Ошибиться в другую сторону дешевле: лишняя строка в книге видна глазом,
+    пропавшая не видна ничем.
+    """
+    undone, prev = 0, ""
+    for i, p in enumerate(paras, 1):
+        one = " ".join(p.split())
+        if marks.get(i) == "skip" and (len(one) > SKIP_MAX
+                                       or _continues(prev, one)):
+            marks[i] = "p"
+            undone += 1
+        if marks.get(i) not in ("skip", "toc"):
+            prev = one
+    return undone
+
+
 def _running_key(s):
     return re.sub(r"\W+", "", re.sub(r"\d+", "", s), flags=re.U).lower()
+
+
+# Номер страницы: одно число, вокруг — только вёрстка («— 127 —», «· 12 ·»).
+# Два числа это уже не номер, а обрывок текста: «7.4).», «020-00778-1.».
+PAGE_NUM = re.compile(r"^\W*\d{1,4}\W*$")
+
+
+def _head_key(s):
+    """Ключ строки для сравнения с соседними — или None, если сравнивать нечем.
+
+    Цифры из ключа выброшены нарочно, иначе «THE SCIENTIST 127» и «…128» будут
+    разными строками. Но там, где цифры и есть содержание, от строки остаётся
+    общая рубашка: адреса `https://doi.org/10.1038/…` все сводились к ключу
+    `httpsdoiorgs`, набирали повторов и снимались как колонтитул.
+    """
+    k = _running_key(s)
+    body = re.sub(r"\W+", "", s, flags=re.U)
+    return k if k and len(k) >= len(body) * HEAD_LETTERS else None
 
 
 def _head_often(cand, at, pages, dirty):
@@ -1269,9 +1325,12 @@ def _strip_running(txt, dirty=False):
     for k, p in enumerate(pages):
         lines = [l.strip() for l in p.split("\n") if l.strip()]
         for l in lines[:HEAD_LINES] + lines[-HEAD_LINES:]:
-            if len(l) <= HEAD_MAX and not (toc[k] and TOC_LINE.search(l)):
-                cand[_running_key(l)] += 1
-                at[_running_key(l)].append(k)
+            if len(l) > HEAD_MAX or (toc[k] and TOC_LINE.search(l)):
+                continue
+            key = _head_key(l)
+            if key:
+                cand[key] += 1
+                at[key].append(k)
     often = _head_often(cand, at, len(pages), dirty)
 
     out = []
@@ -1283,11 +1342,12 @@ def _strip_running(txt, dirty=False):
             s = lines[i].strip()
             if len(s) > HEAD_MAX or (toc[pg] and TOC_LINE.search(s)):
                 continue
-            k = _running_key(s)
-            if not k:
-                drop.add(i)          # номер страницы и прочее без букв
-            elif k in often or any(difflib.SequenceMatcher(None, k, o).ratio() > 0.8
-                                   for o in often):
+            k = _head_key(s)
+            if PAGE_NUM.match(s):
+                drop.add(i)          # номер страницы
+            elif k and (k in often
+                        or any(difflib.SequenceMatcher(None, k, o).ratio() > 0.8
+                               for o in often)):
                 drop.add(i)
         gone |= {lines[i].strip() for i in drop}
         out.append("\n".join(l for i, l in enumerate(lines) if i not in drop))
@@ -1452,6 +1512,8 @@ def _links_from_xml(xml):
 
 
 MARK = re.compile(r"</?a\d+>")
+# Ярлык целиком, вместе с тем, что он охватывает.
+LABEL = re.compile(r"<a(\d+)>.*?</a\1>", re.S)
 
 
 def _find(pat, text, at):
@@ -1462,8 +1524,14 @@ def _find(pat, text, at):
     «28» из указателя совпадал с цифрами `<a28>`, и разметка рвалась пополам.
     Второе случается там, где блок начался на одной странице, а кончился на
     следующей: его перебирают дважды, и во второй раз ярлыки в нём уже стоят.
+
+    Занятым считается ярлык вместе с охваченным текстом, а не одни его скобки.
+    Иначе второй якорь с тем же словом («figure 4.3» пришло двумя кусками
+    вёрстки) вставал внутрь первого, и получалось `<a1><a2>…</a2></a1>` —
+    ссылка в ссылке, которой не бывает ни в fb2, ни в epub.
     """
-    marks = [m.span() for m in MARK.finditer(text)]
+    marks = [m.span() for m in LABEL.finditer(text)] \
+        + [m.span() for m in MARK.finditer(text)]
     while True:
         m = pat.search(text, at)
         if not m:
@@ -1941,17 +2009,7 @@ def _from_text(txt, title, marks=None, indent=INDENT_TEXT, imgs=()):
     cand = collections.Counter(p for p in paras if looks_like_title(p))
     running = {p for p, n in cand.items() if n > 3}
 
-    # Колонтитул — это строка, а не абзац. Пометка `skip` выбрасывает кусок
-    # насовсем, и модель порой метит ею целые абзацы авторской прозы: на живой
-    # книге так пропало 53 абзаца, 2277 слов, и ни одна проверка этого не
-    # увидела — они смотрят на уже собранную книгу, а потеря случилась раньше.
-    # Ошибиться в другую сторону дешевле: лишний абзац виден, пропавший — нет.
-    undone = 0
-    if marks:
-        for i, p in enumerate(paras, 1):
-            if marks.get(i) == "skip" and len(" ".join(p.split())) > SKIP_MAX:
-                marks[i] = "p"
-                undone += 1
+    undone = _undo_skip(paras, marks) if marks else 0
 
     # Разметка от модели сильнее правил: она видела книгу, а правила — нет.
     if marks:

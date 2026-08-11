@@ -18,6 +18,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
+from booktrans import extract as E                       # noqa: E402
 from booktrans import format as F                        # noqa: E402
 
 # (имя, куски, пометки модели, что должно выйти).
@@ -67,6 +68,24 @@ CASES = [
      [("p", "Он лежал в постели и слушал крик.")]),
 ]
 
+# Та же беда с другой стороны: `skip` выбрасывает кусок насовсем, и модель
+# метит им не только колонтитулы. Что вернуть, а что оставить выброшенным —
+# (имя, куски, пометки, какие номера обязаны вернуться).
+UNDO = [
+    ("короткий обрывок за незакрытой фразой",
+     ["о чём мало говорят в медицинской", "профессии."], {2: "skip"}, [2]),
+    ("после закрытой фразы не возвращаем",
+     ["Он ушёл и больше не вернулся.", "выходные данные"], {2: "skip"}, []),
+    ("с прописной не возвращаем",
+     ["строка без знака в конце", "THE SCIENTIST"], {2: "skip"}, []),
+    # Выброшенный кусок не считается предыдущим: за колонтитулом идёт не
+    # продолжение фразы, а следующий колонтитул.
+    ("за выброшенным куском не возвращаем",
+     ["Конец главы.", "www.example.com", "@example"], {2: "skip", 3: "skip"}, []),
+    ("длинный абзац возвращаем и после точки",
+     ["Он ушёл и больше не вернулся.", "А" * 200], {2: "skip"}, [2]),
+]
+
 
 def main():
     bad = 0
@@ -78,7 +97,16 @@ def main():
             print(f"      ждали: {want}")
             print(f"      вышло: {got}")
         bad += not ok
-    print(f"\nслучаев: {len(CASES)}   с расхождениями: {bad}")
+    for name, paras, marks, want in UNDO:
+        marks = dict(marks)
+        E._undo_skip(paras, marks)
+        got = sorted(i for i, m in marks.items() if m == "p")
+        ok = got == want
+        print(f"  {name:34} {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}")
+        if not ok:
+            print(f"      ждали вернуть: {want}   вышло: {got}")
+        bad += not ok
+    print(f"\nслучаев: {len(CASES) + len(UNDO)}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

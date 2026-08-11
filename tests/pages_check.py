@@ -50,8 +50,9 @@ def pages(head, n=12, num=True, foot=None, extra=None):
             lines.append(" " * 20 + h)
         lines += ["    " + body(i, "first"), body(i, "second"), REPEAT,
                   body(i, "third"), body(i, "fourth")]
-        if foot:
-            lines.append(foot)
+        f = foot(i) if callable(foot) else foot
+        if f:
+            lines.append(f)
         if num:
             lines.append(" " * 34 + str(i + 6))
         out.append("\n".join(lines))
@@ -83,6 +84,19 @@ CONTENTS = ("\n".join(f"{n}: {t}" + " " * 20 + str(20 + n * 4) for n, t in
             enumerate(["Weaning", "Two Beliefs", "Suckling", "Transition",
                        "Hyperspace", "Major Transitions"], 1)))
 
+# Примечания: страница за страницей кончается адресом статьи. Цифры в нём и
+# есть содержание, а ключ, из которого цифры выброшены, у всех записей один —
+# `httpsdoiorgs`. Правило сочло их одной повторяющейся строкой и сняло из живой
+# книги 47 ссылок разом.
+def DOI(i):
+    return f"https://doi.org/10.1038/s4159{i}-0{i % 7}4-0{i}96{i}-x."
+
+
+# Обрывок фразы, перешедший на новую страницу. Букв в нём нет, и раньше он шёл
+# за номер страницы: «7.4).» от «(fig. 7.4).», хвост адреса от записи выше.
+FRAGMENT = (lambda i: "7.4)." if i == 5 else
+            ("020-00778-1." if i == 9 else None))
+
 # Страницы 2 и 3 есть и в книге из трёх страниц.
 KEEP = [body(2, "first"), body(3, "fourth"), REPEAT]
 
@@ -106,6 +120,14 @@ CASES = [
     # Та же строка, но повторяется в разных концах книги — это не колонтитул.
     ("повтор вразброс", pages(lambda i: "Weaning" if i % 9 == 0 else None,
                               n=MANY), [], KEEP + ["Weaning"]),
+    # Ссылки на статьи стоят у края страницы всю библиотеку подряд, но
+    # колонтитулом не становятся: одинаковое у них только начало адреса.
+    ("ссылки на статьи не колонтитул", pages(None, n=MANY, foot=DOI),
+     ["\n13"], KEEP + [DOI(7), DOI(20), DOI(39)]),
+    # Номер страницы — одно число. Два числа в строке значат, что это обрывок
+    # текста, и снимать его нельзя.
+    ("обрывок с цифрами — не номер", pages(SHORT, n=MANY, foot=FRAGMENT),
+     [SHORT, "\n13"], KEEP + ["7.4).", "020-00778-1."]),
 ]
 
 # Случаи, где текст грязный: распознавание портит колонтитул каждый раз
