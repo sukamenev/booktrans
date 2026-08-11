@@ -19,7 +19,8 @@ import re
 import shlex
 import sys
 
-from . import build, doctor, extract, lang, pipeline
+from . import build, doctor, extract, lang, pipeline, tune
+from .tune import config_dir
 from .agent import make_agent
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,23 +93,6 @@ PROMPTS = os.path.join(HERE, "prompts")
 # будет только на собранной книге. Поэтому перекрытый промпт сверяется с
 # исходным: пропал знак — конвейер скажет об этом до первого запроса.
 TOKENS = re.compile(r"<<<[A-Z]+(?=[ >])|^[A-Z]{2,10}:", re.M)
-
-
-def config_dir():
-    """Папка настроек пользователя — своя на каждой системе.
-
-    Стандартной библиотеке такое неизвестно; ради этих пяти строк существует
-    пакет `platformdirs`, но тянуть зависимость в проект с одной-единственной
-    незачем. На Linux спрашиваем `XDG_CONFIG_HOME` (обычно она не задана, и
-    соглашение предписывает `~/.config`), на прочих системах — их места.
-    """
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or os.path.expanduser("~/AppData/Roaming")
-    elif sys.platform == "darwin":
-        base = os.path.expanduser("~/Library/Application Support")
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "booktrans")
 
 
 def prompt_roots():
@@ -395,6 +379,12 @@ def main():
     T = lang.set_ui(args.ui)
     log("")
     log(build.banner(args.ui))
+    # Настройки из `tune.conf` меняют поведение конвейера молча, а лежат они
+    # не в рабочей папке книги: забытая строка объяснит потом много странного.
+    if tune.CHANGED:
+        log("  " + T("tune_changed", tune.path(),
+                     ", ".join(f"{k} {a}→{b}" for k, (a, b) in
+                               sorted(tune.CHANGED.items()))))
     log("")
 
     if args.check:

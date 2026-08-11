@@ -9,8 +9,8 @@ from xml.sax.saxutils import escape
 
 from . import lang, output
 from .pipeline import all_notes, all_translations, strip
+from .tune import CAPTION
 
-CAPTION = 160       # длиннее строка под снимком — уже не подпись
 # Оговорка у цитаты, приведённой по чужому переводу. Умолчание на случай,
 # если в правилах языка строки нет: молчать тут нельзя — читатель примет
 # цитату за сверенную.
@@ -1033,6 +1033,14 @@ def _script_of_text(texts):
     return best if most >= 200 else None
 
 
+def _meta(work):
+    """Что чтение записало о книге. Нет файла — нечего и говорить."""
+    try:
+        return json.load(open(f"{work}/book.json", encoding="utf-8")).get("meta") or {}
+    except (OSError, ValueError):
+        return {}
+
+
 def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     T = T or lang.T
     src = {b["id"]: b["text"] for b in blocks
@@ -1048,6 +1056,15 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa1_bad", len(missing), len(src), missing[:6]))
     else:
         log("   " + T("qa1_ok", len(src)) + (T("qa1_edited", edited) if edited else ""))
+    # Полнота считалась от собранной книги, а до неё текст успевает пропасть:
+    # разметка выбрасывает колонтитулы и оглавление, а заодно, случается, и
+    # авторские абзацы. Сверять это может только чтение — там ещё виден
+    # исходник, — но сказать вслух должны проверки.
+    meta = _meta(work)
+    if meta.get("dropped"):
+        log("   " + T("qa1_dropped", meta["dropped"], meta.get("dropped_words", 0)))
+    if meta.get("skip_undone"):
+        log("   " + T("qa1_undone", meta["skip_undone"]))
 
     log(T("qa2"))
     lost, junk, word, gained = [], set(), set(), []

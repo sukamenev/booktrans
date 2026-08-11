@@ -988,6 +988,7 @@ lib/pipeline.py        chunking, scouting, translation, editing, footnotes
 lib/build.py           assembly, checks
 lib/output.py          epub, html, txt, tex, pdf writers (fb2 lives in build.py)
 lib/lang.py            target language, interface, language detection
+lib/tune.py            every tunable number of the pipeline
 prompts/*.md           the task for each pass
 langs/*.md             target language rules
 ui/*.json              interface messages
@@ -999,6 +1000,27 @@ The governing principle: **anything that can be done deterministically is not
 given to the model.** The model translates prose. Headings, footnotes, links,
 sweeping replacements and the translator's-note marker are the assembler's
 job. Every paragraph carries a stable id, and nothing can go missing unnoticed.
+
+## Tuning
+
+Thresholds and sizes live in one file — `src/booktrans/tune.py`: how many words
+go into a chunk, how many characters the glossary may take, at what length a
+line stops being a running head. Next to every number is what changing it
+costs; the thresholds are asymmetric, and a miss one way is dearer than the
+other.
+
+There is no need to edit the source: put your own values in `tune.conf` beside
+the prompts and profiles (`~/.config/booktrans/tune.conf`), one number a line.
+
+```
+SKIP_MAX = 120
+TARGET_WORDS = 2000
+FAIL_PAUSE = (30, 90)
+```
+
+A name not on the list is skipped silently: a typo must not change behaviour
+behind your back. What was overridden is printed at startup — a forgotten line
+would otherwise explain a lot of strangeness later.
 
 ## Spending
 

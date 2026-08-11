@@ -8,6 +8,7 @@ import os
 import re
 import zipfile
 from xml.sax.saxutils import escape
+from .tune import TEX_HEAD
 
 FB2_INLINE = {
     "i": "emphasis", "em": "emphasis",
@@ -612,7 +613,6 @@ def _tex_table(text, spans=None):
 
 
 
-TEX_HEAD = 55       # столько знаков названия влезает в колонтитул
 TEX_ENGINES = ("lualatex", "xelatex")
 
 
