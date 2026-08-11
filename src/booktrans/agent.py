@@ -37,24 +37,63 @@ class RateLimited(AgentError):
     """Кончились лимиты подписки. Не ошибка запроса — надо подождать."""
 
 
-LIMIT_PAT = re.compile(
-    r"usage limit|rate limit|limit reached|quota|too many requests|"
-    r"resets? (at|in)|try again later|429|overloaded|capacity|"
-    r"upgrade your subscription", re.I)
+# Об исчерпанной подписке поставщики пишут кто во что горазд: «usage limit»,
+# «session limit», «out of credits», «Quota exceeded», «resets 12:50am». Список
+# фраз за ними не поспевает, и цена промаха несимметрична: неузнанный запрет
+# уходит по ветке сбоя и валит прогон, тогда как принятый за запрет сбой стоит
+# четверти часа. Поэтому ловим не фразы, а две вещи, без которых такого
+# сообщения не бывает: слово о нехватке — и названный срок возвращения.
+SCARCE = (r"\b(?:limits?|quotas?|allowance|credits?|balance|throttl\w*|"
+          r"exhaust\w*|insufficient|congestion|429|529)\b|"
+          r"too many requests|ran out|out of (?:credits|tokens|quota|capacity)|"
+          r"overloaded|at capacity|upgrade your")
+# Названный срок сам по себе признак: так пишут только о запрете на время.
+COMEBACK = (r"resets?\b|try again|retry (?:after|in|later)|"
+            r"available again|come back|wait (?:until|for)\b")
+LIMIT_PAT = re.compile(SCARCE + "|" + COMEBACK, re.I)
+
+# Слово «limit» есть и там, где дело не в подписке, а в размере запроса.
+# Такое ожиданием не лечится: ждать сутки, чтобы отправить тот же длинный
+# кусок, — чистый простой.
+SIZE_PAT = re.compile(r"too long|too large|context (?:window|length|limit)|"
+                      r"maximum (?:context|length|tokens)|token limit|"
+                      r"input length|prompt is too", re.I)
+
+
+def limited(msg):
+    """Это запрет на время, который пройдёт сам?"""
+    msg = msg or ""
+    return not SIZE_PAT.search(msg) and bool(LIMIT_PAT.search(msg))
+
 
 # «Resets in 3h7m54s» — поставщик сам говорит, когда снимет запрет. Ждать
 # вслепую по четверти часа глупо, когда названо точное время.
 RESET_IN = re.compile(r"resets? in\s+(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?",
                       re.I)
 
+# «resets 12:50am» — то же самое, но по часам. Пояс поставщик пишет свой, а
+# время показывает наше, местное.
+RESET_AT = re.compile(r"resets?(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
+
 
 def reset_after(msg):
     """Через сколько секунд поставщик обещает снять запрет. 0 — не сказал."""
     m = RESET_IN.search(msg or "")
-    if not m or not any(m.groups()):
+    if m and any(m.groups()):
+        h, mi, sec = (int(x) if x else 0 for x in m.groups())
+        return h * 3600 + mi * 60 + sec
+    m = RESET_AT.search(msg or "")
+    if not m:
         return 0
-    h, mi, sec = (int(x) if x else 0 for x in m.groups())
-    return h * 3600 + mi * 60 + sec
+    h, mi = int(m.group(1)), int(m.group(2) or 0)
+    half = (m.group(3) or "").lower()
+    if half:
+        h = h % 12 + (12 if half == "pm" else 0)
+    if h > 23 or mi > 59:
+        return 0
+    now = time.localtime()
+    left = (h - now.tm_hour) * 3600 + (mi - now.tm_min) * 60 - now.tm_sec
+    return left if left > 0 else left + 86400
 
 
 def said(r):
@@ -122,6 +161,36 @@ def key_of(a):
 
 def limit_left(a):
     return LIMITS.left(key_of(a))
+
+
+PING_SYS = "Answer with a single word."
+PING_ASK = "Reply with the word: ok"
+
+
+def alive(a):
+    """Отвечает ли модель хоть что-нибудь — на вопрос, в котором нечему не
+    понравиться.
+
+    Список запретных фраз всегда отстаёт: поставщик волен завтра написать про
+    исчерпанную подписку словами, которых в нём нет, и тогда запрет пойдёт по
+    ветке сбоя и остановит прогон на всю ночь. Поэтому там, где цена ошибки
+    высока, мы не гадаем по сообщению, а спрашиваем: два слова без книги, без
+    справочника и без правил. Ответила — дело было в куске. Не ответила и на
+    это — дело в доступе, и ждать надо, а не считать отказом.
+
+    Молчание сразу заносим в реестр: конвейер спрашивает не чаще раза на кусок,
+    и без записи он пошёл бы к той же модели со следующим куском.
+    """
+    try:
+        out, _ = a.run(PING_SYS, PING_ASK)
+        if (out or "").strip():
+            return True
+    except Fatal:
+        raise           # нет доступа или такой модели: ждать нечего
+    except Exception:                                        # noqa: BLE001
+        pass
+    LIMITS.note(key_of(a), getattr(a, "interval", 900))
+    return False
 
 
 class WaitingAgent:
@@ -216,7 +285,7 @@ class ClaudeAgent(Agent):
         if r.returncode != 0:
             # Объяснение claude кладёт в stdout, внутрь json, а не в stderr.
             msg = said(r)
-            if LIMIT_PAT.search(msg):
+            if limited(msg):
                 raise RateLimited(msg[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
@@ -224,12 +293,12 @@ class ClaudeAgent(Agent):
         try:
             env = json.loads(r.stdout)
         except json.JSONDecodeError:
-            if LIMIT_PAT.search(r.stdout):
+            if limited(r.stdout):
                 raise RateLimited(r.stdout[:300])
             raise AgentError(f"ответ не json: {r.stdout[:300]}")
         if env.get("is_error"):
             msg = str(env.get("result"))
-            if LIMIT_PAT.search(msg):
+            if limited(msg):
                 raise RateLimited(msg[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
@@ -278,7 +347,7 @@ class CommandAgent(Agent):
                                capture_output=True, text=True, timeout=self.timeout)
             if r.returncode != 0:
                 msg = said(r)
-                if LIMIT_PAT.search(msg):
+                if limited(msg):
                     raise RateLimited(msg[:300])
                 raise AgentError(f"агент вернул {r.returncode}: {msg[:400]}")
             return r.stdout, {"model": "custom", "cost_usd": None}
@@ -311,7 +380,7 @@ class AgyAgent(Agent):
             raise AgentError(f"ошибка запуска agy: {e}")
         if r.returncode != 0:
             msg = said(r)
-            if LIMIT_PAT.search(msg):
+            if limited(msg):
                 raise RateLimited(msg[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
@@ -348,7 +417,7 @@ class CodexAgent(Agent):
             raise AgentError(f"ошибка запуска codex: {e}")
         if r.returncode != 0:
             msg = said(r)
-            if LIMIT_PAT.search(msg):
+            if limited(msg):
                 raise RateLimited(msg[:300])
             raise AgentError(f"codex вернул {r.returncode}: {msg[:400]}")
         return r.stdout, {"model": self.model or "codex-default", "cost_usd": None}

@@ -80,13 +80,22 @@ RUNS = {
 
 
 class Says:
-    """Отвечает, что велено, или падает тем, чем велено."""
+    """Отвечает, что велено, или падает тем, чем велено.
 
-    def __init__(self, model, boom=None, answer="готово"):
+    `deaf` — молчит и на проверочный вопрос. Этим отличается модель, у которой
+    кончился доступ, от модели, которой не понравился кусок: вторая на «скажи
+    ok» отвечает.
+    """
+
+    def __init__(self, model, boom=None, answer="готово", deaf=False):
         self.model, self.boom, self.answer = model, boom, answer
-        self.calls = 0
+        self.deaf, self.calls = deaf, 0
 
     def run(self, system, user):
+        if user == A.PING_ASK:
+            if self.deaf:
+                raise self.boom or AgentError("молчит")
+            return "ok", {"model": self.model, "cost_usd": 0}
         self.calls += 1
         if self.boom:
             raise self.boom
@@ -94,11 +103,12 @@ class Says:
 
 
 def main():
-    bad = 0
+    bad, seen = 0, 0
     said = []
 
     def ok(name, cond, got=""):
-        nonlocal bad
+        nonlocal bad, seen
+        seen += 1
         print(f"  {name:52} {'совпадает' if cond else 'РАСХОЖДЕНИЕ'}"
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
@@ -209,11 +219,49 @@ def main():
     stdout.stdout = env
     ok("из конверта берут объяснение, а не служебные поля",
        A.said(stdout) == "Claude AI usage limit reached", A.said(stdout))
-    ok("лимит виден по объяснению", bool(A.LIMIT_PAT.search(A.said(stdout))))
+    ok("лимит виден по объяснению", A.limited(A.said(stdout)))
     stdout.stdout = json.dumps({"is_error": True, "usage": {"input_tokens": 0},
                                 "result": "Prompt is too long"})
     ok("обычный сбой за лимит не принимают",
-       not A.LIMIT_PAT.search(A.said(stdout)), A.said(stdout))
+       not A.limited(A.said(stdout)), A.said(stdout))
+
+    # Поставщик пишет про лимит по-разному, а цена ошибки несимметрична:
+    # неузнанный лимит идёт по ветке сбоя и валит прогон на три часа раньше
+    # срока, вместо того чтобы дождаться снятия.
+    for msg, want in (("You've hit your session limit · resets 12:50am", True),
+                      ("5-hour limit reached ∙ resets 8pm", True),
+                      ("usage limit reached, resets in 3h7m54s", True),
+                      ("Claude AI usage limit reached", True),
+                      ("You are out of credits", True),
+                      ("Quota exceeded for this project", True),
+                      ("Your balance is too low", True),
+                      ("Please retry after 60 seconds", True),
+                      ("The service is currently at capacity", True),
+                      ("Prompt is too long", False),
+                      ("input length exceeds the model's token limit", False),
+                      ("API Error: Response stalled mid-stream.", False),
+                      ("ответ не json", False)):
+        ok(f"лимит опознан: {msg[:34]}", A.limited(msg) == want)
+
+    # Названный час снятия лучше слепой четверти часа, но только если его
+    # правильно прочли: «12:50am» — это ноль часов пятьдесят минут, а не
+    # полдень, и «resets 8pm» — сегодня, если день ещё не кончился.
+    now = A.time.localtime()
+    for msg, want in (("resets in 1h30m", 5400),
+                      ("resets in 45s", 45),
+                      ("resets 12:50am", None),
+                      ("resets at 3pm", None),
+                      ("resets 23:15", None),
+                      ("resets 12pm", None),
+                      ("нет ни слова о сроке", 0),
+                      ("resets 99:99", 0)):
+        got = A.reset_after(msg)
+        if want is None:
+            h, mi = {"resets 12:50am": (0, 50), "resets at 3pm": (15, 0),
+                     "resets 23:15": (23, 15), "resets 12pm": (12, 0)}[msg]
+            want = (h - now.tm_hour) * 3600 + (mi - now.tm_min) * 60 - now.tm_sec
+            want += 0 if want > 0 else 86400
+        ok(f"срок снятия: {msg}", abs(got - want) <= 1, f"{got} вместо {want}")
 
     # Сбой у поставщика проходит сам, но не за секунду: три куска подряд без
     # выдержки сгорают за один миг и останавливают прогон на ровном месте.
@@ -233,6 +281,28 @@ def main():
        slept[:2] == [60, 180], slept[:3])
     ok("три сбоя подряд останавливают прогон, а не всю книгу",
        halted and done == 0 and dead.calls == 3, (done, halted, dead.calls))
+
+    # Тот же сбой, но модель молчит и на «скажи ok». Список запретных фраз
+    # всегда отстаёт от поставщика, и разбирать, какими словами он объяснил
+    # запрет, ненадёжно: спросим у него что-нибудь заведомо безобидное.
+    # Молчание значит, что дело не в куске, — такое ждут, а не считают отказом.
+    A.LIMITS.forget()
+    mute = Says("немая", boom=AgentError("claude вернул 1: не пойми что"),
+                deaf=True)
+    mute.kind, mute.max_wait = "стенд", 5
+    ok("молчащая модель признана недоступной", not A.alive(mute))
+    ok("недоступность занесена в реестр", A.limit_left(mute) > 0)
+
+    A.LIMITS.forget()
+    slept.clear()
+    P.time.sleep = slept.append
+    d = tempfile.mkdtemp()
+    os.makedirs(f"{d}/prompts", exist_ok=True)
+    P.translate(d, many, mute, "", "", 1, hush)
+    P.time.sleep = real_sleep
+    shutil.rmtree(d, ignore_errors=True)
+    ok("незнакомый запрет уводит в ожидание, а не в выдержку после сбоя",
+       slept and 60 not in slept, slept[:4])
 
     # Лимит сюда не относится: у него свои часы, и ждёт его `_hold`. Выдержка
     # сверху удвоила бы простой.
@@ -268,7 +338,7 @@ def main():
         ok(f"проход {name} доходит до запасной модели", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\nслучаев: {21 + len(PASSES) + len(RUNS)}   с расхождениями: {bad}")
+    print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

@@ -288,7 +288,7 @@ FAIL_PAUSE = (60, 180, 300)
 
 def _run(agent, system, prompt, retries, parse_fn, log):
     cur = prompt
-    stops, last = [], None
+    stops, last, err = [], None, None
     for attempt in range(1, retries + 1):
         if STOP.is_set():
             raise KeyboardInterrupt
@@ -324,6 +324,7 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             # пауза, наоборот, лишняя — там дело не в сервере, а в тексте.
             if isinstance(e, AgentError) and attempt < retries:
                 time.sleep(min(RETRY_PAUSE * attempt, RETRY_PAUSE * 4))
+            err = e
             cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
                             "Верни РОВНО требуемые идентификаторы, каждый один раз.")
     if last is not None:
@@ -331,6 +332,13 @@ def _run(agent, system, prompt, retries, parse_fn, log):
         # Через Refused его подхватит запасная модель; RuntimeError валил
         # весь прогон, и подстраховка, ради которой её и задают, не звалась.
         raise Refused(last.first, last.n, last.total) from None
+    # Ни одна попытка не дошла до ответа, и по сообщению непонятно, в чём
+    # дело. Спрашиваем саму модель, жива ли она: молчание в ответ на «скажи
+    # ok» значит одно и то же, какими бы словами поставщик ни объяснял
+    # запрет, — и тогда это не отказ, а ожидание.
+    if isinstance(err, AgentError) and not agent_mod.alive(agent):
+        log("    " + T("probe_dead", getattr(agent, "model", "?")))
+        raise RateLimited(str(err))
     raise RuntimeError("исчерпаны попытки")
 
 

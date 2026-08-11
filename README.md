@@ -379,6 +379,12 @@ Waiting only happens when every model of the chain is out, and then it waits
 for the one that recovers soonest, not for its own — by default up to a day.
 Disable with `--wait 0`.
 
+**A ban is recognised even without familiar wording.** Providers phrase it
+however they like, a list of phrases never keeps up, and an unrecognised ban
+used to stop the run instead of waiting it out. So a chunk that never got
+through ends with a two-word probe: if the model answers, the trouble was in
+the chunk; if it stays silent, the trouble is access — and that is waited out.
+
 ## Parallelism
 
 **Translation is always sequential, and that is deliberate.** Each chunk leans
