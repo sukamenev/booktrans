@@ -23,6 +23,7 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_ROUNDS, SCOUT_WORDS,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
+                   TWIN_LEN, TWIN_NEAR,
                    VERSE_GROUP)
 
 HEAD_KINDS = ("title", "subtitle")
@@ -764,6 +765,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         open(f"{work}/prompts/{idx:04d}.txt", "w", encoding="utf-8").write(prompt)
 
         expected = [b["id"] for b in translatable(c["blocks"])]
+        srcs = {b["id"]: b["text"] for b in translatable(c["blocks"])}
         log(f"[{idx:04d}/{len(chunks):04d}] {c['label'][:24]:24s} "
             + T("words_n", f"{c['words']:5d}") + " ... ", end="")
         # Вся цепочка под лимитом — переждать; иначе кусок объявили бы
@@ -777,7 +779,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         try:
             (res, extra), meta, dt = _run(
                 agent, system, prompt, retries,
-                lambda o: _parse_translate(o, expected), log)
+                lambda o: _parse_translate(o, expected, srcs), log)
         except (Refused, RuntimeError, Fatal) as e:
             # Отказ и сбой поставщика тут равны: кусок не переведён, а
             # следующая модель цепочки может и взяться. Прежде ловился один
@@ -803,7 +805,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 log("    " + T("refused_retry", getattr(fb, "model", "?")))
                 try:
                     got = _run(fb, system, prompt, retries,
-                               lambda o: _parse_translate(o, expected), log)
+                               lambda o: _parse_translate(o, expected, srcs), log)
                     break
                 except (Refused, RuntimeError, Fatal) as e2:
                     last = getattr(e2, "first", last)
@@ -846,12 +848,43 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
     return done, skipped, halted
 
 
-def _parse_translate(out, expected):
+def _near(a, b):
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def _twins(res, src, order):
+    """Два соседних блока с одним и тем же переводом при разных оригиналах.
+
+    Отвечая на длинный ряд похожих абзацев — описания рисунков, строки
+    указателя, — модель теряет счёт и повторяет перевод соседа, а один
+    оригинал остаётся непереведённым вовсе. Разбору это не видно: все
+    идентификаторы на месте, пустых нет, отпечатки сходятся. На живой книге
+    так пропало восемь описаний рисунков из шестидесяти восьми, и заметила
+    это только проверка чисел на собранной книге.
+    """
+    def one(t):
+        return " ".join(strip(t).split())
+
+    for a, b in zip(order, order[1:]):
+        ta, tb = one(res.get(a, "")), one(res.get(b, ""))
+        if len(ta) < TWIN_LEN or _near(ta, tb) < TWIN_NEAR:
+            continue
+        sa, sb = one(src.get(a, "")), one(src.get(b, ""))
+        if sa and sb and _near(sa, sb) < TWIN_NEAR:
+            return a, b
+    return None
+
+
+def _parse_translate(out, expected, src=None):
     """Ответ переводчика: абзацы + сноски + служебный блок."""
     ids = {i for i in expected}
     found = parse_notes_blocks(out, ids)
     body = re.split(r"<<<NOTE\s", out)[0]
     res, extra = parse_blocks(body, expected=expected, extra_tag="META")
+    twin = _twins(res, src or {}, expected)
+    if twin:
+        raise ValueError(f"один перевод на два блока: {twin[0]} и {twin[1]} "
+                         f"— оригиналы у них разные")
     m = re.search(r"<<<META>>>\s*(.*)$", out, re.S)
     if m:
         extra = m.group(1).strip()

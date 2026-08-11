@@ -58,7 +58,41 @@ def main():
                                   "s01.b0002": "Второй абзац."}, got)
     ok("замечание без лесов", tail == "s01.b0002: сомнительный термин.", tail)
 
-    print(f"\nслучаев: {len(TAILS) + 2}   с расхождениями: {bad}")
+    # Один перевод на два блока. Разбору это не видно: идентификаторы на
+    # месте, пустых нет, — а один абзац книги остаётся непереведённым.
+    def answer(*pairs):
+        return "".join(f"<<<P {i}>>>\n{t}\n" for i, t in pairs)
+
+    A = ("Вертикальная ось показывает смертность от рака на сто тысяч человек, "
+         "а горизонтальная — годы с двухтысячного по двадцатый.")
+    B = ("У мужчин первое место занимает рак предстательной железы, за ним "
+         "идут рак лёгкого и рак ободочной кишки.")
+    src = {"s26.b0031": "The vertical plot shows cancer mortality rates.",
+           "s26.b0032": "For men, prostate cancer leads with 299,010 cases."}
+    ids = ["s26.b0031", "s26.b0032"]
+    try:
+        P._parse_translate(answer((ids[0], B), (ids[1], B)), ids, src)
+        ok("повтор перевода у соседей — переспросить", False, "разбор промолчал")
+    except ValueError as e:
+        ok("повтор перевода у соседей — переспросить", "s26.b0031" in str(e), e)
+
+    got, _ = P._parse_translate(answer((ids[0], A), (ids[1], B)), ids, src)
+    ok("разные переводы проходят", got[ids[0]] == A and got[ids[1]] == B, got)
+
+    # Повтор законен там, где повторяется сам оригинал: строка припева,
+    # одинаковая подпись под двумя рисунками.
+    same = {i: "See figure for details on the trial outcome." for i in ids}
+    got, _ = P._parse_translate(answer((ids[0], A), (ids[1], A)), ids, same)
+    ok("одинаковый оригинал — повтор законен", got[ids[1]] == A, got)
+
+    # Короткие блоки не сравниваем: «Рис. 3.1» и «Рис. 3.2» близки всегда.
+    short = {"s01.b0001": "Figure 3.1", "s01.b0002": "Figure 3.2"}
+    sids = list(short)
+    got, _ = P._parse_translate(answer((sids[0], "Рис. 3.1"), (sids[1], "Рис. 3.1")),
+                                sids, short)
+    ok("короткие строки не сравниваем", len(got) == 2, got)
+
+    print(f"\nслучаев: {len(TAILS) + 6}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

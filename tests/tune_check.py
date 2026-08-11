@@ -31,7 +31,8 @@ def main():
     # это ImportError у половины конвейера, и лучше узнать о ней здесь.
     need = ("TARGET_WORDS", "MAX_WORDS", "MAX_BLOCKS", "SKIP_MAX", "REFS_RUN",
             "NOTE_GAP", "WINDOW", "FAIL_PAUSE", "RETRY_PAUSE", "CAPTION",
-            "TEX_HEAD", "MIN_SHARE", "FIX_NEAR", "COL_PAGES", "HEAD_LETTERS")
+            "TEX_HEAD", "MIN_SHARE", "FIX_NEAR", "COL_PAGES", "HEAD_LETTERS",
+            "TWIN_NEAR", "TWIN_LEN")
     ok("все имена на месте", all(hasattr(tune, n) for n in need),
        [n for n in need if not hasattr(tune, n)])
 
