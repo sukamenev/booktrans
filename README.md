@@ -636,16 +636,6 @@ The anchor is looked for in the blocks of its own page, in order. Not found —
 silently skipped: damaged text costs more than a lost link. What goes missing
 is anchors the layout broke mid-word or set in italics.
 
-**Links reach a finished translation too.** The label sits in the original and
-the model carries it over itself — but only if it translated the text with the
-label already there. A book translated earlier has no labels in its
-translation, and the link is lost entirely. The build puts them back on its
-own: it looks in the translation first for the anchor itself (addresses and
-Latin survive translation verbatim), then for its number — what remains of
-"Description 1" in "Описание 1" under any translation. If the number occurs
-twice, it stays silent: a link is not worth guessing for. On a live book all
-157 links lost to translation came back, and it cost no translating.
-
 **The index therefore stays usable.** It is not translated (see
 "Bibliographies"), but you can click it: the page numbers lead into the text.
 

@@ -289,60 +289,6 @@ PIPELINE = "BookTrans"
 PIPELINE_URL = "https://github.com/sukamenev/booktrans"
 
 
-MARK = re.compile(r"</?a\d+>")
-# Номер ссылки: «2.1», «5.1a», «225». По нему якорь находится в переводе, когда
-# сам он переведён: «Description 1» стало «Описание 1», «figure 3.2» —
-# «рисунке 3.2».
-ANCHOR_NUM = re.compile(r"\d+(?:\.\d+)*[a-zA-Zа-яА-Я]?")
-
-
-def relink(src, tr, links):
-    """Перенести ярлыки ссылок на готовый перевод.
-
-    Ярлык стоит в оригинале, и модель переносит его сама — но только если
-    переводила текст уже с ним. У книги, переведённой раньше, чем ссылки
-    научились читаться, перевод есть, а ярлыков в нём нет, и ссылка пропадает
-    вся: у живой книги так висели 157 ссылок, из них 58 — на описания
-    картинок в самом конце, куда иначе не добраться.
-
-    Ищем в переводе сперва сам якорь (адреса и латиница переживают перевод
-    дословно), потом его номер: номер — то, что от «Description 1» остаётся
-    в «Описании 1» при любом переводе. Номер встречается в переводе дважды —
-    молчим: ссылка не стоит того, чтобы гадать.
-    """
-    if not links or MARK.search(tr):
-        return tr
-    put = []
-    for i in range(1, len(links) + 1):
-        m = re.search(rf"<a{i}>(.*?)</a{i}>", src, re.S)
-        if not m:
-            continue
-        anchor = " ".join(m.group(1).split())
-        pat = re.compile(r"\s+".join(re.escape(w) for w in anchor.split()))
-        hits = [x.span() for x in pat.finditer(tr)]
-        if len(hits) != 1:
-            nums = ANCHOR_NUM.findall(anchor)
-            if not nums:
-                continue
-            hits = [x.span() for x in ANCHOR_NUM.finditer(tr) if x.group() == nums[0]]
-            if len(hits) != 1:
-                continue
-            # «1» ссылкой не выглядит — захватываем слово перед номером:
-            # «Описание 1», «рисунке 3.2».
-            lo = hits[0][0]
-            w = re.search(r"[^\W\d_]+\s+$", tr[:lo])
-            if w:
-                hits = [(w.start(), hits[0][1])]
-        put.append((hits[0][0], hits[0][1], i))
-    out, at = [], 0
-    for lo, hi, i in sorted(put):
-        if lo < at:
-            continue                  # ярлыки не должны налезать друг на друга
-        out += [tr[at:lo], f"<a{i}>", tr[lo:hi], f"</a{i}>"]
-        at = hi
-    return "".join(out) + tr[at:] if out else tr
-
-
 def esc(s, links=None, notes_map=None):
     """Экранирует текст, разворачивая обратно инлайновую разметку.
 
@@ -452,17 +398,6 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         tr[i] = src[i]
     if missing:
         log("  " + lang.T("preview_left", len(missing)))
-    # Ярлыки ссылок, которых нет в переводе: он сделан раньше, чем ссылки
-    # научились читаться. Ставим их на место сами — перевода это не стоит.
-    back = 0
-    for b in blocks:
-        if not b.get("links") or b["id"] not in tr:
-            continue
-        was = tr[b["id"]]
-        tr[b["id"]] = relink(b["text"], was, b["links"])
-        back += tr[b["id"]] != was
-    if back:
-        log("  " + lang.T("relinked", back))
 
     # Строки для читателя — на языке перевода, и нужны они обоим путям: и
     # сборщику fb2 ниже, и писателям остальных форматов. Берутся до сносок:

@@ -2,10 +2,17 @@
 
 *[Русская версия](README.ru.md)*
 
-Eleven books, two chapters each, about 19,000 words in total — roughly a fifth
-of a novel. Two chapters are the point: with a single chapter the pipeline
-never has to carry a plot digest from one chunk to the next, so that part of
-the machinery goes untested.
+Twelve books: eleven of two chapters each, about 19,000 words in total —
+roughly a fifth of a novel. Two chapters are the point: with a single chapter
+the pipeline never has to carry a plot digest from one chunk to the next, so
+that part of the machinery goes untested.
+
+The twelfth is a whole publisher's pdf, 634 pages, and it is whole on purpose.
+Everything the pdf path does lives at the scale of a book: the back matter is
+recognised by sitting at the end, running heads by repeating across pages, the
+index by its hyperlinked numbers. A couple of chapters cut out of it would test
+none of that. It costs about fifty seconds of the check, of which forty-five go
+on decoding its 84 pictures.
 
 The corpus is permanent. A new version of the pipeline is run against these
 same files rather than against freshly cut ones: only like-for-like

@@ -14,6 +14,7 @@
     python3 tests/check.py --books    только разбор книг
     python3 tests/check.py --update   принять нынешние числа за верные
 """
+import concurrent.futures as cf
 import glob
 import json
 import os
@@ -26,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 from booktrans import extract as E, lang as G          # noqa: E402
 
 FIELDS = ("язык", "абзацев", "стихов", "заголовков", "сносок",
-          "со_ссылками", "картинок", "обложка", "слов")
+          "со_ссылками", "картинок", "обложка", "слов", "ссылок", "как_есть")
 
 
 def measure(path):
@@ -37,12 +38,26 @@ def measure(path):
     tt = [b for b in blocks if b["kind"] in ("title", "subtitle")]
     lk = [b for b in blocks if b.get("links")]
     return {
+        # Сколько ссылок вытащено из книги и сколько блоков не переводится:
+        # список литературы, указатель, листинги. Обе величины держат целый
+        # угол конвейера, и обе до сих пор ничем не были прикрыты.
+        "ссылок": sum(len(b["links"]) for b in lk),
+        "как_есть": sum(1 for b in blocks if b.get("asis")),
         "язык": G.detect(" ".join(b["text"] for b in (ps + vs)[:150]))[0],
         "абзацев": len(ps), "стихов": len(vs), "заголовков": len(tt),
         "сносок": len(nt), "со_ссылками": len(lk), "картинок": len(imgs),
         "обложка": bool(cover),
         "слов": sum(len(b["text"].split()) for b in ps + vs),
     }
+
+
+def _safe(path):
+    """Чтение книги в потоке: беду возвращаем, а не бросаем, чтобы одна битая
+    книга не уносила отчёт по остальным."""
+    try:
+        return measure(path)
+    except Exception as e:                                   # noqa: BLE001
+        return e
 
 
 def main():
@@ -62,7 +77,13 @@ def main():
         man = json.load(open(mpath, encoding="utf-8"))
     books = man["books"]
     bad = 0
-    for path in sorted(glob.glob(os.path.join(HERE, "corpus", "*"))):
+    # Книги читаются независимо, а издательский pdf в шесть сотен страниц один
+    # тянет минуту: последовательно проверка становится обузой перед каждым
+    # коммитом, а обузу перестают запускать.
+    paths = sorted(glob.glob(os.path.join(HERE, "corpus", "*")))
+    with cf.ThreadPoolExecutor(max_workers=4) as pool:
+        done = dict(zip(paths, pool.map(_safe, paths)))
+    for path in paths:
         name = os.path.basename(path)
         want = books.get(name)
         if want is None and update:
@@ -72,7 +93,9 @@ def main():
             bad += 1
             continue
         try:
-            got = measure(path)
+            got = done[path]
+            if isinstance(got, Exception):
+                raise got
         except E.BadBook as e:
             print(f"  {name:32s} ОТКАЗ: {str(e).splitlines()[0][:52]}")
             bad += 1

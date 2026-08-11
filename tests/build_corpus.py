@@ -264,4 +264,16 @@ made.append(f'{OUT}/09_plain_cp1251_ru.txt')
 pdf = subprocess.run(['find', B, '-name', 'dnl23.pdf'], capture_output=True, text=True).stdout.strip().split('\n')[0]
 subprocess.run(['qpdf', pdf, '--pages', '.', '1-4', '--', f'{OUT}/10_paper_en.pdf'], check=False)
 made.append(f'{OUT}/10_paper_en.pdf')
+
+# Издательский pdf целиком: главы, примечания, указатель, описания картинок и
+# шесть с половиной тысяч ссылок. Резать его нельзя — задняя часть опознаётся
+# по тому, что стоит в конце книги, а у обрезка конец другой. `qpdf --pages`
+# копирует страницы как есть, со шрифтами, картинками и аннотациями ссылок:
+# ничего не растрируется и не перевёрстывается.
+book = subprocess.run(['find', B, T, '-name', 'super_agers*.pdf'],
+                      capture_output=True, text=True).stdout.strip().split('\n')[0]
+if book:
+    subprocess.run(['qpdf', book, '--pages', '.', '1-z', '--',
+                    f'{OUT}/12_backmatter_en.pdf'], check=False)
+    made.append(f'{OUT}/12_backmatter_en.pdf')
 print("собрано:", len(made))
