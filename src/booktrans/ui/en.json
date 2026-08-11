@@ -3,6 +3,7 @@
   "tagline": "whole book translation",
   "reading": "reading {}",
   "images": "images extracted: {}",
+  "relinked": "links put back into finished translation: {}",
   "links_found": "links carried over from the book: {}",
   "cleaned": "removed: {} watermarks, {} boilerplate pages",
   "counts": "{} paragraphs, {} words, {} chunks, {} headings",
