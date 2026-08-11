@@ -969,6 +969,14 @@ are high: a miss leaves a whole chapter untranslated. How exactly is in the
 comments on `_refs_span` and `_mark_cites`. To check the picking without
 calling a model: `python3 tests/refs_check.py`.
 
+**Out of a pdf the notes arrive as ordinary text.** The "note" kind is set by
+epub, where a note is marked up as a link; in a pdf there is nobody to set it,
+and the "Notes" section looks no different from a chapter. So a run of
+citations is looked for among plain paragraphs too, and inside the boundaries
+it finds everything is marked — an entry spans several blocks, and the second
+and third do not look like citations on their own: no lemma, no author, just
+the tail of the publication data.
+
 ## Layout
 
 ```

@@ -744,6 +744,46 @@ def _spelled(s, n):
     return any(re.search(p.replace("{n}", re.escape(n)), s) for p in SPELLED)
 
 
+# Мера, которую перевод обязан пересчитать, и мера, в которую он пересчитывает.
+# Пересчёт меняет само число: «165 pounds» → «75 кг». Для проверки это выглядит
+# сразу двумя бедами — цифра пропала и цифра появилась, — и оба раза напрасно.
+IMPERIAL = (r"(?:pounds?|lbs?|ounces?|oz|inch(?:es)?|feet|foot|ft|yards?|miles?|"
+            r"gallons?|pints?|quarts?|acres?|fahrenheit|°\s?F)\b")
+METRIC = (r"(?:кг|килограмм|г|грамм|см|сантиметр|мм|миллиметр|м|метр|км|километр|"
+          r"л|литр|мл|гектар|градус|°\s?C|цельси|kg|cm|mm|km|ml|[gml])\w*\b")
+# «98 degrees Fahrenheit», «сорок градусов Цельсия»: между числом и самой мерой
+# стоит слово, и без него правило видит мерой «degrees».
+GAP = r"\s*(?:degrees?\s+|градусов?\s+|по\s+)?"
+HAS_METRIC = re.compile(rf"\d{GAP}{METRIC}", re.I)
+HAS_IMPERIAL = re.compile(rf"\d{GAP}{IMPERIAL}|[a-z]\s+{IMPERIAL}", re.I)
+
+
+def _power(t, n):
+    """Число собралось обратно в степень: «1031» → «10<sup>31</sup>».
+
+    Распознавание роняет верхний индекс, и в оригинале от 10³¹ остаётся
+    «1031». Перевод возвращает степень на место — и проверка, снимающая теги
+    пробелом, видит «10 31» и объявляет число пропавшим. Починку в ошибки
+    записывать нельзя: цифры все на месте, изменилась только разметка.
+    """
+    return "<sup>" in t and n in Counter(re.findall(r"\d+", strip(t, "")))
+
+
+def _measure(s, t, n, back=False):
+    """Число изменилось, потому что меру пересчитали в систему СИ.
+
+    Проверять надо обе стороны: без пересчёта в переводе это была бы честная
+    потеря числа, а без имперской меры в оригинале — честная прибавка.
+    Число, стоящее перед самой мерой, ищем точно; остальные числа блока
+    правило не покрывает, и потеря среди них останется видна.
+    """
+    if back:       # число появилось в переводе: перед единицей СИ
+        return bool(re.search(rf"(?<!\d){re.escape(n)}{GAP}{METRIC}", t, re.I)
+                    and HAS_IMPERIAL.search(s))
+    return bool(re.search(rf"(?<!\d){re.escape(n)}{GAP}{IMPERIAL}", s, re.I)
+                and HAS_METRIC.search(t))
+
+
 def _ocr_digit(s, n):
     """Пропавшая цифра — это порча распознавания, а не потеря в переводе.
 
@@ -1010,7 +1050,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa1_ok", len(src)) + (T("qa1_edited", edited) if edited else ""))
 
     log(T("qa2"))
-    lost, junk, word, gained, spelled = [], set(), set(), [], set()
+    lost, junk, word, gained = [], set(), set(), []
+    spelled, si, sup = set(), set(), set()
     for i, s in src.items():
         if i not in tr:
             continue
@@ -1027,6 +1068,10 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         bad = [x for x in bad if not _compound(s, x)]
         spelled |= {i for x in bad if _spelled(s, x)}
         bad = [x for x in bad if not _spelled(s, x)]
+        si |= {i for x in bad if _measure(s, tr[i], x)}
+        bad = [x for x in bad if not _measure(s, tr[i], x)]
+        sup |= {i for x in bad if _power(tr[i], x)}
+        bad = [x for x in bad if not _power(tr[i], x)]
         if bad:
             lost.append((i, bad))
         # Обратная сторона: цифра, которой в оригинале не было. Сверить её не
@@ -1036,6 +1081,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         new = sorted(_nums(tr[i]) - (a | _nums(s, group=False)))
         word |= {i for x in new if _compound(tr[i], x)}
         new = [x for x in new if not _compound(tr[i], x)]
+        si |= {i for x in new if _measure(s, tr[i], x, back=True)}
+        new = [x for x in new if not _measure(s, tr[i], x, back=True)]
         if new:
             gained.append((i, new))
     if lost:
@@ -1052,6 +1099,10 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa2_word", len(word)))
     if spelled:
         log("   " + T("qa2_spelled", len(spelled)))
+    if si:
+        log("   " + T("qa2_si", len(si)))
+    if sup:
+        log("   " + T("qa2_sup", len(sup)))
     if gained:
         log("   " + T("qa2_new", len(gained)))
         for i, x in gained[:5]:
