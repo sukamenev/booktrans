@@ -219,7 +219,7 @@ def details_lines(work, st, blocks):
     if src:
         body.append(st.get("details_sources", DETAILS_SOURCES))
         for work_name, group in src:
-            body.append("— " + _cut(group[0]["text"], 200))
+            body.append("— " + group[0]["text"])
     return st["details_title"], body
 
 

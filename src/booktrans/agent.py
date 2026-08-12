@@ -406,7 +406,8 @@ class CodexAgent(Agent):
 
     def run(self, system, user):
         payload = f"{system}\n\n---\n\n{user}" if system else user
-        cmd = ["codex", "exec", "--skip-git-repo-check"]
+        cmd = ["codex", "exec", "--skip-git-repo-check",
+               "-c", 'web_search="disabled"', "--sandbox", "read-only"]
         if self.model:
             cmd += ["--model", self.model]
         if self.effort:

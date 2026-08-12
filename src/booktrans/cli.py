@@ -703,7 +703,8 @@ def main():
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(),
                           args.retries, log, fallback=backup_for("translator"))
         d, s, halted = pipeline.translate(
-            work, chunks, agent_for("translator"), sysprompt(), task("translate", model=agent_for("translator").model),
+            work, chunks, agent_for("translator"), sysprompt(),
+            task("translate", model=agent_for("translator").model or agent_for("translator").kind.capitalize()),
             args.retries, log, only_chunks, fallback=backup_for("translator"))
         # Листинги в перевод не идут, но комментарии в них — проза, и
         # читателю нужны они, а не английский подстрочник в коде.
