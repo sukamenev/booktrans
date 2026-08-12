@@ -205,12 +205,12 @@ MARK = {"verse": "V", "table": "T"}
 def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
     tail = ""
     if extra_tag:
-        m = re.search(rf"[[[{extra_tag}]]]\s*(.*)$", out, re.S)
+        m = re.search(rf"\[\[\[{extra_tag}\]\]\]\s*(.*)$", out, re.S)
         if m:
             tail = m.group(1).strip()
-        out = re.split(rf"[[[{extra_tag}]]]", out)[0]
+        out = re.split(rf"\[\[\[{extra_tag}\]\]\]", out)[0]
     got = {}
-    for m in re.finditer(r"[[[[PVT]\s+(\S+?)]]]\s*(.*?)(?=[[[[PVT]\s+\S+?]]]|$)", out, re.S):
+    for m in re.finditer(r"\[\[\[[PVT]\s+(\S+?)\]\]\]\s*(.*?)(?=\[\[\[[PVT]\s+\S+?\]\]\]|$)", out, re.S):
         got[m.group(1)] = m.group(2).strip()
     empty = [k for k, v in got.items() if not v]
     if expected is not None:
@@ -237,8 +237,8 @@ def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
 def parse_notes_blocks(out, allowed):
     """Блоки [[[NOTE id вид]]] из ответа. Общий разбор для сносок и редактуры."""
     items = []
-    for m in re.finditer(r"[[[NOTE\s+(\S+?)\s+(reference|fact|term|source)]]]\s*"
-                         r"TERM:\s*(.*?)\n\s*TEXT:\s*(.*?)(?=[[[|\Z)", out, re.S):
+    for m in re.finditer(r"\[\[\[NOTE\s+(\S+?)\s+(reference|fact|term|source)\]\]\]\s*"
+                         r"TERM:\s*(.*?)\n\s*TEXT:\s*(.*?)(?=\[\[\[|\Z)", out, re.S):
         bid, kind, term, text = m.groups()
         if bid in allowed and text.strip():
             items.append({"block": bid, "kind": kind, "term": term.strip(),
@@ -860,13 +860,13 @@ def _parse_translate(out, expected, src=None):
     """Ответ переводчика: абзацы + сноски + служебный блок."""
     ids = {i for i in expected}
     found = parse_notes_blocks(out, ids)
-    body = re.split(r"[[[NOTE\s", out)[0]
+    body = re.split(r"\[\[\[NOTE\s", out)[0]
     res, extra = parse_blocks(body, expected=expected, extra_tag="META")
     twin = _twins(res, src or {}, expected)
     if twin:
         raise ValueError(f"один перевод на два блока: {twin[0]} и {twin[1]} "
                          f"— оригиналы у них разные")
-    m = re.search(r"[[[META]]]\s*(.*)$", out, re.S)
+    m = re.search(r"\[\[\[META\]\]\]\s*(.*)$", out, re.S)
     if m:
         extra = m.group(1).strip()
     return res, (extra, found)
@@ -1232,8 +1232,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         def parse_notes(out):
             items = []
             for m in re.finditer(
-                    r"[[[NOTE\s+(\S+?)\s+(reference|fact|term|source)]]]\s*TERM:\s*(.*?)\n"
-                    r"TEXT:\s*(.*?)(?=[[[NOTE|\Z)", out, re.S):
+                    r"\[\[\[NOTE\s+(\S+?)\s+(reference|fact|term|source)\]\]\]\s*TERM:\s*(.*?)\n"
+                    r"TEXT:\s*(.*?)(?=\[\[\[NOTE|\Z)", out, re.S):
                 bid, kind, term, text = m.groups()
                 if bid in tr and text.strip():
                     items.append({"block": bid, "kind": kind,
@@ -1424,7 +1424,7 @@ def _few(names, n=3, cut=60):
 def _parse_code(out, allowed):
     """Записи [[[C номер строка]]] из ответа: {номер листинга: [(строка, ориг, пер)]}."""
     got = {}
-    for m in re.finditer(r"[[[C\s+(\S+?)\s+(\d+)]]]\s*ORIG:\s*(.*?)\n\s*TR:\s*(.*?)(?=[[[|\Z)",
+    for m in re.finditer(r"\[\[\[C\s+(\S+?)\s+(\d+)\]\]\]\s*ORIG:\s*(.*?)\n\s*TR:\s*(.*?)(?=\[\[\[|\Z)",
                          out, re.S):
         bid, no, orig, tr = m.groups()
         if bid in allowed:
@@ -1523,7 +1523,7 @@ def fix_ok(old, new):
 def _parse_fix(out, allowed):
     """Записи [[[F номер]]] из ответа: {номер: [(было, стало), ...]}."""
     got = {}
-    for m in re.finditer(r"[[[F\s+(\S+?)]]]\s*ORIG:\s*(.*?)\n\s*FIX:\s*(.*?)(?=[[[|\Z)",
+    for m in re.finditer(r"\[\[\[F\s+(\S+?)\]\]\]\s*ORIG:\s*(.*?)\n\s*FIX:\s*(.*?)(?=\[\[\[|\Z)",
                          out, re.S):
         bid, old, new = m.group(1), m.group(2).strip(), m.group(3).strip()
         if bid in allowed:
