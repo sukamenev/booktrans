@@ -50,7 +50,7 @@ def _parse(out, lo, hi):
     return got
 
 
-TOC_TAG = re.compile(r"<<<TOC>>>(.*?)(?=<<<|\Z)", re.S)
+TOC_TAG = re.compile(r"\[\[\[TOC\]\]\](.*?)(?=\[\[\[|\Z)", re.S)
 MARKLINE = re.compile(r"\s*\d+\s+(\+t?|title|skip|verse|toc|code)\s*$")
 
 
@@ -69,7 +69,7 @@ def _toc_lines(out):
             if MARKLINE.match(line):
                 break
             s = _title(line.strip(" -•*|"))
-            if "`" in s or "<<<" in s or s.endswith(":"):
+            if "`" in s or "[[[" in s or s.endswith(":"):
                 continue                 # модель пересказала само задание
             if 2 <= len(s) <= 120 and s not in got:
                 got.append(s)

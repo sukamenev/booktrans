@@ -9,7 +9,7 @@
 На каждую поправку — одна запись:
 
 ```
-<<<F s07.b0042>>>
+[[[F s07.b0042]]]
 ORIG: J ANUS Proj ect
 FIX: JANUS Project
 ```

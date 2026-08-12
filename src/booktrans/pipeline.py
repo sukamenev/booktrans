@@ -18,6 +18,7 @@ from .agent import AgentError, Fatal, RateLimited
 # Флаг решает это просто: потоки сами останавливаются на ближайшей проверке.
 STOP = threading.Event()
 from .lang import T
+from . import lang
 from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
@@ -199,29 +200,17 @@ MARK = {"verse": "V", "table": "T"}
 
 
 # Чем модель закрывает последний кусок ответа: своей оградкой, закрывающей
-# скобкой к нашей метке (`</<<NOTES>>>`) или тегом внутренней разметки. Смысла
+# скобкой к нашей метке (`</<<NOTES]]]`) или тегом внутренней разметки. Смысла
 # в них нет, а в файл замечаний они попадали как есть — в каждом четвёртом куске.
-SCAFFOLD = re.compile(r"```\w*|</(?:<<)?[^\s<>]{1,24}(?:>>)?>")
-
-
-def _unscaffold(s):
-    """Снять строительные леса с хвоста ответа. Только строки, где кроме них
-    ничего нет: `</a1>` в конце замечания — это ярлык ссылки, а не леса."""
-    lines = s.strip().split("\n")
-    while lines and SCAFFOLD.fullmatch(lines[-1].strip()):
-        lines.pop()
-    return "\n".join(lines).strip()
-
-
 def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
     tail = ""
     if extra_tag:
-        m = re.search(rf"<<<{extra_tag}>>>\s*(.*)$", out, re.S)
+        m = re.search(rf"[[[{extra_tag}]]]\s*(.*)$", out, re.S)
         if m:
-            tail = _unscaffold(m.group(1))
-        out = re.split(rf"<<<{extra_tag}>>>", out)[0]
+            tail = m.group(1).strip()
+        out = re.split(rf"[[[{extra_tag}]]]", out)[0]
     got = {}
-    for m in re.finditer(r"<<<[PVT]\s+(\S+?)>>>\s*(.*?)(?=<<<[PVT]\s+\S+?>>>|$)", out, re.S):
+    for m in re.finditer(r"[[[[PVT]\s+(\S+?)]]]\s*(.*?)(?=[[[[PVT]\s+\S+?]]]|$)", out, re.S):
         got[m.group(1)] = m.group(2).strip()
     empty = [k for k, v in got.items() if not v]
     if expected is not None:
@@ -246,10 +235,10 @@ def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
 
 
 def parse_notes_blocks(out, allowed):
-    """Блоки <<<NOTE id вид>>> из ответа. Общий разбор для сносок и редактуры."""
+    """Блоки [[[NOTE id вид]]] из ответа. Общий разбор для сносок и редактуры."""
     items = []
-    for m in re.finditer(r"<<<NOTE\s+(\S+?)\s+(reference|fact|term|source)>>>\s*"
-                         r"TERM:\s*(.*?)\n\s*TEXT:\s*(.*?)(?=<<<|\Z)", out, re.S):
+    for m in re.finditer(r"[[[NOTE\s+(\S+?)\s+(reference|fact|term|source)]]]\s*"
+                         r"TERM:\s*(.*?)\n\s*TEXT:\s*(.*?)(?=[[[|\Z)", out, re.S):
         bid, kind, term, text = m.groups()
         if bid in allowed and text.strip():
             items.append({"block": bid, "kind": kind, "term": term.strip(),
@@ -478,7 +467,7 @@ def condense(state, upto, agent, retries, log, fallback=None):
 def translate_prompt(chunk, nxt, summary, tail, terms, task):
     # стихи помечаем отдельно: иначе модель их не отличит и переведёт прозой,
     # а редактор потом «выправит» ритм окончательно
-    src = "\n".join(f"<<<{MARK.get(b['kind'], 'P')} {b['id']}>>>\n{b['text']}"
+    src = "\n".join(f"[[[{MARK.get(b['kind'], 'P')} {b['id']}]]]\n{b['text']}"
                     for b in translatable(chunk["blocks"]))
     parts = [task, f"Фрагмент {chunk['index']}."
                    + (f" Раздел: {chunk['label']}." if chunk["label"] else "")]
@@ -700,7 +689,7 @@ def _regrow(agent, system, task, blocks, res, retries, log, fallback=None):
            and not LOSS_LOW <= off(i, v) <= LOSS_HIGH]
     if not bad:
         return res, 0
-    body = "\n\n".join(f"<<<P {i}>>>\n{src[i]}" for i in bad)
+    body = "\n\n".join(f"[[[P {i}]]]\n{src[i]}" for i in bad)
     prompt = (task + "\n\n---\n\nЭти абзацы уже переводились, и перевод вышел "
               "заметно короче или длиннее оригинала: часть текста потерялась "
               "или попала чужая. Переведи их заново, целиком, ничего не "
@@ -879,13 +868,13 @@ def _parse_translate(out, expected, src=None):
     """Ответ переводчика: абзацы + сноски + служебный блок."""
     ids = {i for i in expected}
     found = parse_notes_blocks(out, ids)
-    body = re.split(r"<<<NOTE\s", out)[0]
+    body = re.split(r"[[[NOTE\s", out)[0]
     res, extra = parse_blocks(body, expected=expected, extra_tag="META")
     twin = _twins(res, src or {}, expected)
     if twin:
         raise ValueError(f"один перевод на два блока: {twin[0]} и {twin[1]} "
                          f"— оригиналы у них разные")
-    m = re.search(r"<<<META>>>\s*(.*)$", out, re.S)
+    m = re.search(r"[[[META]]]\s*(.*)$", out, re.S)
     if m:
         extra = m.group(1).strip()
     return res, (extra, found)
@@ -1021,7 +1010,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 st, 1 << 30, " ".join(b["text"] for b in translatable(c["blocks"])))
         # только русский текст: оригинал намеренно не показываем, иначе
         # правка идёт в сторону чужого синтаксиса, а не хорошего русского
-        pairs = [f"<<<{MARK.get(b['kind'], 'P')} {b['id']}>>>\n{draft[b['id']]}"
+        pairs = [f"[[[{MARK.get(b['kind'], 'P')} {b['id']}]]]\n{draft[b['id']]}"
                  for b in translatable(c["blocks"]) if b["id"] in draft]
         parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
         if digest:
@@ -1246,7 +1235,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("nt_start"))
 
-        pairs = [f"<<<P {b['id']}>>>\nОРИГИНАЛ: {b['text']}\nПЕРЕВОД:  {tr[b['id']]}"
+        pairs = [f"[[[P {b['id']}]]]\nОРИГИНАЛ: {b['text']}\nПЕРЕВОД:  {tr[b['id']]}"
                  for b in translatable(c["blocks"]) if b["id"] in tr]
         parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
         if already:
@@ -1258,8 +1247,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         def parse_notes(out):
             items = []
             for m in re.finditer(
-                    r"<<<NOTE\s+(\S+?)\s+(reference|fact|term|source)>>>\s*TERM:\s*(.*?)\n"
-                    r"TEXT:\s*(.*?)(?=<<<NOTE|\Z)", out, re.S):
+                    r"[[[NOTE\s+(\S+?)\s+(reference|fact|term|source)]]]\s*TERM:\s*(.*?)\n"
+                    r"TEXT:\s*(.*?)(?=[[[NOTE|\Z)", out, re.S):
                 bid, kind, term, text = m.groups()
                 if bid in tr and text.strip():
                     items.append({"block": bid, "kind": kind,
@@ -1448,9 +1437,9 @@ def _few(names, n=3, cut=60):
 
 
 def _parse_code(out, allowed):
-    """Записи <<<C номер строка>>> из ответа: {номер листинга: [(строка, ориг, пер)]}."""
+    """Записи [[[C номер строка]]] из ответа: {номер листинга: [(строка, ориг, пер)]}."""
     got = {}
-    for m in re.finditer(r"<<<C\s+(\S+?)\s+(\d+)>>>\s*ORIG:\s*(.*?)\n\s*TR:\s*(.*?)(?=<<<|\Z)",
+    for m in re.finditer(r"[[[C\s+(\S+?)\s+(\d+)]]]\s*ORIG:\s*(.*?)\n\s*TR:\s*(.*?)(?=[[[|\Z)",
                          out, re.S):
         bid, no, orig, tr = m.groups()
         if bid in allowed:
@@ -1484,7 +1473,7 @@ def code_comments(work, blocks, agent, system, task, retries, log,
     for part in _by_lines(todo, CODE_LINES):
         ids = {b["id"] for b in part}
         body = "\n\n".join(
-            f"<<<CODE {b['id']}>>>\n" +
+            f"[[[CODE {b['id']}]]]\n" +
             "\n".join(f"{k}| {l}" for k, l in enumerate(b["text"].split("\n"), 1))
             for b in part)
         try:
@@ -1547,9 +1536,9 @@ def fix_ok(old, new):
 
 
 def _parse_fix(out, allowed):
-    """Записи <<<F номер>>> из ответа: {номер: [(было, стало), ...]}."""
+    """Записи [[[F номер]]] из ответа: {номер: [(было, стало), ...]}."""
     got = {}
-    for m in re.finditer(r"<<<F\s+(\S+?)>>>\s*ORIG:\s*(.*?)\n\s*FIX:\s*(.*?)(?=<<<|\Z)",
+    for m in re.finditer(r"[[[F\s+(\S+?)]]]\s*ORIG:\s*(.*?)\n\s*FIX:\s*(.*?)(?=[[[|\Z)",
                          out, re.S):
         bid, old, new = m.group(1), m.group(2).strip(), m.group(3).strip()
         if bid in allowed:
@@ -1583,7 +1572,7 @@ def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
     for w, part in enumerate(parts, 1):
         log(f"{w}/{len(parts)} ", end="")
         ids = {b["id"] for b in part}
-        body = "\n\n".join(f"<<<F {b['id']}>>>\n{strip(b['text'])}" for b in part)
+        body = "\n\n".join(f"[[[F {b['id']}]]]\n{strip(b['text'])}" for b in part)
         got = None
         try:
             (got, _), meta, _ = _chain_run(
@@ -1724,7 +1713,7 @@ GENRES = {
 }
 
 
-NO_INJECT = {"нет", "none", "no", "0", "-", "—", "не обнаружены",
+NO_INJECT = {"нет", "none", "no", "false", "0", "-", "—", "не обнаружены",
              "не обнаружено", "not found"}
 
 
@@ -1875,30 +1864,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
 
     if len(findings) > 1:
         log("  " + T("scout_merge"), end="")
-        merge = (
-            "Ниже — разборы разных частей одной книги, сделанные по отдельности. "
-            "Сведи их в один справочник.\n\n"
-            "Требования:\n"
-            "- убрать повторы; если по одному имени или термину предложены разные "
-            "варианты, выбрать один. В столбце перевода должен стоять "
-            "**ровно один** вариант: ни косой черты, ни «или», ни скобок с "
-            "запасным словом. Косая черта законна только там, где перечень "
-            "есть и в оригинале: «duo / trio» → «дуэт / трио»;\n"
-            f"- **уложиться примерно в {SCOUT_BUDGET} знаков**. Этот справочник "
-            "уходит в каждый запрос на перевод, поэтому он должен быть плотным: "
-            "таблицы вместо прозы, строка на сущность, никаких рассуждений и "
-            "пересказа сюжета;\n"
-            "- ничего не добавлять от себя. В сводном справочнике не должно "
-            "появиться ни одного сведения, которого нет ни в одном из разборов: "
-            "они сделаны по тексту книги, а твоя память — нет;\n"
-            "- строку `INJECTED:` из «Опасных мест» перенести как есть; если "
-            "в частях она разная, взять ту, где что-то найдено;\n"
-            "- сохранить всё, что влияет на выбор слова: имена, род, склонение, "
-            "свойства предметов, перемены, обращения, голоса рассказчиков, "
-            "опасные места. Второстепенные подробности, не влияющие на перевод, "
-            "выбросить;\n"
-            "- формат разделов тот же, что в разборах.\n\n---\n\n"
-            + "\n\n---\n\n".join(findings))
+        merge_prompt, _ = lang.prompt("scout_merge")
+        merge = merge_prompt.format(budget=SCOUT_BUDGET) + "\n\n---\n\n" + "\n\n---\n\n".join(findings)
         (merged, _), meta, dt = _chain_run(who, system, merge, retries,
                                            lambda o: (o, ""), log)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
@@ -2034,41 +2001,8 @@ def _shrink(part, want, who, system, retries, log):
     Остаётся мера по длине: ответ короче половины запрошенного — это не
     сжатие, а выброшенный справочник.
     """
-    ask = (
-        f"Это справочник по книге. Он уходит в каждый запрос на перевод, "
-        f"поэтому его укорачивают. Сейчас в нём {len(part)} знаков, надо около "
-        f"{want}.\n\n"
-        "Режь по этой лестнице. К следующей ступени переходи, только когда "
-        "предыдущая исчерпана.\n\n"
-        "1. Очевидное — то, что переводчик передаст верно и без подсказки: "
-        "известные люди, страны и города, крупные учреждения, обиходные слова "
-        "с единственным принятым соответствием. Исключение: если в целевом "
-        "языке приняты два написания (Huxley — и Хаксли, и Гексли), строка "
-        "остаётся; справочник тут нужен не ради правильности, а ради единства "
-        "по всей книге.\n"
-        "2. Повторы. Справочник сведён из частей, и одно и то же сказано в нём "
-        "дважды и трижды, в разных разделах. Оставить один раз.\n"
-        "3. Пересказ событий и биографии: что происходит по ходу книги, "
-        "конвейер помнит отдельным конспектом, здесь это лишнее.\n"
-        "4. Пояснения длиннее строки — ужать до строки. Людей без прямой речи "
-        "— до одной строки.\n"
-        "5. Кандидаты в сноски — оставить слово и половину строки о том, чем "
-        "оно трудно.\n\n"
-        "Ниже пятой ступени не спускаться. Это последнее, что можно тронуть, и "
-        "трогать его — значит портить перевод:\n"
-        "- всё, чей перевод неочевиден: выдуманные слова, имена и названия, "
-        "переданные на слух, и всё, что можно передать двумя способами. Ради "
-        "этих строк справочник и существует;\n"
-        "- таблицы имён и терминов книги — целиком, строка за строкой;\n"
-        "- род, склонение, обращения на «ты» и «вы»;\n"
-        "- свойства существ, вещей и мест, от которых зависит выбор слова;\n"
-        "- как говорит тот, у кого есть прямая речь;\n"
-        "- опасные места, цитаты и канонические переводы;\n"
-        "- строку `INJECTED:` и перечень мест под ней — дословно.\n\n"
-        "Заголовки разделов сохранить, новых не заводить, порядок строк не "
-        "менять. Ничего не дописывать: нового сведения появиться не должно. "
-        "В ответе — только сам справочник, с первой же его строки: ни "
-        "вступления, ни повторения этих указаний.\n\n---\n\n" + part)
+    ask_prompt, _ = lang.prompt("scout_condense")
+    ask = ask_prompt.format(len_part=len(part), want=want) + "\n\n---\n\n" + part
     (short, _), meta, _dt = _chain_run(who, system, ask, retries,
                                        lambda o: (o, ""), log)
 
@@ -2126,12 +2060,8 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
     (десяток строк на входе), а решение это разовое и на всю книгу.
     """
     log("  " + T("scout_unfork", len(forked)), end="")
-    ask = ("В справочнике по книге на один термин оригинала дано несколько "
-           "переводов. Выбери по одному — тот, что лучше ляжет в текст книги "
-           "и привычнее читателю на целевом языке.\n\n"
-           "Ответ — только строками вида `термин = выбранный перевод`, "
-           "по одной на каждый случай, без пояснений.\n\n"
-           + "\n".join(line for _, line in forked))
+    ask_prompt, _ = lang.prompt("scout_oneterm")
+    ask = ask_prompt + "\n\n" + "\n".join(line for _, line in forked)
     (res, _), meta, dt = _chain_run(who, system, ask, retries,
                                     lambda o: (o, ""), log)
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""

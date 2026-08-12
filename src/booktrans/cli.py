@@ -87,24 +87,6 @@ def read_prompt(path, log=None, text=None):
     return meta, text.strip()
 
 
-PROMPTS = os.path.join(HERE, "prompts")
-# Знаки протокола: по ним разбирается ответ модели. Перевести их — значит
-# молча потерять сноски, конспект и список терминов, и увидеть это можно
-# будет только на собранной книге. Поэтому перекрытый промпт сверяется с
-# исходным: пропал знак — конвейер скажет об этом до первого запроса.
-TOKENS = re.compile(r"<<<[A-Z]+(?=[ >])|^[A-Z]{2,10}:", re.M)
-
-
-def prompt_roots():
-    """Где искать промпты, от старшего к младшему.
-
-    Папка пакета перезаписывается при обновлении, поэтому свои промпты кладут
-    не в неё. `BOOKTRANS_PROMPTS` — для запуска из скрипта и «положил рядом с
-    книгой», папка настроек — для того, что должно пережить обновление.
-    """
-    out = [os.environ.get("BOOKTRANS_PROMPTS"),
-           os.path.join(config_dir(), "prompts"), PROMPTS]
-    return [p for p in out if p]
 
 
 def profile_roots():
@@ -176,49 +158,6 @@ def with_profiles(argv):
     return keys + rest
 
 
-def prompt(name, to=None, roots=None):
-    """Промпт прохода, с учётом перекрытий.
-
-    Свои промпты кладут в папку по коду языка перевода:
-
-        prompts/de/translate.md        вместо авторского
-        prompts/de/translate.add.md    в дополнение к нему
-
-    Файл `.add.md` приписывается к тому, что вышло, — им дополняют, не
-    переписывая; такой же файл вне языковой папки действует на все языки.
-    Замена берётся одна, старшая; дополнения собираются со всех папок, начиная
-    с авторской, — иначе своё дополнение отменяло бы авторское.
-    """
-    roots = roots or prompt_roots()
-    base = None
-    for root in roots:
-        for p in ([os.path.join(root, to, f"{name}.md")] if to else []) + \
-                 [os.path.join(root, f"{name}.md")]:
-            if os.path.exists(p):
-                base = p
-                break
-        if base:
-            break
-    if base is None:
-        raise SystemExit(f"нет промпта {name}.md ни в одной из папок: "
-                         + ", ".join(roots))
-    out = [open(base, encoding="utf-8").read()]
-    for root in reversed(roots):
-        for add in [os.path.join(root, f"{name}.add.md")] + \
-                   ([os.path.join(root, to, f"{name}.add.md")] if to else []):
-            if os.path.exists(add):
-                out.append(open(add, encoding="utf-8").read())
-    # «Своё» — всё, кроме авторского файла из последней папки: о нём человеку
-    # сообщают, потому что дальше конвейер работает не по тому, что в пакете.
-    own = base if base != os.path.join(roots[-1], f"{name}.md") else None
-    return "\n\n".join(out), own
-
-
-def lost_tokens(name, over, root=PROMPTS):
-    """Знаки протокола, пропавшие из перекрытого промпта."""
-    was = set(TOKENS.findall(open(os.path.join(root, f"{name}.md"),
-                                  encoding="utf-8").read()))
-    return sorted(was - set(TOKENS.findall(over)))
 
 
 def head(key, n=None):
@@ -513,11 +452,11 @@ def main():
     said = set()
 
     def task(name):
-        text, own = prompt(name, args.to)
+        text, own = lang.prompt(name, args.to)
         if own and name not in said:
             said.add(name)
             log("  " + T("prompt_own", own.replace(os.path.expanduser("~"), "~")))
-            lost = lost_tokens(name, text)
+            lost = lang.lost_tokens(name, text)
             if lost:
                 log("  " + T("prompt_lost", ", ".join(lost)))
         return text

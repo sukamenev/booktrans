@@ -37,8 +37,8 @@ upgrade of the pipeline, while a full copy quietly falls behind it.
 
 ## What you must not translate
 
-`TERM:`, `TEXT:`, `SUMMARY:`, `TERMS:` and the markers `<<<P>>>`, `<<<V>>>`,
-`<<<NOTE>>>`, `<<<META>>>` are protocol tokens, not words. The parser looks for
+`TERM:`, `TEXT:`, `SUMMARY:`, `TERMS:` and the markers `[[[P]]]`, `[[[V]]]`,
+`[[[NOTE]]]`, `[[[META]]]` are protocol tokens, not words. The parser looks for
 exactly those. Translate them and the footnotes, the running digest and the
 term list disappear without any error — the book assembles, the checks report
 nothing, and you find out much later.
