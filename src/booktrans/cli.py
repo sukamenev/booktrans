@@ -451,8 +451,10 @@ def main():
 
     said = set()
 
-    def task(name):
+    def task(name, **kwargs):
         text, own = lang.prompt(name, args.to)
+        if kwargs:
+            text = text.format(**kwargs)
         if own and name not in said:
             said.add(name)
             log("  " + T("prompt_own", own.replace(os.path.expanduser("~"), "~")))
@@ -701,7 +703,7 @@ def main():
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(),
                           args.retries, log, fallback=backup_for("translator"))
         d, s, halted = pipeline.translate(
-            work, chunks, agent_for("translator"), sysprompt(), task("translate"),
+            work, chunks, agent_for("translator"), sysprompt(), task("translate", model=agent_for("translator").model),
             args.retries, log, only_chunks, fallback=backup_for("translator"))
         # Листинги в перевод не идут, но комментарии в них — проза, и
         # читателю нужны они, а не английский подстрочник в коде.
