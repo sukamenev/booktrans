@@ -36,7 +36,9 @@ def _inline(s, table, links=None):
             tag = "a l:href" if table is FB2_INLINE else "a href"
             s = s.replace(f"&lt;a{i}&gt;", f'<{tag}="{href}">')
             s = s.replace(f"&lt;/a{i}&gt;", "</a>")
-    return re.sub(r"&lt;/?a\d+&gt;", "", s)
+    s = re.sub(r"&lt;/?a\d+&gt;", "", s)
+    tag = "a l:href" if table is FB2_INLINE else "a href"
+    return re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', rf'<{tag}="\2">\1</a>', s)
 
 
 def _plain(s):
@@ -419,7 +421,8 @@ def _tex(s, links=None):
             # это якорь, и hyperref без обратной косой ломается на нём.
             return r"\href{%s}{" % url.replace("%", r"\%").replace("#", r"\#")
         return "}" if close else "\\%s{" % TEX_INLINE[name]
-    return re.sub(r"\x00(\d+)\x00", back, s)
+    s = re.sub(r"\x00(\d+)\x00", back, s)
+    return re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', r'\\href{\2}{\1}', s)
 
 
 def _tex_preamble(meta, st, code):
