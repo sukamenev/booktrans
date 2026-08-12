@@ -437,16 +437,8 @@ def condense(state, upto, agent, retries, log, fallback=None):
     if len(fresh) < DIGEST_EVERY:
         return (digest + "\n\n" + "\n\n".join(fresh)).strip()
 
-    prompt = (
-        "Ниже конспект прочитанной части книги и свежие заметки о том, что "
-        "случилось дальше. Сведи их в один связный конспект.\n\n"
-        "Требования: сохранить всё, что может понадобиться дальше — кто есть "
-        "кто, что произошло, что изменилось, чем дело кончилось; ранние "
-        "события можно ужать до строчки, но не выбрасывать; уложиться "
-        f"примерно в {DIGEST_BUDGET} знаков; писать сплошным текстом, "
-        "без заголовков и списков.\n\n"
-        "## Конспект\n\n" + (digest or "(пока пусто)") +
-        "\n\n## Что было дальше\n\n" + "\n\n".join(fresh))
+    prompt_tpl, _ = lang.prompt("digest")
+    prompt = prompt_tpl.format(budget=DIGEST_BUDGET) + "\n\n## Конспект\n\n" + (digest or "(пока пусто)") + "\n\n## Что было дальше\n\n" + "\n\n".join(fresh)
     log("  " + T("digest_go"), end="")
     try:
         (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
@@ -1014,22 +1006,14 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                  for b in translatable(c["blocks"]) if b["id"] in draft]
         parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
         if digest:
-            parts.append("## Что было в книге до этого места\n\n"
-                         "Правя местоимения, обращения и связки, сверяйся с этим: "
-                         "кто в сцене, что уже произошло, кем персонажи приходятся "
-                         "друг другу. Править или пересказывать этот текст не надо.\n\n"
-                         + digest)
+            hint_prev, _ = lang.prompt("translate_hint_prev")
+            parts.append(hint_prev + "\n\n" + digest)
         if tail:
-            parts.append("## Хвост предыдущего, уже отредактированного куска\n\n"
-                         "Нужен для гладкого стыка. Править его не надо.\n\n" + tail)
+            hint_tail, _ = lang.prompt("translate_hint_tail")
+            parts.append(hint_tail + "\n\n" + tail)
         if terms:
             parts.append(
-                "## Написания, принятые в этой книге\n\n"
-                "Слева — как в оригинале, справа — как решено писать. Список "
-                "собран по всей книге, включая куски после этого. Встретишь в "
-                "тексте другое написание того же имени или понятия — приведи "
-                "к этому, молча: это не повод для замечания.\n\n"
-                + "\n".join(terms))
+                lang.prompt("translate_hint_terms")[0] + "\n\n" + "\n".join(terms))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(f"{work}/prompts/{idx:04d}.edit.txt", "w", encoding="utf-8").write(prompt)
@@ -1239,7 +1223,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                  for b in translatable(c["blocks"]) if b["id"] in tr]
         parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
         if already:
-            parts.append("## Уже объяснено раньше — не повторять\n\n" + "\n".join(sorted(set(already))))
+            hint_already, _ = lang.prompt("edit_hint_already")
+            parts.append(hint_already + "\n\n" + "\n".join(sorted(set(already))))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(f"{work}/prompts/{idx:04d}.notes.txt", "w", encoding="utf-8").write(prompt)
@@ -1832,11 +1817,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         hint = ""
         if hints and i == 1:
             if hints.get("filename"):
-                hint += (f"\n\n## Имя исходного файла\n\n`{hints['filename']}`\n\n"
-                         "В нём часто закодированы автор и заглавие, но порядок и "
-                         "написание бывают любыми, а иногда там номер из каталога "
-                         "или мусор. Бери это как подсказку: сведения из самого "
-                         "текста книги всегда важнее.")
+                hint_filename, _ = lang.prompt("scout_hint_filename")
+                hint += "\n\n" + hint_filename.format(filename=hints["filename"])
             
             meta_lines = []
             m = hints.get("meta") or {}
@@ -1849,9 +1831,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             
             if meta_lines:
                 hint += "\n\n## E-book metadata\n\n" + "\n".join(meta_lines)
-                hint += ("\n\nЭто встроенные метаданные исходного файла книги. "
-                         "Они могут помочь для точного понимания сюжета и заполнения полей author_target, title_target, genre, series и series_no, "
-                         "но помни, что метаданные бывают ошибочными — сведения из самого текста книги всегда важнее.")
+                hint_meta, _ = lang.prompt("scout_hint_meta")
+                hint += "\n\n" + hint_meta
 
         prompt = (f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}\n\n{text}")
         log("  " + T("scout_block", i, len(parts),
@@ -2133,15 +2114,8 @@ def headings(work, blocks, agent, system, retries, log, fallback=None):
         return have
     log("  " + T("heads_todo", len(uniq)), end="")
     listing = "\n".join(f"{i}. {t}" for i, t in enumerate(uniq, 1))
-    prompt = (
-        "Переведи заголовки и подзаголовки книги. Это номера глав, названия "
-        "разделов, имена рассказчиков в шапках, строки места и времени.\n\n"
-        "Правила: держать регистр оригинала (написанное прописными остаётся "
-        "прописными); имена и термины брать из справочника выше; номера глав "
-        "переводить как принято по-русски.\n\n"
-        "Верни строго по строке на каждый пункт, в том же порядке и с тем же "
-        "номером, без пояснений:\n1. перевод\n2. перевод\n\n"
-        "## Заголовки\n\n" + listing)
+    prompt_tpl, _ = lang.prompt("headings")
+    prompt = prompt_tpl + "\n\n## Заголовки\n\n" + listing
 
     def parse_heads(out):
         got = {}
@@ -2191,7 +2165,8 @@ def detect_structure(work, styles, agent, task, retries, log, fallback=None):
     for r in styles:
         ex = " / ".join(s.replace("\n", " ")[:70] for s in r["samples"])
         listing.append(f'{r["tag"]}|{r["cls"]}  ×{r["count"]}  → {ex}')
-    prompt = task + "\n\n---\n\n## Перепись стилей\n\n" + "\n".join(listing)
+    styles_prompt, _ = lang.prompt("structure_styles")
+    prompt = task + "\n\n---\n\n" + styles_prompt + "\n\n" + "\n".join(listing)
     open(f"{work}/prompts/structure.txt", "w", encoding="utf-8").write(prompt)
 
     log("  " + T("struct_styles", len(styles)), end="")
