@@ -1,18 +1,9 @@
 #!/usr/bin/env bash
 # BookTrans with the defaults of the "agy" agent.
 #
-# The models come from the PRESETS["agy"] set (src/booktrans/cli.py), which is
-# the same as appending to the run:
+# Загружает настройки из файла profiles/agy.conf, где прописаны 
+# цепочки моделей для каждого прохода.
 #
-#   --scout      gemini-3.1-pro-high,claude-opus-4-6-thinking,claude:claude-opus-5
-#   --translator gemini-3.1-pro-high,claude-opus-4-6-thinking,claude:claude-opus-5
-#   --editor     gemini-3.1-pro-high,claude-opus-4-6-thinking,claude:claude-opus-5
-#   --formatter  gemini-3.6-flash-low,claude-sonnet-4-6
-#   --ocrfixer   gemini-3.6-flash-low,claude-sonnet-4-6
-#
-# In a chain the first model does the book and the rest pick up what it
-# refuses. Markup detection and OCR repair make do with a cheap model, so they
-# never inherit the expensive one. Any explicit key beats the set:
+# Явные ключи командной строки переопределяют настройки профиля:
 #   ./bt_agy book.epub --to de --editor gemini-3.1-pro-high,claude:claude-sonnet-5
-export BT_AGENT="agy"
-exec "$(dirname "$(readlink -f "$0")")/booktrans" "$@"
+exec "$(dirname "$(readlink -f "$0")")/booktrans" --profile agy "$@"

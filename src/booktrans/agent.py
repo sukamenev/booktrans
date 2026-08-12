@@ -373,8 +373,9 @@ class AgyAgent(Agent):
             cmd += ["--model", self.model]
         if self.effort:
             cmd += ["--effort", self.effort]
+        cmd += ["--print", payload]
         try:
-            r = subprocess.run(cmd, input=payload, capture_output=True,
+            r = subprocess.run(cmd, capture_output=True,
                                text=True, timeout=self.timeout)
         except Exception as e:
             raise AgentError(f"ошибка запуска agy: {e}")
@@ -405,7 +406,7 @@ class CodexAgent(Agent):
 
     def run(self, system, user):
         payload = f"{system}\n\n---\n\n{user}" if system else user
-        cmd = ["codex", "exec"]
+        cmd = ["codex", "exec", "--skip-git-repo-check"]
         if self.model:
             cmd += ["--model", self.model]
         if self.effort:
@@ -420,7 +421,12 @@ class CodexAgent(Agent):
             if limited(msg):
                 raise RateLimited(msg[:300])
             raise AgentError(f"codex вернул {r.returncode}: {msg[:400]}")
-        return r.stdout, {"model": self.model or "codex-default", "cost_usd": None}
+        actual_model = self.model or "codex-default"
+        if not self.model and r.stderr:
+            m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)
+            if m:
+                actual_model = m.group(1)
+        return r.stdout, {"model": actual_model, "cost_usd": None}
 
 
 def make_agent(kind="claude", model=None, command=None, timeout=1800,

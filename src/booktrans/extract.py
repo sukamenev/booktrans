@@ -478,6 +478,8 @@ def _html(path, styles=None, encoding=None, ask=None):
                 meta.setdefault("author", val)
             elif val and name in ("dc.title", "og:title"):
                 meta.setdefault("title", val)
+            elif val and name in ("description", "dc.description", "og:description"):
+                meta.setdefault("description", val)
 
     def get_image(href):
         if href.startswith("data:"):
@@ -754,13 +756,27 @@ def _epub(path, styles=None, encoding=None, ask=None):
     if md is not None:
         for tag, key in (("title", "title"), ("creator", "author"),
                          ("language", "lang"), ("date", "year"),
-                         ("publisher", "publisher"), ("identifier", "isbn")):
+                         ("publisher", "publisher"), ("identifier", "isbn"),
+                         ("description", "description")):
             el = md.find(DC + tag)
             if el is not None and el.text:
                 meta[key] = el.text.strip()
         for m2 in md.findall(OPF + "meta"):
             if m2.get("property") == "dcterms:date" and m2.text:
                 meta["year"] = m2.text.strip()
+            elif m2.get("name") == "calibre:series" and m2.get("content"):
+                meta["series"] = m2.get("content").strip()
+            elif m2.get("name") == "calibre:series_index" and m2.get("content"):
+                meta["series_no"] = m2.get("content").strip()
+            # EPUB3 collections
+            elif m2.get("property") == "belongs-to-collection" and m2.text:
+                meta["series"] = m2.text.strip()
+        
+        genres = []
+        for el in md.findall(DC + "subject"):
+            if el.text: genres.append(el.text.strip())
+        if genres:
+            meta["genre"] = ", ".join(genres)
 
     manifest = {i.get("id"): i for i in opf.find(OPF + "manifest")}
     spine = [manifest[r.get("idref")] for r in opf.find(OPF + "spine")
@@ -880,6 +896,21 @@ def _fb2(path, encoding=None, ask=None):
         lang = ti.findtext(FB + "lang")
         if lang:
             meta["lang"] = lang.strip()
+        ann = ti.find(FB + "annotation")
+        if ann is not None:
+            desc = " ".join(ann.itertext()).strip()
+            if desc:
+                meta["description"] = re.sub(r"\s+", " ", desc)
+        genres = []
+        for g in ti.findall(FB + "genre"):
+            if g.text: genres.append(g.text.strip())
+        if genres:
+            meta["genre"] = ", ".join(genres)
+        seq = ti.find(FB + "sequence")
+        if seq is not None and seq.get("name"):
+            meta["series"] = seq.get("name").strip()
+            if seq.get("number"):
+                meta["series_no"] = seq.get("number").strip()
 
     blocks = []
     bodies = root.findall(FB + "body")
@@ -1641,6 +1672,18 @@ def _pdf(path, marks=None):
         txt, os.path.splitext(os.path.basename(path))[0], marks, INDENT_PDF,
         set(imgs))
     meta["links"] = _put_links(blocks, _pdf_links(path))
+    if _which("pdfinfo"):
+        r = subprocess.run(["pdfinfo", path], capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            k, _, v = line.partition(":")
+            k, v = k.strip().lower(), v.strip()
+            if not v: continue
+            if k == "title":
+                meta.setdefault("title", v)
+            elif k == "author":
+                meta.setdefault("author", v)
+            elif k == "subject":
+                meta.setdefault("description", v)
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
         # Обложкой считаем картинку с первой страницы, и только если она

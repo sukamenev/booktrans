@@ -1803,7 +1803,7 @@ def scout_meta(work):
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
-          src_name=None, fallback=None):
+          hints=None, fallback=None):
     """Крупноблочный проход ДО перевода.
 
     Собирает голоса персонажей, имена собственные и повторяющиеся термины.
@@ -1839,19 +1839,31 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     findings = []
     for i, part in enumerate(parts, 1):
         text = "\n\n".join(strip(b["text"]) for b in part)
-        # Имя исходного файла — подсказка, а не истина. В библиотеках в него
-        # кладут автора и заглавие, но порядок бывает любым: «Заглавие —
-        # Автор», «Автор. Заглавие», иногда с номером из каталога. Разбирать
-        # это правилами — значит путать автора с заглавием через раз, и
-        # молча. Модель книгу читает и разберётся сама.
+        # Имя исходного файла и метаданные книги — мощнейшие подсказки для старта.
         hint = ""
-        if src_name and i == 1:
-            hint = (f"\n\n## Имя исходного файла\n\n`{src_name}`\n\n"
-                    "В нём часто закодированы автор и заглавие, но порядок и "
-                    "написание бывают любыми, а иногда там номер из каталога "
-                    "или мусор. Бери это как подсказку: сведения из самого "
-                    "текста книги всегда важнее. Если в тексте выходных "
-                    "данных нет, а имя файла читается уверенно — используй его.")
+        if hints and i == 1:
+            if hints.get("filename"):
+                hint += (f"\n\n## Имя исходного файла\n\n`{hints['filename']}`\n\n"
+                         "В нём часто закодированы автор и заглавие, но порядок и "
+                         "написание бывают любыми, а иногда там номер из каталога "
+                         "или мусор. Бери это как подсказку: сведения из самого "
+                         "текста книги всегда важнее.")
+            
+            meta_lines = []
+            m = hints.get("meta") or {}
+            if m.get("title"): meta_lines.append(f"title: {m['title']}")
+            if m.get("author"): meta_lines.append(f"author: {m['author']}")
+            if m.get("description"): meta_lines.append(f"description: {m['description']}")
+            if m.get("genre"): meta_lines.append(f"genre: {m['genre']}")
+            if m.get("series"): meta_lines.append(f"series: {m['series']}")
+            if m.get("series_no"): meta_lines.append(f"series_no: {m['series_no']}")
+            
+            if meta_lines:
+                hint += "\n\n## E-book metadata\n\n" + "\n".join(meta_lines)
+                hint += ("\n\nЭто встроенные метаданные исходного файла книги. "
+                         "Они могут помочь для точного понимания сюжета и заполнения полей author_target, title_target, genre, series и series_no, "
+                         "но помни, что метаданные бывают ошибочными — сведения из самого текста книги всегда важнее.")
+
         prompt = (f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}\n\n{text}")
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")

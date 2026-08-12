@@ -279,7 +279,7 @@ PRESETS = {
 
 
 def _chain(s, agent=None):
-    """Цепочка прохода: [(агент, модель), …].
+    """Цепочка прохода: [(агент, модель, усилие), …].
 
     Первая модель делает работу, следующие подхватывают её отказ. Пишутся в
     один ключ через запятую, потому что проходов много и на каждый заводить
@@ -292,14 +292,30 @@ def _chain(s, agent=None):
     того поставщика, что основная. Без двоеточия берётся агент из `--agent`:
 
         --editor gemini-3.1-pro-high,claude:claude-opus-5
+        
+    Третьей частью через двоеточие можно указать глубину размышлений (low/medium/high):
+        --editor gemini-pro:high,claude:claude-opus-5:low
     """
     out = []
     for part in (s or "").split(","):
         part = part.strip()
         if not part:
             continue
-        name, _, model = part.rpartition(":")
-        out.append((name.strip() or agent, model.strip()))
+        parts = [p.strip() for p in part.split(":")]
+        name = agent
+        model = None
+        effort = None
+        
+        if parts[-1] in ("low", "medium", "high"):
+            effort = parts.pop()
+            
+        if len(parts) == 2:
+            name = parts[0] or agent
+            model = parts[1] or None
+        elif len(parts) == 1:
+            model = parts[0] or None
+            
+        out.append((name, model, effort))
     return out
 
 
@@ -401,11 +417,11 @@ def main():
     # на середине книги невнятной ошибкой из чужой программы.
     for key in (args.model, args.translator, args.scout, args.editor,
                 args.formatter, args.ocrfixer, args.fallback_model):
-        for name, m in _chain(key, args.agent):
+        for name, m, eff in _chain(key, args.agent):
             if name not in AGENTS:
                 sys.exit(T("bad_agent", name, ", ".join(AGENTS)))
             if name == "agy" and args.effort \
-                    and re.search(r"-(low|medium|high)$", m):
+                    and m and re.search(r"-(low|medium|high)$", m):
                 sys.exit(T("effort_clash", m, args.effort))
     T = lang.set_ui(args.ui)
     if args.to not in lang.available_langs():
@@ -460,15 +476,14 @@ def main():
         cheap = role in CHEAP_ROLES and not named
         s = named or (preset.get(role) if cheap else None) \
             or args.model or preset.get("model")
-        eff = CHEAP_EFFORT.get(args.agent) if cheap else None
         pairs = _chain(s, args.agent)
-        out = [_make(a, m, eff if a == args.agent else None) for a, m in pairs] \
+        out = [_make(a, m, eff or (CHEAP_EFFORT.get(a) if cheap else None)) for a, m, eff in pairs] \
             or [_make(args.agent, None)]
         # Старые ключи `--fallback-agent/--fallback-model` — последнее звено
         # любой цепочки. Они появились раньше цепочек и делают то же самое;
         # `--editor модель,claude:другая` выражает это короче.
         if args.fallback_agent or args.fallback_model:
-            out += [_make(a, m) for a, m in
+            out += [_make(a, m, eff) for a, m, eff in
                     (_chain(args.fallback_model, args.fallback_agent or args.agent)
                      or _chain(args.translator or args.model,
                                args.fallback_agent or args.agent))]
@@ -709,10 +724,13 @@ def main():
         n += 1
         log("")
         log(head("step_scout", n))
+        hints = {
+            "filename": os.path.basename(args.book),
+            "meta": meta
+        }
         ref = pipeline.scout(work, blocks, agent_for("scout"), sysprompt(),
                              task("scout"), args.retries, log, args.to,
-                             src_name=os.path.basename(args.book),
-                             fallback=backup_for("scout"))
+                             hints=hints, fallback=backup_for("scout"))
         # Внедрённое обращение к машине — повод остановиться до перевода, а не
         # обнаружить его в готовой книге. Разведка отличает такое указание от
         # книги, которая об инъекциях рассказывает: вторую переводим молча.
