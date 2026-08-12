@@ -335,7 +335,7 @@ def link_targets(blocks):
             if u.startswith("#")}
 
 
-def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
+def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None):
     targets = link_targets(blocks)
 
     def aid(b):
@@ -436,7 +436,7 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
     if notes:
         log("  " + lang.T("notes_n", len(notes)))
 
-    # формат по расширению: fb2 собирается ниже, остальные — в output.py
+    # сборка нужного формата по расширению
     ext = os.path.splitext(dest)[1].lower()
     if ext in output.WRITERS:
         head, body = about_lines(work, st, code)
@@ -455,247 +455,24 @@ def build_fb2(work, meta, blocks, cover, dest, log, partial=False, images=None):
         kw = {"cover": cover} if ext in (".epub", ".html", ".htm", ".pdf") else {}
         if ext == ".pdf":
             kw["tmp"] = work        # черновики LaTeX — в рабочую папку книги
+
+        if ext == ".fb2":
+            kw.update({
+                "blocks": blocks, "tr": tr, "partial": partial, "log": log,
+                "note_seq": note_seq, "nid": nid, "notes_map": notes_map, "lang": lang,
+                "about_head": head, "about_body": body,
+                "details_head": dhead, "details_body": dbody,
+                "PIPELINE": PIPELINE, "esc": esc, "span_attr": output.span_attr
+            })
         output.WRITERS[ext](dest, meta, items, notes, images or {},
                             st.get("note_prefix", NOTE_PREFIX).rstrip() + " ",
                             st, **kw)
         log(lang.T("built_file", dest, f"{os.path.getsize(dest) / 1024 / 1024:.1f}",
                    sum(1 for b in blocks if b["kind"] == "p")))
+        
         return
-
-    o = []
-    w = o.append
-    w('<?xml version="1.0" encoding="utf-8"?>')
-    w('<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" '
-      'xmlns:l="http://www.w3.org/1999/xlink">')
-    w("<description><title-info>")
-    w(f"<genre>{esc(meta.get('genre', 'prose_contemporary'))}</genre>")
-    au = (meta.get("author_target") or meta.get("author") or "").split()
-    first, last = (au[0], " ".join(au[1:])) if len(au) > 1 else ("", au[0] if au else "")
-    w(f"<author><first-name>{esc(first)}</first-name><last-name>{esc(last)}</last-name></author>")
-    name = (meta.get("title_target") or meta.get("title")
-            or st.get("untitled", "Без названия"))
-    w(f"<book-title>{esc(name)}</book-title>")
-    if cover:
-        w('<coverpage><image l:href="#cover.jpg"/></coverpage>')
-    w(f"<lang>{esc(meta.get('target_lang', 'ru'))}</lang>")
-    if meta.get("lang"):
-        w(f"<src-lang>{esc(meta['lang'][:2])}</src-lang>")
-    w(f"<translator><nickname>{esc(st.get('translator', 'машинный перевод'))}"
-      "</nickname></translator>")
-    if meta.get("series"):
-        num = f' number="{meta["series_no"]}"' if meta.get("series_no") else ""
-        w(f'<sequence name="{esc(meta["series"])}"{num}/>')
-    w("</title-info><document-info>")
-    w("<author><nickname>booktrans</nickname></author>")
-    w(f"<date>{esc(str(meta.get('year', '')))}</date>")
-    w(f"<id>{esc(meta.get('uid', 'booktrans-001'))}</id><version>1.0</version>")
-    w("</document-info>")
-    if meta.get("title"):
-        w("<publish-info>")
-        w(f"<book-name>{esc(meta['title'])}</book-name>")
-        if meta.get("author"):
-            w(f"<author>{esc(meta['author'])}</author>")
-        if meta.get("publisher"):
-            w(f"<publisher>{esc(meta['publisher'])}</publisher>")
-        if meta.get("year"):
-            w(f"<year>{esc(str(meta['year'])[:4])}</year>")
-        if meta.get("isbn"):
-            w(f"<isbn>{esc(meta['isbn'])}</isbn>")
-        w("</publish-info>")
-    w("</description><body>")
-
-    # --- о переводе: читатель должен узнать это сразу, а не в конце ---
-    # Строки берём из файла целевого языка: немецкой книге русская врезка
-    # ни к чему.
-    head, body = about_lines(work, st, code)
-    w("<section>")
-    w(f"<title><p>{esc(head)}</p></title>")
-    for i, line in enumerate(body):
-        line = esc(line)
-        if i == 0:
-            line = line.replace(PIPELINE, f"<strong>{PIPELINE}</strong>", 1)
-        w(f"<p>{line}</p>")
-    w("</section>")
-
-    open_sec = False
-    in_poem = False
-
-    def close_poem():
-        nonlocal in_poem
-        if in_poem:
-            w("</stanza></poem>")
-            in_poem = False
-
-    was_title, after_img = False, False
-    for b in blocks:
-        text = tr.get(b["id"], "")
-        if after_img and b["kind"] != "image":
-            # Короткая строка сразу за снимком — это подпись под ним: её
-            # оставляем прижатой, а отбиваем уже после неё.
-            if b["kind"] == "p" and 0 < len(text) <= CAPTION and open_sec:
-                w(f"<p>{esc(text, b.get('links'), notes_map)}</p>")
-                w("<empty-line/>")
-                after_img = False
-                continue
-            w("<empty-line/>")
-            after_img = False
-        if b["kind"] in ("p", "verse", "code") and text.strip():
-            was_title = False       # пустая строка и картинка заголовки не разделяют
-        if b["kind"] == "title":
-            close_poem()
-            if was_title:
-                # Второй заголовок подряд — это подзаголовок: имя автора под
-                # названием, время и место. Открой он свою секцию, предыдущая
-                # осталась бы пустой, а в оглавлении читалки — пустой строкой.
-                w(f"<subtitle{aid(b)}>{esc(text, b.get('links'), notes_map)}</subtitle>")
-            else:
-                if open_sec:
-                    w("</section>")
-                # Заголовок сам `id` нести не может — по схеме его нет у
-                # <title>, — поэтому цель ссылки помечается на секции.
-                w(f"<section{aid(b)}>")
-                w(f"<title><p>{esc(text, b.get('links'), notes_map)}</p></title>")
-                open_sec = True
-            was_title = True
-            continue
-        elif b["kind"] == "subtitle":
-            close_poem()
-            if not open_sec:
-                w("<section>")
-                open_sec = True
-            w(f"<subtitle{aid(b)}>{esc(text)}</subtitle>")
-        elif b["kind"] == "verse":
-            # Стихи в fb2 — это <poem>/<stanza>/<v>. Такой ветки не было
-            # вовсе, и стихотворные строки просто исчезали из книги: у одной
-            # из 139 абзацев осталось 28.
-            if not open_sec:
-                w("<section>")
-                open_sec = True
-            if not in_poem:
-                w("<poem><stanza>")
-                in_poem = True
-            w(f"<v>{esc(text, b.get('links'), notes_map)}</v>")
-        elif b["kind"] == "code":
-            # В fb2 нет <pre>: листинг идёт строкой на абзац, а отступ держится
-            # неразрывными пробелами — обычные читалка схлопнет.
-            close_poem()
-            if not open_sec:
-                w("<section>")
-                open_sec = True
-            for line in text.splitlines() or [""]:
-                pre = len(line) - len(line.lstrip(" "))
-                w(f"<p><code>{' ' * pre}{esc(line.strip())}</code></p>")
-        elif b["kind"] == "table":
-            close_poem()
-            if not open_sec:
-                w("<section>")
-                open_sec = True
-            w("<table>")
-            for i, row in enumerate(text.splitlines()):
-                cells = [c.strip() for c in re.split(r"(?<!\\)\|", row)]
-                w("<tr>" + "".join(
-                    f"<td{output.span_attr(b.get('spans'), i, j, len(cells))}>"
-                    f"{esc(c.replace(chr(92) + '|', '|'), b.get('links'), notes_map)}</td>"
-                    for j, c in enumerate(cells)) + "</tr>")
-            w("</table>")
-        elif b["kind"] == "break":
-            if in_poem:
-                w("</stanza><stanza>")       # пустая строка делит строфы
-            elif open_sec:
-                w("<empty-line/>")
-        elif b["kind"] == "image":
-            close_poem()
-            if not open_sec:
-                w("<section>")
-                open_sec = True
-            if b["text"] in (images or {}):
-                # Пустая строка перед: по схеме картинка блочная, но читалки
-                # вольны прижать её к соседнему абзацу, и текст оказывается с
-                # ней в одной строке.
-                if not after_img:
-                    w("<empty-line/>")
-                w(f'<image l:href="#{esc(b["text"])}"/>')
-                after_img = True
-                continue
-        elif b["kind"] == "note":
-            close_poem()
-            continue                      # авторские сноски идут в примечания
-        elif b["kind"] == "p":
-            close_poem()
-            if not open_sec:
-                w("<section>")
-                open_sec = True
-            a = ""
-            if b["id"] in nid:
-                num = next(n for k, n, _, _ in note_seq if k == nid[b["id"]])
-                a = f'<a l:href="#{nid[b["id"]]}" type="note">[{num}]</a>'
-            w(f"<p{aid(b)}>{esc(text, b.get('links'), notes_map)}{a}</p>")
-    close_poem()
-    if open_sec:
-        w("</section>")
-
-    # --- детали перевода: в конце, а не в начале. Читателю они не нужны,
-    # а тому, кто ищет, чья работа перед ним, нужны обязательно.
-    dhead, dbody = details_lines(work, st, blocks)
-    if dhead:
-        w("<section>")
-        w(f"<title><p>{esc(dhead)}</p></title>")
-        for line in dbody:
-            w(f"<p>{esc(line)}</p>")
-        w("</section>")
-    w("</body>")
-
-    if note_seq:
-        # сноски, добавленные конвейером, помечаем: читатель должен видеть,
-        # что пояснение не от автора. Авторские сноски из книги метки не
-        # получают — они и есть авторский текст.
-        pref = st.get("note_prefix", NOTE_PREFIX).rstrip() + " "
-        w('<body name="notes">')
-        # Заголовок у тела, а не у секций: по схеме fb2 это `body = (image?,
-        # title?, epigraph*, section+)`, и оглавление читалка строит по нему.
-        # Без него раздел попадал в оглавление безымянным — как называется
-        # список сносок, каждая программа решала сама. Строка та же, что у
-        # txt, html и epub: они её берут давно, fb2 один её не брал.
-        w(f'<title><p>{esc(st.get("notes_title", "Примечания"))}</p></title>')
-        for anchor, num, body, from_source in note_seq:
-            if not from_source and not body.startswith(pref):
-                body = pref + body
-            w(f'<section id="{anchor}"><title><p>{num}</p></title>'
-              f'<p>{esc(body)}</p></section>')
-        w("</body>")
-
-    def binary(name, raw):
-        mime = "image/png" if name.lower().endswith(".png") else "image/jpeg"
-        data = base64.b64encode(raw).decode()
-        w(f'<binary id="{esc(name)}" content-type="{mime}">')
-        for i in range(0, len(data), 76):
-            w(data[i:i + 76])
-        w("</binary>")
-
-    if cover:
-        binary("cover.jpg", cover)
-    spots = [b for b in blocks if b["kind"] == "image"]
-    used = {b["text"] for b in spots}
-    n_img = 0
-    for name, raw in (images or {}).items():
-        if name in used and name != "cover.jpg":
-            binary(name, raw)
-            n_img += 1
-    if n_img:
-        # Двух чисел мало кому нужно, но одного тут недостаточно: из файла
-        # картинок извлекается больше, чем попадает в книгу (обложка, знак
-        # издательства), а разделитель глав — это одна картинка на два
-        # десятка мест. Одно число читалось как пропажа остальных.
-        log("  " + lang.T("images_n", n_img, len(spots)))
-    w("</FictionBook>")
-
-    open(dest, "w", encoding="utf-8").write("\n".join(o))
-    try:
-        ET.parse(dest)
-    except ET.ParseError as e:
-        raise SystemExit(f"собранный fb2 невалиден: {e}")
-    log(lang.T("built_file", dest, f"{os.path.getsize(dest) / 1024 / 1024:.1f}",
-               sum(1 for b in blocks if b["kind"] == "p")))
+    else:
+        raise ValueError(f"Unknown format: {ext}")
 
 
 # Разряды тысяч разделяют по-разному: «7,386» по-английски, «7386» или

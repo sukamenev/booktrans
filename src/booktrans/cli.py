@@ -756,7 +756,7 @@ def main():
         # имена могут легко: fb2 на входе, fb2 на выходе.
         if os.path.abspath(dest) == os.path.abspath(args.book):
             sys.exit(T("would_overwrite", dest))
-        build.build_fb2(work, meta, blocks, cover, dest, log, args.partial, images)
+        build.build_book(work, meta, blocks, cover, dest, log, args.partial, images)
         log("")
 
     if "qa" in steps:
