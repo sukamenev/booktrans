@@ -481,6 +481,7 @@ def _tex_preamble(meta, st, code):
             r"\titleformat{\chapter}{\huge\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\section}{\Large\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\subsection}{\large\sffamily}{}{0pt}{}",
+            r"\renewcommand{\thesection}{\arabic{section}}",
             # Колонтитул — название текущего раздела. Класс `book` держит там
             # имя главы, а глав у нас нет: без этого на каждой странице висело
             # бы «Оглавление», поставленное \tableofcontents.
