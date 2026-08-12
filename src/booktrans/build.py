@@ -325,7 +325,7 @@ def esc(s, links=None, notes_map=None):
             s = s.replace(f"&lt;a{i}&gt;", f'<a l:href="{escape(url)}">')
             s = s.replace(f"&lt;/a{i}&gt;", "</a>")
     s = re.sub(r"&lt;/?a\d+&gt;", "", s)      # ярлык без адреса — снять
-    return s
+    return re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', r'<a l:href="\2">\1</a>', s)
 
 
 def link_targets(blocks):
