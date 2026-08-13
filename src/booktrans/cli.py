@@ -203,16 +203,14 @@ CHEAP_EFFORT = {"claude": "low"}
 # без обёрток и без десятка ключей в командной строке.
 PRESETS = {
     "agy": {
-        # Отказ — свойство модели, а не текста, поэтому за Gemini встаёт
-        # Claude, а последним — Claude через свой же CLI: другой поставщик,
-        # другой счёт лимитов, и отказ там приходится не на то же место.
-        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,claude:claude-opus-5",
+        "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-opus-5",
         "formatter": "gemini-3.6-flash-low,claude-sonnet-4-6",
         "ocrfixer": "gemini-3.6-flash-low,claude-sonnet-4-6",
     },
     "claude": {
         "formatter": "claude-sonnet-5",
         "ocrfixer": "claude-sonnet-5",
+        "ocrmodel": "codex:,agy:",
     },
 }
 
@@ -305,6 +303,7 @@ def main():
     ap.add_argument("--scout", help=T("h_scout"))
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
+    ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
     ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
                     help=T("h_formatter"))
     ap.add_argument("--ocrfixer", default=os.environ.get("BT_OCRFIXER"),
@@ -437,6 +436,7 @@ def main():
         return chain_for(role)[1:]
 
     agent = agent_for()
+    ocr_agent = agent_for("ocrmodel") or agent
     os.makedirs(f"{work}/prompts", exist_ok=True)
 
     def ask_model(prompt):
@@ -481,7 +481,7 @@ def main():
             # Читаем без карты стилей — это бесплатно.
             try:
                 _, pre_blocks, _, _ = extract.read_book(
-                    args.book, encoding=args.encoding, ask=ask_model)
+                    args.book, encoding=args.encoding, ask=ask_model, agent=ocr_agent)
             except extract.BadBook as e:
                 sys.exit(f"\n  {e}")
             if sum(1 for b in pre_blocks if b["kind"] == "p") >= 20:
@@ -525,7 +525,7 @@ def main():
         log("  " + T("reading", args.book))
         try:
             meta, blocks, cover, images = extract.read_book(
-                args.book, styles_map, args.encoding, ask_model, marks)
+                args.book, styles_map, args.encoding, ask_model, marks, agent=ocr_agent)
         except extract.BadBook as e:
             sys.exit(f"\n  {e}")
         json.dump({"meta": meta, "blocks": blocks}, open(bp, "w", encoding="utf-8"),

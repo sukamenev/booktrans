@@ -38,7 +38,15 @@ def _inline(s, table, links=None):
             s = s.replace(f"&lt;/a{i}&gt;", "</a>")
     s = re.sub(r"&lt;/?a\d+&gt;", "", s)
     tag = "a l:href" if table is FB2_INLINE else "a href"
-    return re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', rf'<{tag}="\2">\1</a>', s)
+    s = re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', rf'<{tag}="\2">\1</a>', s)
+    
+    img_tag = "image l:href" if table is FB2_INLINE else "img src"
+    s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<{img_tag}="\1"/>', s)
+    if table is FB2_INLINE:
+        s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<image l:href="#\1"/>', s)
+    else:
+        s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<img src="\1" alt="math"/>', s)
+    return s
 
 
 def _plain(s):
@@ -148,7 +156,10 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     code = meta.get("target_lang", "ru")
     o = ["<!doctype html>", f'<html lang="{code}"><head><meta charset="utf-8">',
          '<meta name="viewport" content="width=device-width,initial-scale=1">',
-         f"<title>{escape(title)}</title><style>{CSS}</style></head><body>"]
+         f"<title>{escape(title)}</title><style>{CSS}</style>",
+         '<script>MathJax = {tex: {inlineMath: [["$", "$"]]}};</script>',
+         '<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>',
+         "</head><body>"]
     if cover:
         # Обложка первой, как в epub и fb2. Файл самодостаточный, поэтому
         # картинка идёт в него же — отдельным файлом рядом она бы потерялась
@@ -219,6 +230,7 @@ def _targets(items):
 
 
 def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+    items = _render_math_to_images(items, images)
     st = st or {}
     targets = _targets(items)
     code = meta.get("target_lang", "ru")
@@ -286,7 +298,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
             o.append(f'<li id="n{i}">{escape(body)}</li>')
-        o.append("</ol>")
+        o.append("</ol></div>")
         files["notes.xhtml"] = xhtml("".join(o), st.get("notes_title", "Примечания"))
 
     nav = ['<?xml version="1.0" encoding="utf-8"?>',
@@ -403,11 +415,18 @@ def _tex(s, links=None):
     def hide(m):
         marks[len(marks)] = m.group()
         return f"\x00{len(marks) - 1}\x00"
+    
+    # Hide math blocks before escaping
+    s = re.sub(r"\$\$(.*?)\$\$", hide, s, flags=re.DOTALL)
+    s = re.sub(r"\$(.*?)\$", hide, s, flags=re.DOTALL)
+    
     s = re.sub(r"</?(?:%s|a\d+)>" % "|".join(TEX_INLINE), hide, s)
     s = "".join(TEX_ESC.get(c, c) for c in s)
 
     def back(m):
         t = marks[int(m.group(1))]
+        if t.startswith("$"):
+            return t
         name = re.match(r"</?([a-z]+)", t).group(1)
         close = t.startswith("</")
         if name == "a":
@@ -445,13 +464,19 @@ def _tex_preamble(meta, st, code):
     if extra:
         fonts.append("\\IfFontExistsTF{%s}{\\setmainfont{%s}}{}" % (extra, extra))
     lang = TEX_BABEL.get(code)
+    psize = meta.get("page_size")
+    if psize:
+        geom = rf"\usepackage[paperwidth={psize[0]}bp,paperheight={psize[1]}bp,margin=18mm]{{geometry}}"
+    else:
+        geom = r"\usepackage[a5paper,margin=18mm]{geometry}"
+        
     out = [r"\documentclass[10pt,oneside]{book}",
            r"% Собирается lualatex или xelatex: fontspec нужен ради письменностей,",
            r"% которых pdflatex не знает. Заголовки рубленым, текст с засечками,",
            r"% листинги моноширинным — как в книгах и заведено.",
            r"\usepackage{fontspec}",
            *fonts,
-           r"\usepackage[a5paper,margin=18mm]{geometry}",
+           geom,
            r"\usepackage{graphicx}",
            r"\usepackage[normalem]{ulem}",
            r"\usepackage{multirow}",
@@ -481,6 +506,7 @@ def _tex_preamble(meta, st, code):
     out += [r"\renewcommand{\contentsname}{%s}"
             % _tex(st.get("toc_title", "Оглавление")),
             r"\setlength{\parindent}{1.2em}",
+            r"\setlength{\parskip}{0.5em}",
             r"\titleformat{\chapter}{\huge\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\section}{\Large\sffamily\bfseries}{}{0pt}{}",
             r"\titleformat{\subsection}{\large\sffamily}{}{0pt}{}",
@@ -596,7 +622,7 @@ def _tex_table(text, spans=None):
             return len(cells)
         return sum(c[0] for c in sp)
     n = max((width(i, r) for i, r in enumerate(rows)), default=1)
-    out = [r"\begin{center}\begin{tabular}{" + "l" * n + "}"]
+    out = [r"\begin{center}\footnotesize\begin{tabular}{|" + "|".join(["l"] * n) + r"|}\hline"]
     for i, cells in enumerate(rows):
         line = []
         for j, c in enumerate(cells):
@@ -606,12 +632,13 @@ def _tex_table(text, spans=None):
             if sp[1] > 1:
                 body = r"\multirow{%d}{*}{%s}" % (sp[1], body)
             if sp[0] > 1:
-                body = r"\multicolumn{%d}{l}{%s}" % (sp[0], body)
+                # Need to add vertical bars to multicolumn as well if it spans multiple cols
+                body = r"\multicolumn{%d}{|l|}{%s}" % (sp[0], body)
             line.append(body)
         # Строку добиваем пустыми ячейками: у TeX число столбцов объявлено
         # заранее, и короткая строка ломает всю таблицу.
         line += [""] * (n - width(i, cells))
-        out.append(" & ".join(line) + r" \\")
+        out.append(" & ".join(line) + r" \\ \hline")
     out.append(r"\end{tabular}\end{center}")
     return "\n".join(out)
 
@@ -671,7 +698,77 @@ def write_pdf(path, meta, items, notes, images, note_prefix, st=None,
 
 import xml.etree.ElementTree as ET
 
+def _render_math_to_images(items, images):
+    import re, subprocess, tempfile, os, hashlib
+    math_re = re.compile(r'\$\$(.*?)\$\$|\$([^\$]+?)\$')
+    formulas = set()
+    for item in items:
+        if item[0] in ("p", "title", "table", "verse"):
+            for m in math_re.finditer(item[1]):
+                f = m.group(1) or m.group(2)
+                formulas.add(f.strip())
+    if not formulas:
+        return items
+    formulas = sorted(list(formulas))
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        return items
+
+    formula_images = {}
+    with tempfile.TemporaryDirectory() as td:
+        tex_path = os.path.join(td, "math.tex")
+        with open(tex_path, "w", encoding="utf-8") as f:
+            f.write(r"""\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[active,tightpage,displaymath,math]{preview}
+\begin{document}
+""")
+            for form in formulas:
+                clean_form = form.replace('\n', ' ')
+                f.write(r"\begin{preview}$" + clean_form + r"$\end{preview}" + "\n")
+            f.write(r"\end{document}")
+        subprocess.run(["lualatex", "-interaction=nonstopmode", "math.tex"], cwd=td, capture_output=True)
+        pdf_path = os.path.join(td, "math.pdf")
+        if os.path.exists(pdf_path):
+            pdf = pdfium.PdfDocument(pdf_path)
+            import io
+            from PIL import Image
+            for i in range(min(len(pdf), len(formulas))):
+                page = pdf[i]
+                bitmap = page.render(scale=3)
+                pil_image = bitmap.to_pil()
+                img_name = f"math_{hashlib.md5(formulas[i].encode()).hexdigest()[:8]}.png"
+                img_byte_arr = io.BytesIO()
+                pil_image.save(img_byte_arr, format='PNG')
+                images[img_name] = img_byte_arr.getvalue()
+                formula_images[formulas[i]] = img_name
+
+    if not formula_images:
+        return items
+
+    new_items = []
+    for item in items:
+        if item[0] in ("p", "title", "table", "verse"):
+            t = item[1]
+            def repl(m):
+                f = (m.group(1) or m.group(2)).strip()
+                if f in formula_images:
+                    name = formula_images[f]
+                    # We output the unescaped fake tag which _inline will escape, 
+                    # wait! If we output `<imgmath name="..."/>`, _inline does escape(s).
+                    # So we should output `<imgmath name="..."/>` and _inline will see `&lt;imgmath name=&quot;...&quot;/&gt;`
+                    return f'<imgmath name="{name}"/>'
+                return m.group(0)
+            t = math_re.sub(repl, t)
+            new_items.append((item[0], t) + item[2:])
+        else:
+            new_items.append(item)
+    return new_items
+
 def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
+    items = _render_math_to_images(items, images)
     blocks = kw['blocks']
     tr = kw['tr']
     partial = kw['partial']

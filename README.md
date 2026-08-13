@@ -202,7 +202,7 @@ unasked is not one you should trust.
 
 **Required:** Python 3.9 or newer and the agent's CLI — that is what
 translates the book. **Optional, only for the formats you use:** `poppler`
-(`pdftotext`, `pdfimages`) to read pdf and pull figures out of it. epub, fb2
+(`pdftotext`, `pdfimages`) to read pdf with the legacy method. Smart extraction with `bt_pdf2md` uses `pypdfium2` (installed automatically). epub, fb2
 and txt need nothing.
 
 To edit the sources, take it from git instead — then `./booktrans` runs from

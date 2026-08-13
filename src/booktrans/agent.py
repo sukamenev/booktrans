@@ -218,12 +218,12 @@ class WaitingAgent:
     def kind(self):
         return getattr(self.inner, "kind", "?")
 
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         left = LIMITS.left(key_of(self))
         if left:
             raise RateLimited(T("lim_known", self.model, max(int(left) // 60, 1)))
         try:
-            return self.inner.run(system, user)
+            return self.inner.run(system, user, image=image)
         except RateLimited as e:
             # Названо точное время снятия — берём его, а не четверть часа
             # вслепую. Полминуты сверху: часы у нас и у поставщика расходятся,
@@ -234,7 +234,7 @@ class WaitingAgent:
 
 
 class Agent:
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         """-> (текст ответа, {'model':..., 'cost_usd':...})"""
         raise NotImplementedError
 
@@ -250,7 +250,7 @@ class ClaudeAgent(Agent):
         self.tools = tools
         self.effort = effort
 
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         # Системный промпт передаём файлом, а не аргументом: у одного
         # аргумента командной строки предел около 128 КБ, а справочник
         # по книге легко перерастает его — процесс падает с
@@ -277,6 +277,10 @@ class ClaudeAgent(Agent):
             cmd += ["--model", self.model]
         if self.effort:
             cmd += ["--effort", self.effort]
+        
+        if image:
+            user += f"\n\nHere is the image file you need to extract: {os.path.abspath(image)}\nPlease use your vision capabilities to read it."
+            
         try:
             r = subprocess.run(cmd, input=user, capture_output=True,
                                text=True, timeout=self.timeout)
@@ -326,7 +330,7 @@ class CommandAgent(Agent):
         self.template = template
         self.timeout = timeout
 
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         tmp = None
         tpl = self.template
         if "{system_file}" in tpl:
@@ -366,16 +370,17 @@ class AgyAgent(Agent):
         self.timeout = timeout
         self.effort = effort
 
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         payload = f"{system}\n\n---\n\n{user}" if system else user
-        cmd = ["agy", "--dangerously-skip-permissions", "--output-format", "json"]
+        cmd = ["agy", "--sandbox", "--output-format", "json"]
         if self.model:
             cmd += ["--model", self.model]
         if self.effort:
             cmd += ["--effort", self.effort]
-        cmd += ["--print", payload]
+        if image:
+            payload += f"\n\nHere is the image file you need to extract: {os.path.abspath(image)}\nPlease use your tools (e.g. view_file) to read it if it's not automatically attached."
         try:
-            r = subprocess.run(cmd, capture_output=True,
+            r = subprocess.run(cmd, input=payload, capture_output=True,
                                text=True, timeout=self.timeout)
         except Exception as e:
             raise AgentError(f"ошибка запуска agy: {e}")
@@ -404,7 +409,7 @@ class CodexAgent(Agent):
         self.timeout = timeout
         self.effort = effort
 
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         payload = f"{system}\n\n---\n\n{user}" if system else user
         cmd = ["codex", "exec", "--skip-git-repo-check",
                "-c", 'web_search="disabled"', "--sandbox", "read-only"]
@@ -412,6 +417,8 @@ class CodexAgent(Agent):
             cmd += ["--model", self.model]
         if self.effort:
             cmd += ["--config", f"model_reasoning_effort={self.effort}"]
+        if image:
+            cmd += ["-i", image]
         try:
             r = subprocess.run(cmd, input=payload, capture_output=True,
                                text=True, timeout=self.timeout)

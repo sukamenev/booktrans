@@ -15,8 +15,26 @@ import os
 import re
 import subprocess
 import urllib.parse
+import warnings
 import zipfile
 import xml.etree.ElementTree as ET
+
+VISUAL_PDF_PROMPT = """You are an expert document OCR and layout extraction model.
+Extract all text, math, tables, footnotes, and image captions from the provided document page.
+Output the result in standard Markdown format.
+
+CRITICAL RULES:
+1. TABLES: Convert tables into proper Markdown tables.
+2. MULTI-COLUMN: If the page has 2, 3, or 4 columns, read them in the correct reading order (top-to-bottom, left-to-right). Do not mix text from different columns into the same paragraph.
+3. MATH: Wrap all inline mathematical formulas in single dollar signs: `$formula$`. Wrap display equations (standalone lines) in double dollar signs: `$$formula$$`. Use valid LaTeX syntax.
+4. FOOTNOTES: Format footnotes exactly as `[^1]` in the text and place the footnote content at the bottom of the output as `[^1]: Note text`.
+5. MARGINALIA & SIDENOTES: Integrate marginalia and sidenotes into the text flow where they logically belong, or place them at the end of the section.
+6. IMAGES & GRAPHS: For every image, graph, diagram, or chart, insert a tag `![image]([ymin, xmin, ymax, xmax])`, where coordinates are integers from 0 to 1000 representing the bounding box normalized to the page size.
+7. CAPTIONS: If an image has a caption (legend), extract it and place it immediately after the image tag in italics: `*Caption text*`.
+8. HEADERS & FOOTERS: DO NOT extract running headers, running footers, or page numbers. Stitch sentences across pages seamlessly if necessary.
+9. NO CODE BLOCKS: Do NOT wrap your output in ```markdown code blocks. Return the raw Markdown directly.
+"""
+
 from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
                    COL_LINES, COL_PAGES, HEAD_GAP, HEAD_LETTERS, HEAD_MAX,
                    HEAD_NEAR,
@@ -1684,6 +1702,10 @@ def _pdf(path, marks=None):
                 meta.setdefault("author", v)
             elif k == "subject":
                 meta.setdefault("description", v)
+            elif k == "page size":
+                m = re.match(r"([\d.]+)\s*x\s*([\d.]+)\s*pts", v)
+                if m:
+                    meta["page_size"] = [float(m.group(1)), float(m.group(2))]
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
         # Обложкой считаем картинку с первой страницы, и только если она
@@ -1693,6 +1715,190 @@ def _pdf(path, marks=None):
         w, h = _png_size(first)
         if h > w * 1.2:
             cover = cover or first
+    return meta, blocks, cover, images
+
+
+def _pdf_visual(path, agent):
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        print("pypdfium2 not found, falling back to legacy PDF extraction.")
+        return _pdf(path, None)
+
+    from pathlib import Path
+    import time
+    pdf_path = Path(path)
+    work_dir = pdf_path.with_suffix('.work') / 'pdf_pages'
+    work_dir.mkdir(parents=True, exist_ok=True)
+    
+    pdf = pdfium.PdfDocument(str(pdf_path))
+    total_pages = len(pdf)
+    all_text = []
+    
+    for page_num in range(1, total_pages + 1):
+        page_md_file = work_dir / f"page_{page_num:04d}.md"
+        if page_md_file.exists():
+            text = page_md_file.read_text(encoding="utf-8")
+        else:
+            page = pdf[page_num - 1]
+            bitmap = page.render(scale=3)
+            pil_image = bitmap.to_pil()
+            img_path = work_dir / f"page_{page_num:04d}.png"
+            pil_image.save(img_path, format="PNG")
+            
+            user_prompt = f"Extract page {page_num} of {total_pages}."
+            print(f"[*] Visually extracting page {page_num}/{total_pages} with {getattr(agent, 'kind', 'agent')}...")
+            
+            while True:
+                try:
+                    from .agent import RateLimited, AgentError
+                    text, stats = agent.run(VISUAL_PDF_PROMPT, user_prompt, image=str(img_path))
+                    text = text.strip()
+                    if text.startswith("```markdown"): text = text[11:]
+                    if text.startswith("```"): text = text[3:]
+                    if text.endswith("```"): text = text[:-3]
+                    text = text.strip()
+                    page_md_file.write_text(text, encoding="utf-8")
+                    break
+                except RateLimited:
+                    print("    Rate limited, waiting 10s...")
+                    time.sleep(10)
+                except AgentError as e:
+                    print(f"    Agent error: {e}")
+                    raise
+        all_text.append(text)
+    
+    final_md_path = pdf_path.with_suffix('.md')
+    final_md_path.write_text("\n\n---\n\n".join(all_text), encoding="utf-8")
+    
+    import re
+    import io
+    from PIL import Image
+
+    blocks = []
+    images = {}
+    sec = 1
+    n = 0
+    
+    for page_num, text in enumerate(all_text, 1):
+        page_img_path = work_dir / f"page_{page_num:04d}.png"
+        page_img = None
+        
+        paras = text.split("\n\n")
+        for p in paras:
+            p = p.strip()
+            if not p: continue
+            
+            # Extract images and coordinates
+            img_matches = list(re.finditer(r"!\[(.*?)\]\(\[([^\]]+)\]\)", p))
+            
+            if img_matches:
+                last_end = 0
+                for match in img_matches:
+                    pre_text = p[last_end:match.start()].strip()
+                    if pre_text:
+                        n += 1
+                        blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": pre_text, "_page": page_num})
+                    
+                    caption = match.group(1).strip()
+                    coords_str = match.group(2)
+                    coords = []
+                    for c in coords_str.split(","):
+                        if c.strip().isdigit():
+                            coords.append(int(c.strip()))
+                    
+                    if len(coords) == 4:
+                        if page_img is None and page_img_path.exists():
+                            page_img = Image.open(page_img_path)
+                        
+                        if page_img:
+                            ymin, xmin, ymax, xmax = coords
+                            W, H = page_img.size
+                            # Добавляем "подушку безопасности" в 0.4% во все стороны
+                            pad_w = int(W * 0.004)
+                            pad_h = int(H * 0.004)
+                            c_left = max(0, int(xmin * W / 1000.0) - pad_w)
+                            c_top = max(0, int(ymin * H / 1000.0) - pad_h)
+                            c_right = min(W, int(xmax * W / 1000.0) + pad_w)
+                            c_bottom = min(H, int(ymax * H / 1000.0) + pad_h)
+                            
+                            if c_right > c_left and c_bottom > c_top:
+                                cropped = page_img.crop((c_left, c_top, c_right, c_bottom))
+                                img_name = f"img_p{page_num:04d}_{n:04d}.png"
+                                img_byte_arr = io.BytesIO()
+                                cropped.save(img_byte_arr, format='PNG')
+                                images[img_name] = img_byte_arr.getvalue()
+                                
+                                n += 1
+                                blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "image", "text": img_name, "_page": page_num})
+                                if caption and caption != "image":
+                                    n += 1
+                                    blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": f"_{caption}_", "_page": page_num})
+                                    
+                    last_end = match.end()
+                
+                post_text = p[last_end:].strip()
+                if post_text:
+                    n += 1
+                    blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": post_text, "_page": page_num})
+                continue
+                
+            m = re.match(r"^(#{1,6})\s+(.*)", p)
+            if m:
+                sec += 1
+                n = 1
+                blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "title", "text": m.group(2).strip(), "level": len(m.group(1)), "_page": page_num})
+            elif p.startswith("|") and re.search(r"\|[-:\s|]+\|", p):
+                lines = p.split("\n")
+                tab_lines = []
+                for line in lines:
+                    line = line.strip()
+                    if re.match(r"^\|[-:\s|]+\|$", line) or line.replace("-", "").replace("|", "").replace(" ", "").replace(":", "") == "":
+                        continue
+                    line = re.sub(r"^\||\|$", "", line)
+                    cells = [cell.strip() for cell in line.split("|") if cell.strip()]
+                    tab_lines.append(" | ".join(cells))
+                n += 1
+                blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "table", "text": "\n".join(tab_lines), "_page": page_num})
+            else:
+                n += 1
+                blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": p, "_page": page_num})
+
+    # Нормализация Markdown после визуального извлечения
+    for b in blocks:
+        if "text" not in b or b["kind"] not in ("p", "title", "table"):
+            continue
+            
+        # Сноски-определения: [^1]: текст
+        m_def = re.match(r'^\[\^(\d+)\]:\s*(.*)', b["text"], flags=re.DOTALL)
+        if m_def:
+            b["kind"] = "note"
+            b["note_id"] = f"n{m_def.group(1)}"
+            b["name"] = m_def.group(1)
+            b["text"] = m_def.group(2)
+            continue
+            
+        # Курсив и полужирный
+        b["text"] = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', b["text"])
+        b["text"] = re.sub(r'\*(.*?)\*', r'<i>\1</i>', b["text"])
+        
+        # Инлайн-ссылки на сноски: [^1]
+        def repl_fn(m):
+            note_num = m.group(1)
+            if "links" not in b:
+                b["links"] = []
+            b["links"].append(f"#n{note_num}")
+            idx = len(b["links"])
+            return f"<a{idx}>[{note_num}]</a{idx}>"
+            
+        b["text"] = re.sub(r'\[\^(\d+)\]', repl_fn, b["text"])
+
+    meta = {}
+    meta["title"] = os.path.splitext(os.path.basename(path))[0]
+    meta["page_size"] = list(pdf[0].get_size())
+    
+    cover = None
+
     return meta, blocks, cover, images
 
 
@@ -2049,7 +2255,19 @@ def _from_text(txt, title, marks=None, indent=INDENT_TEXT, imgs=()):
                       r"\b[\s\dIVXLC.:\u2014-]*$", re.I)
     pagenum = re.compile(r"^[\dIVXLCivxlc]{1,6}$")
 
+    # Костыль для старого парсера PDF/TXT: если строка отбита 3 пустыми строками
+    # до и после, и таких строк в книге немного (до 50), считаем их заголовками.
+    spaced_out = set()
+    for m in re.finditer(r"(?:\n\s*){4,}([^\n]+)(?:\n\s*){4,}", "\n\n\n\n" + raw + "\n\n\n\n"):
+        cand = m.group(1).strip()
+        if cand:
+            spaced_out.add(cand)
+    if len(spaced_out) > 50:
+        spaced_out.clear()
+
     def looks_like_title(p):
+        if p in spaced_out:
+            return True
         if head.match(p):
             return True
         # Короткая строка прописными — но не номер страницы, не выходные
@@ -2411,7 +2629,7 @@ def strip_tags(s):
     return re.sub(r"</?[a-zA-Z][^>]*>", "", s).strip()
 
 
-def read_book(path, styles=None, encoding=None, ask=None, marks=None):
+def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None):
     """Прочитать книгу любого поддерживаемого формата.
 
     `encoding` — если человек указал кодировку руками; `ask` — вызов модели,
@@ -2420,7 +2638,7 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None):
     """
     ext = os.path.splitext(path)[1].lower()
     try:
-        meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks)
+        meta, blocks, cover, images = _read_book(path, ext, styles, encoding, ask, marks, agent=agent)
         _mark_back(blocks)      # сначала разделы целиком, потом записи
         _mark_refs(blocks)
         _mark_cites(blocks)     # до _prune_notes: правило смотрит на вид блока
@@ -2438,12 +2656,17 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None):
                       f"Проверьте: file {path!r}") from None
 
 
-def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None):
+def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agent=None):
     if ext == ".epub":
         return _epub(path, styles, encoding, ask)
     if ext == ".fb2":
         return _fb2(path, encoding, ask)
     if ext == ".pdf":
+        import pathlib
+        page1_md = pathlib.Path(path).with_suffix('.work') / 'pdf_pages' / 'page_0001.md'
+        # Если есть агент и это современная модель (claude, codex, agy), пробуем визуальное извлечение
+        if (agent and getattr(agent, "kind", "") in ("claude", "codex", "agy")) or page1_md.exists():
+            return _pdf_visual(path, agent)
         return _pdf(path, marks)
     if ext in (".html", ".htm"):
         return _html(path, styles, encoding, ask)
