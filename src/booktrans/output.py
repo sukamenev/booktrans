@@ -486,7 +486,7 @@ def _tex_preamble(meta, st, code):
            # Длинный адрес — вторая причина строк, вылезающих за поле:
            # разбить его без этого нечем.
            r"\PassOptionsToPackage{hyphens}{url}",
-           r"\usepackage[hidelinks]{hyperref}",
+           r"\usepackage[colorlinks=true,allcolors=blue]{hyperref}",
            # Последнее средство: где перенести нельзя, TeX растянет пробелы,
            # а не вытолкнет строку на поля.
            # Правил переноса для языка может не оказаться (в texlive они
@@ -553,28 +553,30 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
     # дата издания. Когда книга переведена, сказано в разделе «О переводе».
     o.append(r"\date{}")
     o.append(r"\maketitle")
-    o.append(r"\tableofcontents")
     nums = {b: i for i, b in enumerate(notes, 1)}
+    toc_added = False
     for kind, text, bid, links, *sp in items:
+        if not toc_added and not bid.startswith("_about"):
+            o.append(r"\clearpage")
+            o.append(r"\tableofcontents")
+            o.append(r"\clearpage")
+            toc_added = True
+
         if kind == "title":
             t = _tex(text)
-            # Служебные разделы начинаются со своей страницы: «О переводе»
-            # сразу за оглавлением читается его продолжением.
             if bid.startswith("_"):
                 o.append(r"\clearpage")
-            # Длинное название вылезает за поле: колонтитул в строку, и
-            # переносить его нечем. Обрезаем сами — так надёжнее любого
-            # пакета и не зависит от того, что стоит у читателя.
             head = " ".join(text.split())
             if len(head) > TEX_HEAD:
                 head = head[:TEX_HEAD].rsplit(" ", 1)[0] + "…"
             level = sp[1] if len(sp) > 1 and sp[1] is not None else 1
+            star = "*" if bid.startswith("_about") else ""
             if level == 1:
-                o.append(r"\section{%s}\markright{%s}" % (t, _tex(head)))
+                o.append(r"\section%s{%s}\markright{%s}" % (star, t, _tex(head)))
             elif level == 2:
-                o.append(r"\subsection{%s}" % t)
+                o.append(r"\subsection%s{%s}" % (star, t))
             else:
-                o.append(r"\subsubsection{%s}" % t)
+                o.append(r"\subsubsection%s{%s}" % (star, t))
         elif kind == "subtitle":
             o.append(r"\subsection*{%s}" % _tex(text))
         elif kind == "break":
