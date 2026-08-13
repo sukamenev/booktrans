@@ -172,7 +172,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     nums = {b: i for i, b in enumerate(notes, 1)}
     for kind, text, bid, links, *sp in items:
         if kind == "title":
-            o.append(f"<h1{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h1>")
+            level = min(sp[1] if len(sp) > 1 and sp[1] is not None else 1, 6)
+            o.append(f"<h{level}{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h{level}>")
         elif kind == "subtitle":
             o.append(f"<h2{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h2>")
         elif kind == "break":
@@ -270,7 +271,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             links = [where.get(u[1:], "") + u if u.startswith("#") else u
                      for u in (links or [])] or None
             if kind == "title":
-                o.append(f"<h1{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h1>")
+                level = min(sp[1] if len(sp) > 1 and sp[1] is not None else 1, 6)
+                o.append(f"<h{level}{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h{level}>")
             elif kind == "subtitle":
                 o.append(f"<h2{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h2>")
             elif kind == "break":
@@ -510,6 +512,7 @@ def _tex_preamble(meta, st, code):
             r"\titleformat{\chapter}{\huge\sffamily\bfseries\raggedright}{}{0pt}{}",
             r"\titleformat{\section}{\Large\sffamily\bfseries\raggedright}{}{0pt}{}",
             r"\titleformat{\subsection}{\large\sffamily\raggedright}{}{0pt}{}",
+            r"\titleformat{\subsubsection}{\normalsize\sffamily\bfseries\raggedright}{}{0pt}{}",
             r"\renewcommand{\thesection}{\arabic{section}}",
             # Колонтитул — название текущего раздела. Класс `book` держит там
             # имя главы, а глав у нас нет: без этого на каждой странице висело
@@ -565,7 +568,13 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
             head = " ".join(text.split())
             if len(head) > TEX_HEAD:
                 head = head[:TEX_HEAD].rsplit(" ", 1)[0] + "…"
-            o.append(r"\section{%s}\markright{%s}" % (t, _tex(head)))
+            level = sp[1] if len(sp) > 1 and sp[1] is not None else 1
+            if level == 1:
+                o.append(r"\section{%s}\markright{%s}" % (t, _tex(head)))
+            elif level == 2:
+                o.append(r"\subsection{%s}" % t)
+            else:
+                o.append(r"\subsubsection{%s}" % t)
         elif kind == "subtitle":
             o.append(r"\subsection*{%s}" % _tex(text))
         elif kind == "break":

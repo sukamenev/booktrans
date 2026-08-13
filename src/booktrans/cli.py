@@ -519,9 +519,17 @@ def main():
             marks = pipeline.format_marks(
                 work, args.book, agent_for("formatter"), task("format"),
                 args.encoding, ask_model, log, backup_for("formatter"))
-        pipeline.note_source(work, reader={
-            ".pdf": "pdftotext + pdfimages (poppler)"}.get(
-                os.path.splitext(args.book)[1].lower(), ""))
+        ext = os.path.splitext(args.book)[1].lower()
+        pdf_reader = ""
+        if ext == ".pdf":
+            import pathlib
+            page1_md = pathlib.Path(args.book).with_suffix('.work') / 'pdf_pages' / 'page_0001.md'
+            if (ocr_agent and getattr(ocr_agent, "kind", "") in ("claude", "codex", "agy")) or page1_md.exists():
+                pdf_reader = T("doc_pdf_visual", getattr(ocr_agent, 'model', getattr(ocr_agent, 'kind', 'unknown')))
+            else:
+                pdf_reader = T("doc_pdftotext")
+        
+        pipeline.note_source(work, reader={".pdf": pdf_reader}.get(ext, ""))
         log("  " + T("reading", args.book))
         try:
             meta, blocks, cover, images = extract.read_book(

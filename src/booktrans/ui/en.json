@@ -144,6 +144,7 @@
   "doc_pdftotext": "reading pdf (the poppler package)",
   "doc_pdftohtml": "the links of a pdf: index, notes, addresses",
   "doc_pdfimages": "pictures out of pdf (same poppler package)",
+  "doc_pdf_visual": "visual pdf recognition ({0})",
   "doc_charset": "rare txt encodings; the common ones are detected without it",
   "doc_agent": "the {0} agent: it is what translates the book, nothing works without it",
   "doc_agent_how": "install the \"{0}\" agent CLI and sign in to it once",
