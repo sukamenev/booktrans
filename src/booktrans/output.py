@@ -507,9 +507,9 @@ def _tex_preamble(meta, st, code):
             % _tex(st.get("toc_title", "Оглавление")),
             r"\setlength{\parindent}{1.2em}",
             r"\setlength{\parskip}{0.5em}",
-            r"\titleformat{\chapter}{\huge\sffamily\bfseries}{}{0pt}{}",
-            r"\titleformat{\section}{\Large\sffamily\bfseries}{}{0pt}{}",
-            r"\titleformat{\subsection}{\large\sffamily}{}{0pt}{}",
+            r"\titleformat{\chapter}{\huge\sffamily\bfseries\raggedright}{}{0pt}{}",
+            r"\titleformat{\section}{\Large\sffamily\bfseries\raggedright}{}{0pt}{}",
+            r"\titleformat{\subsection}{\large\sffamily\raggedright}{}{0pt}{}",
             r"\renewcommand{\thesection}{\arabic{section}}",
             # Колонтитул — название текущего раздела. Класс `book` держит там
             # имя главы, а глав у нас нет: без этого на каждой странице висело
