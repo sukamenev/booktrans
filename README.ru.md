@@ -769,7 +769,7 @@ pandoc книга.docx -o книга.epub         # pandoc
 -pt, --prompt-text S  то же строкой; можно вместе с -p
 -o, --out FILE        выходной файл; формат — по расширению
 -w, --work DIR        рабочая папка
---only ЭТАП           только один: structure|ocrfix|scout|translate|edit|build|qa|notes
+--only ЭТАП           только один: recognize|structure|ocrfix|scout|translate|edit|build|qa|notes
 --skip a,b            пропустить этапы
 --chunks 5,6,7        только эти куски; можно диапазоном: 41-93
 --force-injected      переводить, несмотря на обращения к машине в книге

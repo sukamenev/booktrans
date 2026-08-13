@@ -776,7 +776,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --to CODE             target language (langs/CODE.md), en by default
 --ui CODE             interface language (ui/CODE.json), en by default
 --encoding NAME       input encoding, when detection got it wrong
---only STEP           a single step: structure|ocrfix|scout|translate|edit|build|qa|notes
+--only STEP           a single step: recognize|structure|ocrfix|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
 --force-injected      translate despite instructions aimed at the machine

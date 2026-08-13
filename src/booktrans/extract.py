@@ -33,6 +33,7 @@ CRITICAL RULES:
 7. CAPTIONS: If an image has a caption (legend), extract it and place it immediately after the image tag in italics: `*Caption text*`.
 8. HEADERS & FOOTERS: DO NOT extract running headers, running footers, or page numbers. Stitch sentences across pages seamlessly if necessary.
 9. NO CODE BLOCKS: Do NOT wrap your output in ```markdown code blocks. Return the raw Markdown directly.
+10. HEADINGS: Preserve document hierarchy by using Markdown headings (`#`, `##`, `###`) for section titles and chapters based on their visual prominence (font size, weight).
 """
 
 from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
@@ -2667,3 +2668,88 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agen
         return _txt(path, encoding, ask, marks)
     raise SystemExit(
         f"не умею читать {ext}; поддерживаются epub, fb2, html, pdf, txt")
+
+
+def recognize(path, agent, pages_str=None):
+    try:
+        import pypdfium2 as pdfium
+    except ImportError:
+        print("pypdfium2 not found, skipping visual recognition.")
+        return
+
+    from pathlib import Path
+    pdf_path = Path(path)
+    work_dir = pdf_path.with_suffix('.work') / 'pdf_pages'
+    work_dir.mkdir(parents=True, exist_ok=True)
+    
+    pdf = pdfium.PdfDocument(str(pdf_path))
+    total_pages = len(pdf)
+    
+    if pages_str:
+        pages_to_extract = [int(p.strip()) for p in pages_str.split(",")]
+    else:
+        pages_to_extract = range(1, total_pages + 1)
+        
+    for page_num in pages_to_extract:
+        if page_num < 1 or page_num > total_pages:
+            continue
+            
+        page_md_file = work_dir / f"page_{page_num:04d}.md"
+        if page_md_file.exists():
+            print(f"[*] Page {page_num} already recognized, skipping (remove file to force).")
+            continue
+            
+        page = pdf[page_num - 1]
+        bitmap = page.render(scale=3)
+        pil_image = bitmap.to_pil()
+        img_path = work_dir / f"page_{page_num:04d}.png"
+        pil_image.save(img_path, format="PNG")
+        
+        user_prompt = f"Extract page {page_num} of {total_pages}."
+        print(f"[*] Visually extracting page {page_num}/{total_pages} with {getattr(agent, 'kind', 'agent')}...")
+        
+        while True:
+            try:
+                from .agent import RateLimited, AgentError
+                text, stats = agent.run(VISUAL_PDF_PROMPT, user_prompt, image=str(img_path))
+                text = text.strip()
+                if text.startswith("```markdown"): text = text[11:]
+                if text.startswith("```"): text = text[3:]
+                if text.endswith("```"): text = text[:-3]
+                text = text.strip()
+                
+                # Crop images based on coordinates
+                import re
+                images_dir = work_dir / "images"
+                images_dir.mkdir(parents=True, exist_ok=True)
+                
+                def replace_img(match):
+                    caption = match.group(1)
+                    coords_str = match.group(2)
+                    coords = [int(c.strip()) for c in coords_str.split(",") if c.strip().isdigit()]
+                    if len(coords) == 4:
+                        ymin, xmin, ymax, xmax = coords
+                        W, H = pil_image.size
+                        pad_w = int(W * 0.004)
+                        pad_h = int(H * 0.004)
+                        c_left = max(0, int(xmin * W / 1000.0) - pad_w)
+                        c_top = max(0, int(ymin * H / 1000.0) - pad_h)
+                        c_right = min(W, int(xmax * W / 1000.0) + pad_w)
+                        c_bottom = min(H, int(ymax * H / 1000.0) + pad_h)
+                        
+                        if c_right > c_left and c_bottom > c_top:
+                            cropped = pil_image.crop((c_left, c_top, c_right, c_bottom))
+                            img_filename = f"img_p{page_num:04d}_{c_top}_{c_left}.png"
+                            cropped.save(images_dir / img_filename, format="PNG")
+                            return f"![{caption}](images/{img_filename})"
+                    return match.group(0)
+                
+                text = re.sub(r"!\[(.*?)\]\(\[([^\]]+)\]\)", replace_img, text)
+                page_md_file.write_text(text, encoding="utf-8")
+                break
+            except RateLimited:
+                import time; time.sleep(10)
+            except AgentError as e:
+                print(f"Agent error: {e}")
+                raise
+

@@ -615,14 +615,17 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
             star = "*" if bid.startswith("_about") else ""
             
             if is_abstract:
-                if star: o.append(r"\section*{%s}\markright{%s}" % (t, _tex(head)))
-                else: o.append(r"\section[%s]{%s}\markright{%s}" % (clean_t, t, _tex(head)))
+                if star: o.append(r"\chapter*{%s}\markright{%s}" % (t, _tex(head)))
+                else: o.append(r"\chapter[%s]{%s}\markright{%s}" % (clean_t, t, _tex(head)))
                 o.append(r"\begin{quotation}")
                 in_abstract = True
-            elif level == 1:
-                if star: o.append(r"\section*{%s}\markright{%s}" % (t, _tex(head)))
-                else: o.append(r"\section[%s]{%s}\markright{%s}" % (clean_t, t, _tex(head)))
-            elif level == 2:
+            elif level == "1" or level == 1:
+                if star: o.append(r"\chapter*{%s}\markright{%s}" % (t, _tex(head)))
+                else: o.append(r"\chapter[%s]{%s}\markright{%s}" % (clean_t, t, _tex(head)))
+            elif level == "2" or level == 2:
+                if star: o.append(r"\section*{%s}" % t)
+                else: o.append(r"\section[%s]{%s}" % (clean_t, t))
+            elif level == "3" or level == 3:
                 if star: o.append(r"\subsection*{%s}" % t)
                 else: o.append(r"\subsection[%s]{%s}" % (clean_t, t))
             else:
