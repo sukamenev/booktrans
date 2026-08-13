@@ -1708,13 +1708,6 @@ def _pdf(path, marks=None):
                     meta["page_size"] = [float(m.group(1)), float(m.group(2))]
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
-        # Обложкой считаем картинку с первой страницы, и только если она
-        # книжной формы. У статьи на первой странице стоит эмблема журнала
-        # поперёк листа — обложкой она не бывает.
-        first = (imgs.get(1) or [b""])[0]
-        w, h = _png_size(first)
-        if h > w * 1.2:
-            cover = cover or first
     return meta, blocks, cover, images
 
 
