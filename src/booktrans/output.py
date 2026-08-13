@@ -483,6 +483,7 @@ def _tex_preamble(meta, st, code):
            r"\usepackage[normalem]{ulem}",
            r"\usepackage{multirow}",
            r"\usepackage{titlesec}",
+           r"\usepackage{tabulary}",
            # Длинный адрес — вторая причина строк, вылезающих за поле:
            # разбить его без этого нечем.
            r"\PassOptionsToPackage{hyphens}{url}",
@@ -513,7 +514,7 @@ def _tex_preamble(meta, st, code):
             r"\titleformat{\section}{\Large\sffamily\bfseries\raggedright}{}{0pt}{}",
             r"\titleformat{\subsection}{\large\sffamily\raggedright}{}{0pt}{}",
             r"\titleformat{\subsubsection}{\normalsize\sffamily\bfseries\raggedright}{}{0pt}{}",
-            r"\renewcommand{\thesection}{\arabic{section}}",
+            r"\setcounter{secnumdepth}{-1}",
             # Колонтитул — название текущего раздела. Класс `book` держит там
             # имя главы, а глав у нас нет: без этого на каждой странице висело
             # бы «Оглавление», поставленное \tableofcontents.
@@ -633,7 +634,7 @@ def _tex_table(text, spans=None):
             return len(cells)
         return sum(c[0] for c in sp)
     n = max((width(i, r) for i, r in enumerate(rows)), default=1)
-    out = [r"\begin{center}\footnotesize\begin{tabular}{|" + "|".join(["l"] * n) + r"|}\hline"]
+    out = [r"\begin{center}\footnotesize\begin{tabulary}{\textwidth}{|" + "|".join(["L"] * n) + r"|}\hline"]
     for i, cells in enumerate(rows):
         line = []
         for j, c in enumerate(cells):
@@ -650,7 +651,7 @@ def _tex_table(text, spans=None):
         # заранее, и короткая строка ломает всю таблицу.
         line += [""] * (n - width(i, cells))
         out.append(" & ".join(line) + r" \\ \hline")
-    out.append(r"\end{tabular}\end{center}")
+    out.append(r"\end{tabulary}\end{center}")
     return "\n".join(out)
 
 
