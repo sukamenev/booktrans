@@ -85,7 +85,7 @@ def _table_html(text, inline, spans=None):
     return "<table>" + "".join(rows) + "</table>"
 
 
-def write_txt(path, meta, items, notes, images, note_prefix, st=None):
+def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
     st = st or {}
     out = []
     title = meta.get("title_target") or meta.get("title") or ""
@@ -148,7 +148,7 @@ sup a{text-decoration:none;color:#06c;font-size:.75em}
 h2{color:#999}.notes{color:#bbb;border-color:#333}sup a{color:#7ab}}"""
 
 
-def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     st = st or {}
     targets = _targets(items)
     title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
@@ -230,7 +230,7 @@ def _targets(items):
     return {u[1:] for x in items for u in (x[3] or ()) if u.startswith("#")}
 
 
-def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     items = _render_math_to_images(items, images)
     st = st or {}
     targets = _targets(items)
@@ -410,14 +410,31 @@ TEX_BABEL = {"ru": "russian", "en": "english", "de": "german", "fr": "french",
              "es": "spanish", "hi": "hindi"}
 
 
-def _tex(s, links=None):
+def _tex(s, links=None, notes_dict=None):
     """Текст в TeX: экранирование и разворот инлайновой разметки."""
     marks = {}
     # Ярлыки разметки прячем, чтобы экранирование их не тронуло.
     def hide(m):
         marks[len(marks)] = m.group()
         return f"\x00{len(marks) - 1}\x00"
-    
+
+    if notes_dict:
+        # Resolve footnotes BEFORE escaping!
+        # <a1>[1]</a1> where url for a1 is in notes_dict.
+        def replace_fn(m):
+            i = int(m.group(1))
+            url = (links or [None] * i)[i - 1] if i <= len(links or []) else None
+            if url and url in notes_dict:
+                # When converting to footnote, we do NOT want to escape the content 
+                # because `notes_dict[url]` already contains markdown/links that will be processed 
+                # separately inside _tex if it was passed to it, but here it's processed recursively!
+                # We use marks dictionary to hide the footnote from the escaping below!
+                fn_content = _tex(notes_dict[url], links=None)
+                marks[len(marks)] = r"\footnote{%s}" % fn_content
+                return f"\x00{len(marks) - 1}\x00"
+            return m.group(0)
+        s = re.sub(r"<a(\d+)>.*?</a\1>", replace_fn, s)
+
     # Hide math blocks before escaping
     s = re.sub(r"\$\$(.*?)\$\$", hide, s, flags=re.DOTALL)
     s = re.sub(r"\$(.*?)\$", hide, s, flags=re.DOTALL)
@@ -427,7 +444,7 @@ def _tex(s, links=None):
 
     def back(m):
         t = marks[int(m.group(1))]
-        if t.startswith("$"):
+        if t.startswith("$") or t.startswith(r"\footnote"):
             return t
         name = re.match(r"</?([a-z]+)", t).group(1)
         close = t.startswith("</")
@@ -442,6 +459,7 @@ def _tex(s, links=None):
             # это якорь, и hyperref без обратной косой ломается на нём.
             return r"\href{%s}{" % url.replace("%", r"\%").replace("#", r"\#")
         return "}" if close else "\\%s{" % TEX_INLINE[name]
+
     s = re.sub(r"\x00(\d+)\x00", back, s)
     return re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', r'\\href{\2}{\1}', s)
 
@@ -534,13 +552,21 @@ def _tex_preamble(meta, st, code):
     return "\n".join(out)
 
 
-def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None):
+def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     """Книга исходником LaTeX. Компиляция — дело читателя: шрифты и движок у
     всех свои, и обещать, что соберётся везде, нельзя."""
     st = st or {}
     code = meta.get("target_lang", "ru")
     title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
     author = meta.get("author_target") or meta.get("author") or ""
+    
+    note_seq = kw.get("note_seq") or []
+    notes_map = kw.get("notes_map") or {}
+    new_anchor_to_text = {a: t for a, n, t, src in note_seq if src}
+    notes_dict = {f"#{orig_id}": new_anchor_to_text[new_a]
+                  for orig_id, (new_a, _) in notes_map.items()
+                  if new_a in new_anchor_to_text}
+
     o = [_tex_preamble(meta, st, code)]
     if cover:
         name = "%s.img/cover.%s" % (os.path.splitext(os.path.basename(path))[0],
@@ -548,14 +574,15 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
         o.append(r"\begin{titlepage}\centering")
         o.append(r"\includegraphics[width=\textwidth,height=0.8\textheight,"
                  r"keepaspectratio]{%s}\end{titlepage}" % name)
-    o.append(r"\title{%s}" % _tex(title))
-    o.append(r"\author{%s}" % _tex(author))
+    o.append(r"\title{%s}" % _tex(title, notes_dict=notes_dict))
+    o.append(r"\author{%s}" % _tex(author, notes_dict=notes_dict))
     # Без этого LaTeX ставит на титул сегодняшнее число, и оно читается как
     # дата издания. Когда книга переведена, сказано в разделе «О переводе».
     o.append(r"\date{}")
     o.append(r"\maketitle")
     nums = {b: i for i, b in enumerate(notes, 1)}
     toc_added = False
+    in_abstract = False
     for kind, text, bid, links, *sp in items:
         if not toc_added and not bid.startswith("_about"):
             o.append(r"\clearpage")
@@ -564,22 +591,45 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
             toc_added = True
 
         if kind == "title":
-            t = _tex(text)
-            if bid.startswith("_"):
+            t = _tex(text, links, notes_dict=notes_dict)
+            clean_text = re.sub(r"<a\d+>.*?</a\d+>", "", text).strip()
+            clean_t = _tex(clean_text)
+            
+            if in_abstract:
+                o.append(r"\end{quotation}")
+                in_abstract = False
+                
+            is_abstract = clean_text.lower() in (
+                "аннотация", "abstract", "абстракт", 
+                "résumé", "zusammenfassung", "resumen", 
+                "riassunto", "resumo", "samenvatting", 
+                "streszczenie"
+            )
+            
+            if bid.startswith("_") and not is_abstract:
                 o.append(r"\clearpage")
-            head = " ".join(text.split())
+            head = " ".join(clean_text.split())
             if len(head) > TEX_HEAD:
                 head = head[:TEX_HEAD].rsplit(" ", 1)[0] + "…"
             level = sp[1] if len(sp) > 1 and sp[1] is not None else 1
             star = "*" if bid.startswith("_about") else ""
-            if level == 1:
-                o.append(r"\section%s{%s}\markright{%s}" % (star, t, _tex(head)))
+            
+            if is_abstract:
+                if star: o.append(r"\section*{%s}\markright{%s}" % (t, _tex(head)))
+                else: o.append(r"\section[%s]{%s}\markright{%s}" % (clean_t, t, _tex(head)))
+                o.append(r"\begin{quotation}")
+                in_abstract = True
+            elif level == 1:
+                if star: o.append(r"\section*{%s}\markright{%s}" % (t, _tex(head)))
+                else: o.append(r"\section[%s]{%s}\markright{%s}" % (clean_t, t, _tex(head)))
             elif level == 2:
-                o.append(r"\subsection%s{%s}" % (star, t))
+                if star: o.append(r"\subsection*{%s}" % t)
+                else: o.append(r"\subsection[%s]{%s}" % (clean_t, t))
             else:
-                o.append(r"\subsubsection%s{%s}" % (star, t))
+                if star: o.append(r"\subsubsection*{%s}" % t)
+                else: o.append(r"\subsubsection[%s]{%s}" % (clean_t, t))
         elif kind == "subtitle":
-            o.append(r"\subsection*{%s}" % _tex(text))
+            o.append(r"\subsection*{%s}" % _tex(text, notes_dict=notes_dict))
         elif kind == "break":
             o.append(r"\begin{center}* * *\end{center}")
         elif kind == "image" and text in images and _tex_pic(text):
@@ -588,7 +638,7 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                      % (os.path.splitext(os.path.basename(path))[0], text))
         elif kind == "verse":
             o.append(r"\begin{verse}%s\end{verse}"
-                     % r"\\".join(_tex(l) for l in text.splitlines()))
+                     % r"\\".join(_tex(l, notes_dict=notes_dict) for l in text.splitlines()))
         elif kind == "code":
             o.append(r"\begin{verbatim}" + "\n" + text + "\n" + r"\end{verbatim}")
         elif kind == "table":
@@ -602,8 +652,13 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                 body = v["text"] if isinstance(v, dict) else v
                 if not body.startswith(note_prefix):
                     body = note_prefix + body
-                note = r"\footnote{%s}" % _tex(body)
-            o.append(_tex(text, links) + note + "\n")
+                note = r"\footnote{%s}" % _tex(body, notes_dict=notes_dict)
+            p_tex = _tex(text, links, notes_dict=notes_dict)
+            if bid.startswith("_about") or bid.startswith("_details"):
+                p_tex = r"\noindent " + p_tex
+            o.append(p_tex + note + "\n")
+    if in_abstract:
+        o.append(r"\end{quotation}")
     o.append(r"\end{document}")
     open(path, "w", encoding="utf-8").write("\n".join(o) + "\n")
     # Папка своя у каждой книги: собери несколько в один каталог — и
@@ -634,7 +689,7 @@ def _tex_table(text, spans=None):
             return len(cells)
         return sum(c[0] for c in sp)
     n = max((width(i, r) for i, r in enumerate(rows)), default=1)
-    out = [r"\begin{center}\footnotesize\begin{tabulary}{\textwidth}{|" + "|".join(["L"] * n) + r"|}\hline"]
+    out = [r"\begin{center}\footnotesize\setlength{\extrarowheight}{3pt}\begin{tabulary}{\textwidth}{|" + "|".join(["L"] * n) + r"|}\hline"]
     for i, cells in enumerate(rows):
         line = []
         for j, c in enumerate(cells):
@@ -645,7 +700,8 @@ def _tex_table(text, spans=None):
                 body = r"\multirow{%d}{*}{%s}" % (sp[1], body)
             if sp[0] > 1:
                 # Need to add vertical bars to multicolumn as well if it spans multiple cols
-                body = r"\multicolumn{%d}{|l|}{%s}" % (sp[0], body)
+                # Use proportional p{} column to allow text wrapping instead of rigid l
+                body = r"\multicolumn{%d}{|p{\dimexpr\linewidth*%d/%d\relax}|}{%s}" % (sp[0], sp[0], n, body)
             line.append(body)
         # Строку добиваем пустыми ячейками: у TeX число столбцов объявлено
         # заранее, и короткая строка ломает всю таблицу.
@@ -660,7 +716,7 @@ TEX_ENGINES = ("lualatex", "xelatex")
 
 
 def write_pdf(path, meta, items, notes, images, note_prefix, st=None,
-              cover=None, tmp=None):
+              cover=None, tmp=None, **kw):
     """Pdf — это собранный LaTeX, и собирает его TeX, а не мы.
 
     Своей вёрстки конвейер не делает: перенос строк, разбиение на страницы,
@@ -679,7 +735,7 @@ def write_pdf(path, meta, items, notes, images, note_prefix, st=None,
     d = tmp or tempfile.mkdtemp(prefix="booktrans-")
     os.makedirs(d, exist_ok=True)
     tex = os.path.join(d, os.path.splitext(os.path.basename(path))[0] + ".tex")
-    write_tex(tex, meta, items, notes, images, note_prefix, st, cover)
+    write_tex(tex, meta, items, notes, images, note_prefix, st, cover, **kw)
     engine = next((e for e in TEX_ENGINES if shutil.which(e)), None)
     if not engine:
         print("  " + lang.T("pdf_no_engine", os.path.basename(tex),
@@ -932,7 +988,7 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
             for i, row in enumerate(text.splitlines()):
                 cells = [c.strip() for c in re.split(r"(?<!\\)\|", row)]
                 w("<tr>" + "".join(
-                    f"<td{output.span_attr(b.get('spans'), i, j, len(cells))}>"
+                    f"<td{span_attr(b.get('spans'), i, j, len(cells))}>"
                     f"{esc(c.replace(chr(92) + '|', '|'), b.get('links'), notes_map)}</td>"
                     for j, c in enumerate(cells)) + "</tr>")
             w("</table>")

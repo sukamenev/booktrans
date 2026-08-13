@@ -456,10 +456,14 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
         if ext == ".pdf":
             kw["tmp"] = work        # черновики LaTeX — в рабочую папку книги
 
+        kw.update({
+            "note_seq": note_seq, "nid": nid, "notes_map": notes_map
+        })
+
         if ext == ".fb2":
             kw.update({
                 "blocks": blocks, "tr": tr, "partial": partial, "log": log,
-                "note_seq": note_seq, "nid": nid, "notes_map": notes_map, "lang": lang,
+                "lang": lang,
                 "about_head": head, "about_body": body,
                 "details_head": dhead, "details_body": dbody,
                 "PIPELINE": PIPELINE, "esc": esc, "span_attr": output.span_attr
