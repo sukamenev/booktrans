@@ -779,6 +779,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --only STEP           a single step: recognize|structure|ocrfix|scout|translate|edit|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
+--pages 5,6,10        only these pages (for PDF visual extraction)
 --force-injected      translate despite instructions aimed at the machine
 --force-editing       keep editing past three refusals in a row
 --code asis           leave the comments in listings alone too
