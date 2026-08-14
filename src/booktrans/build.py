@@ -243,7 +243,8 @@ def about_lines(work, st, code):
     if span:
         body.append(st["about_date"].format(date=span))
     body += [st["about_quality"], st["about_caveat"],
-             st.get("about_notes", ""), st.get("about_disclaimer", "")]
+             st.get("about_notes", ""), st.get("about_disclaimer", ""),
+             st.get("about_community", "")]
     body = [x for x in body if x]
     return st["about_title"], body
 
