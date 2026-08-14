@@ -29,7 +29,7 @@ CRITICAL RULES:
 3. MATH: Wrap all inline mathematical formulas in single dollar signs: `$formula$`. Wrap display equations (standalone lines) in double dollar signs: `$$formula$$`. Use valid LaTeX syntax.
 4. FOOTNOTES: Format footnotes exactly as `[^1]` in the text and place the footnote content at the bottom of the output as `[^1]: Note text`.
 5. MARGINALIA & SIDENOTES: Integrate marginalia and sidenotes into the text flow where they logically belong, or place them at the end of the section.
-6. IMAGES & GRAPHS: For every image, graph, diagram, or chart, insert a tag `![image]([ymin, xmin, ymax, xmax])`, where coordinates are integers from 0 to 1000 representing the bounding box normalized to the page size.
+6. IMAGES & GRAPHS: For every image, graph, diagram, or chart, insert a tag `![image]([ymin, xmin, ymax, xmax])`, where coordinates are integers from 0 to 1000 representing the bounding box normalized to the page size. The bounding box MUST tightly surround ONLY the image itself, excluding any surrounding text, headers, or captions.
 7. CAPTIONS: If an image has a caption (legend), extract it and place it immediately after the image tag in italics: `*Caption text*`.
 8. HEADERS & FOOTERS: DO NOT extract running headers, running footers, or page numbers. Stitch sentences across pages seamlessly if necessary.
 9. NO CODE BLOCKS: Do NOT wrap your output in ```markdown code blocks. Return the raw Markdown directly.
