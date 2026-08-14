@@ -27,7 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Сноски делает проход редактуры: он и так держит оригинал с переводом
 # рядом, а отдельный проход перечитывал бы всю книгу второй раз. Шаг notes
 # остался для случая, когда редактуру пропускают.
-STEPS = ("recognize", "structure", "ocrfix", "scout", "translate", "edit", "build", "qa")
+STEPS = ("ocr", "structure", "ocrfix", "scout", "translate", "edit", "build", "qa")
 ALL_STEPS = STEPS + ("notes",)
 
 
@@ -292,7 +292,7 @@ def main():
     ap.add_argument("--only", choices=ALL_STEPS, help=T("h_only"))
     ap.add_argument("--skip", default="", help=T("h_skip"))
     ap.add_argument("--chunks", help=T("h_chunks"))
-    ap.add_argument("--pages", help="Comma-separated list of page numbers to recognize (for PDF)")
+    ap.add_argument("--pages", help="Comma-separated list of page numbers to run OCR on (for PDF)")
     # Умолчания берутся из окружения — тем же путём, что и язык: так обёртки
     # вроде bt_claude сводятся к одной строке, а вшитое предпочтение одного
     # поставщика не навязывается тому, кто пользуется другим.
@@ -464,17 +464,17 @@ def main():
                 log("  " + T("prompt_lost", ", ".join(lost)))
         return text
 
-    if "recognize" in steps:
+    if "ocr" in steps:
         ext_rec = os.path.splitext(args.book)[1].lower() if args.book else ""
         if ext_rec == ".pdf":
             if not ocr_agent:
-                raise ValueError("No OCR agent available for recognize step.")
+                raise ValueError("No OCR agent available for ocr step.")
             from . import extract
-            extract.recognize(args.book, ocr_agent, args.pages)
-            if args.only == "recognize":
+            extract.ocr(args.book, ocr_agent, args.pages)
+            if args.only == "ocr":
                 return
-        elif args.only == "recognize":
-            log("Recognize stage is only applicable for PDFs.")
+        elif args.only == "ocr":
+            log("OCR stage is only applicable for PDFs.")
             return
 
     # ---- разбор книги (детерминированный, но разметку определяет модель)

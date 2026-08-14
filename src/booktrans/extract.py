@@ -2670,7 +2670,7 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agen
         f"не умею читать {ext}; поддерживаются epub, fb2, html, pdf, txt")
 
 
-def recognize(path, agent, pages_str=None):
+def ocr(path, agent, pages_str=None):
     try:
         import pypdfium2 as pdfium
     except ImportError:
@@ -2696,7 +2696,7 @@ def recognize(path, agent, pages_str=None):
             
         page_md_file = work_dir / f"page_{page_num:04d}.md"
         if page_md_file.exists():
-            print(f"[*] Page {page_num} already recognized, skipping (remove file to force).")
+            print(f"[*] Page {page_num} already OCR processed, skipping (remove file to force).")
             continue
             
         page = pdf[page_num - 1]
