@@ -1331,8 +1331,10 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
                    "marks": {str(k): v for k, v in marks.items()}},
                   open(half, "w", encoding="utf-8"), ensure_ascii=False)
 
-    log("  " + T("marks_more", at, len(paras)) if at
-        else "  " + T("marks_start", len(paras)), end="")
+    from . import format as fmt
+    n = (len(paras) + fmt.WINDOW - 1) // fmt.WINDOW
+    log("  " + T("marks_more", at, len(paras), n) if at
+        else "  " + T("marks_start", len(paras), n), end="")
     t = time.time()
     cost = [0.0]
 
@@ -1810,8 +1812,15 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if cur:
         parts.append(cur)
 
-    findings = []
+    half = f"{work}/scout.part.json"
+    if os.path.exists(half):
+        findings = json.load(open(half, encoding="utf-8"))
+    else:
+        findings = []
+        
     for i, part in enumerate(parts, 1):
+        if i <= len(findings):
+            continue
         text = "\n\n".join(strip(b["text"]) for b in part)
         # Имя исходного файла и метаданные книги — мощнейшие подсказки для старта.
         hint = ""
@@ -1840,6 +1849,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,
                                         lambda o: (o, ""), log)
         findings.append(res)
+        json.dump(findings, open(half, "w", encoding="utf-8"), ensure_ascii=False)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
 
@@ -1878,6 +1888,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         log("  " + T("scout_forked", len(forked)))
         for _, line in forked[:8]:
             log(f"      {line}")
+    if os.path.exists(half):
+        os.unlink(half)
     return merged
 
 

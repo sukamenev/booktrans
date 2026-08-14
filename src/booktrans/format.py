@@ -107,7 +107,7 @@ def plan(paras, run, log, photo=(), tries=1, resume=None, save=None):
                          for i, p in enumerate(part))
         # Окон бывает десяток, по семь-восемь секунд каждое, и всё это время
         # конвейер молчал — со стороны неотличимо от зависания.
-        log(f"{w}/{n} ", end="")
+        log(f"{w}", end="")
         got, lines, err = {}, [], None
         for k in range(tries):
             try:
@@ -130,6 +130,7 @@ def plan(paras, run, log, photo=(), tries=1, resume=None, save=None):
         toc += [s for s in lines if s not in toc]
         if save:
             save(marks, toc, lo + len(part))
+        log(". ", end="")
     return marks, toc
 
 
