@@ -1,6 +1,8 @@
 {
   "_comment": "Interface messages. To add a language, copy this file under a new code and translate the values. Do not change the keys. {} is a placeholder.",
   "tagline": "whole book translation",
+  "read_html": "reading the file...",
+  "ocr_start": "extracting: {0} pages using {1}",
   "reading": "reading {}",
   "images": "images extracted: {}",
   "links_found": "links carried over from the book: {}",
@@ -14,6 +16,7 @@
   "stop_no_text": "STOP: almost no text — {} paragraphs, {} words.",
   "stop_same_lang": "STOP: the text is already in the target language ({:.0%} of lines).",
   "same_lang_hint": "Nothing to translate. If the book does contain foreign-language passages, run with --force-translate.",
+  "step_ocr": "visual recognition",
   "step_structure": "detecting markup",
   "step_scout": "reconnaissance: voices, names, terms",
   "step_translate": "translation and footnotes",

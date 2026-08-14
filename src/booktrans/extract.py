@@ -19,27 +19,13 @@ import warnings
 import zipfile
 import xml.etree.ElementTree as ET
 
-VISUAL_PDF_PROMPT = """You are an expert document OCR and layout extraction model.
-Extract all text, math, tables, footnotes, and image captions from the provided document page.
-Output the result in standard Markdown format.
 
-CRITICAL RULES:
-1. TABLES: Convert tables into proper Markdown tables.
-2. MULTI-COLUMN: If the page has 2, 3, or 4 columns, read them in the correct reading order (top-to-bottom, left-to-right). Do not mix text from different columns into the same paragraph.
-3. MATH: Wrap all inline mathematical formulas in single dollar signs: `$formula$`. Wrap display equations (standalone lines) in double dollar signs: `$$formula$$`. Use valid LaTeX syntax.
-4. FOOTNOTES: Format footnotes exactly as `[^1]` in the text and place the footnote content at the bottom of the output as `[^1]: Note text`.
-5. MARGINALIA & SIDENOTES: Integrate marginalia and sidenotes into the text flow where they logically belong, or place them at the end of the section.
-6. IMAGES & GRAPHS: For every image, graph, diagram, or chart, insert a tag `![image]([ymin, xmin, ymax, xmax])`, where coordinates are integers from 0 to 1000 representing the bounding box normalized to the page size. The bounding box MUST tightly surround ONLY the image itself, excluding any surrounding text, headers, or captions.
-7. CAPTIONS: If an image has a caption (legend), extract it and place it immediately after the image tag in italics: `*Caption text*`.
-8. HEADERS & FOOTERS: DO NOT extract running headers, running footers, or page numbers. Stitch sentences across pages seamlessly if necessary.
-9. NO CODE BLOCKS: Do NOT wrap your output in ```markdown code blocks. Return the raw Markdown directly.
-10. HEADINGS: Preserve document hierarchy by using Markdown headings (`#`, `##`, `###`) for section titles and chapters based on their visual prominence (font size, weight).
-"""
 
 from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
                    COL_LINES, COL_PAGES, HEAD_GAP, HEAD_LETTERS, HEAD_MAX,
                    HEAD_NEAR,
-                   NOTE_GAP, NOTE_RUN, PDF_MAX_PER_PAGE, PDF_MAX_RATIO,
+                   NOTE_GAP, NOTE_RUN, OCR_TRUNC_MIN, OCR_TRUNC_RATIO,
+                   PDF_MAX_PER_PAGE, PDF_MAX_RATIO,
                    PDF_MIN_SIDE, PDF_SAME_MAX, REFS_HOLE, REFS_RUN,
                    REFS_STEP, REFS_TAIL, SKIP_MAX, TOC_PAGE)
 
@@ -1734,32 +1720,7 @@ def _pdf_visual(path, agent):
         if page_md_file.exists():
             text = page_md_file.read_text(encoding="utf-8")
         else:
-            page = pdf[page_num - 1]
-            bitmap = page.render(scale=3)
-            pil_image = bitmap.to_pil()
-            img_path = work_dir / f"page_{page_num:04d}.png"
-            pil_image.save(img_path, format="PNG")
-            
-            user_prompt = f"Extract page {page_num} of {total_pages}."
-            print(f"[*] Visually extracting page {page_num}/{total_pages} with {getattr(agent, 'kind', 'agent')}...")
-            
-            while True:
-                try:
-                    from .agent import RateLimited, AgentError
-                    text, stats = agent.run(VISUAL_PDF_PROMPT, user_prompt, image=str(img_path))
-                    text = text.strip()
-                    if text.startswith("```markdown"): text = text[11:]
-                    if text.startswith("```"): text = text[3:]
-                    if text.endswith("```"): text = text[:-3]
-                    text = text.strip()
-                    page_md_file.write_text(text, encoding="utf-8")
-                    break
-                except RateLimited:
-                    print("    Rate limited, waiting 10s...")
-                    time.sleep(10)
-                except AgentError as e:
-                    print(f"    Agent error: {e}")
-                    raise
+            raise BadBook(f"Страница {page_num} не найдена. Похоже, стадия OCR не была завершена или не запускалась. Пожалуйста, запустите распознавание (убедитесь, что шаг ocr включён).")
         all_text.append(text)
     
     final_md_path = pdf_path.with_suffix('.md')
@@ -2670,17 +2631,22 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agen
         f"не умею читать {ext}; поддерживаются epub, fb2, html, pdf, txt")
 
 
-def ocr(path, agent, pages_str=None):
+def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
+    if not isinstance(agents, list):
+        agents = [agents]
     try:
         import pypdfium2 as pdfium
     except ImportError:
-        print("pypdfium2 not found, skipping visual recognition.")
+        if log: log("  pypdfium2 not found, skipping visual recognition.")
         return
 
     from pathlib import Path
+    import subprocess
     pdf_path = Path(path)
     work_dir = pdf_path.with_suffix('.work') / 'pdf_pages'
     work_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = work_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
     
     pdf = pdfium.PdfDocument(str(pdf_path))
     total_pages = len(pdf)
@@ -2688,68 +2654,178 @@ def ocr(path, agent, pages_str=None):
     if pages_str:
         pages_to_extract = [int(p.strip()) for p in pages_str.split(",")]
     else:
-        pages_to_extract = range(1, total_pages + 1)
+        pages_to_extract = list(range(1, total_pages + 1))
         
-    for page_num in pages_to_extract:
+    pages_to_extract = [p for p in pages_to_extract if not (work_dir / f"page_{p:04d}.md").exists()]
+    
+    if not pages_to_extract:
+        return
+        
+    agent_names = [f"{a.kind}:{a.model}" if getattr(a, "model", None) else getattr(a, "kind", "agent") for a in agents]
+    if log and T:
+        log("  " + T("ocr_start", len(pages_to_extract), ", ".join(agent_names)))
+    else:
+        print(f"[*] Visually extracting {len(pages_to_extract)} pages with {', '.join(agent_names)}:", flush=True)
+    
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    print_lock = threading.Lock()
+    pdfium_lock = threading.Lock()
+    
+    def process_page(page_num):
         if page_num < 1 or page_num > total_pages:
-            continue
+            return
             
         page_md_file = work_dir / f"page_{page_num:04d}.md"
         if page_md_file.exists():
-            print(f"[*] Page {page_num} already OCR processed, skipping (remove file to force).")
-            continue
+            return
             
-        page = pdf[page_num - 1]
-        bitmap = page.render(scale=3)
-        pil_image = bitmap.to_pil()
+        with print_lock:
+            print(f"{page_num}", end=" ", flush=True)
+            
+        with pdfium_lock:
+            local_pdf = pdfium.PdfDocument(str(pdf_path))
+            page = local_pdf[page_num - 1]
+            bitmap = page.render(scale=3)
+            pil_image = bitmap.to_pil()
+            textpage = page.get_textpage()
+            raw_text = textpage.get_text_range() if textpage else ""
+            
         img_path = work_dir / f"page_{page_num:04d}.png"
         pil_image.save(img_path, format="PNG")
         
+        success = False
         user_prompt = f"Extract page {page_num} of {total_pages}."
-        print(f"[*] Visually extracting page {page_num}/{total_pages} with {getattr(agent, 'kind', 'agent')}...")
         
-        while True:
-            try:
-                from .agent import RateLimited, AgentError
-                text, stats = agent.run(VISUAL_PDF_PROMPT, user_prompt, image=str(img_path))
-                text = text.strip()
-                if text.startswith("```markdown"): text = text[11:]
-                if text.startswith("```"): text = text[3:]
-                if text.endswith("```"): text = text[:-3]
-                text = text.strip()
+        use_pdftotext = False
+        for i, agent in enumerate(agents):
+            if getattr(agent, "kind", "") == "pdftotext":
+                with print_lock:
+                    print(f"\n[*] Switching to pdftotext for page {page_num}...")
+                use_pdftotext = True
+                break # breaks the for loop, leading to the fallback block
+            
+            if i > 0:
+                with print_lock:
+                    print(f"\n[*] Retrying page {page_num} with {agent_names[i]}...")
                 
-                # Crop images based on coordinates
-                import re
-                images_dir = work_dir / "images"
-                images_dir.mkdir(parents=True, exist_ok=True)
-                
-                def replace_img(match):
-                    caption = match.group(1)
-                    coords_str = match.group(2)
-                    coords = [int(c.strip()) for c in coords_str.split(",") if c.strip().isdigit()]
-                    if len(coords) == 4:
-                        ymin, xmin, ymax, xmax = coords
-                        W, H = pil_image.size
-                        pad_w = int(W * 0.004)
-                        pad_h = int(H * 0.004)
-                        c_left = max(0, int(xmin * W / 1000.0) - pad_w)
-                        c_top = max(0, int(ymin * H / 1000.0) - pad_h)
-                        c_right = min(W, int(xmax * W / 1000.0) + pad_w)
-                        c_bottom = min(H, int(ymax * H / 1000.0) + pad_h)
+            while True:
+                try:
+                    from .agent import RateLimited, AgentError
+                    text, stats = agent.run(prompt, user_prompt, image=str(img_path))
+                    text = text.strip()
+                    if text.startswith("```markdown"): text = text[11:]
+                    if text.startswith("```"): text = text[3:]
+                    if text.endswith("```"): text = text[:-3]
+                    text = text.strip()
+                    
+                    # Check for truncation
+                    from .tune import OCR_TRUNC_MIN, OCR_TRUNC_RATIO
+                    import re
+                    clean_raw = re.sub(r'\s+', ' ', raw_text).strip()
+                    clean_txt = re.sub(r'\s+', ' ', text).strip()
+                    if len(clean_raw) > OCR_TRUNC_MIN and len(clean_txt) < len(clean_raw) * OCR_TRUNC_RATIO:
+                        # Double check with pdftotext since pdfium sometimes extracts hidden text from other pages
+                        is_truncated = True
+                        try:
+                            import subprocess
+                            r_chk = subprocess.run(["pdftotext", "-f", str(page_num), "-l", str(page_num), "-nopgbrk", str(pdf_path), "-"], 
+                                               capture_output=True, text=True, check=True)
+                            real_raw = re.sub(r'\s+', ' ', r_chk.stdout).strip()
+                            if len(clean_txt) >= len(real_raw) * OCR_TRUNC_RATIO:
+                                is_truncated = False
+                                # print(f"\n    [i] pdfium raw was inflated ({len(clean_raw)} vs {len(real_raw)} chars). Text is actually complete.")
+                        except Exception:
+                            pass
                         
-                        if c_right > c_left and c_bottom > c_top:
-                            cropped = pil_image.crop((c_left, c_top, c_right, c_bottom))
-                            img_filename = f"img_p{page_num:04d}_{c_top}_{c_left}.png"
-                            cropped.save(images_dir / img_filename, format="PNG")
-                            return f"![{caption}](images/{img_filename})"
-                    return match.group(0)
+                        if is_truncated:
+                            with print_lock:
+                                print(f"\n    [!] Output appears truncated ({len(clean_txt)} vs {len(clean_raw)} raw chars). Trying next model...")
+                            break  # breaks the while loop, moves to the next agent
+                    
+                    # Crop images based on coordinates
+                    import re
+                    def replace_img(match):
+                        caption = match.group(1)
+                        coords_str = match.group(2)
+                        coords = [int(c.strip()) for c in coords_str.split(",") if c.strip().isdigit()]
+                        if len(coords) == 4:
+                            ymin, xmin, ymax, xmax = coords
+                            W, H = pil_image.size
+                            pad_w = int(W * 0.004)
+                            pad_h = int(H * 0.004)
+                            c_left = max(0, int(xmin * W / 1000.0) - pad_w)
+                            c_top = max(0, int(ymin * H / 1000.0) - pad_h)
+                            c_right = min(W, int(xmax * W / 1000.0) + pad_w)
+                            c_bottom = min(H, int(ymax * H / 1000.0) + pad_h)
+                            
+                            if c_right > c_left and c_bottom > c_top:
+                                cropped = pil_image.crop((c_left, c_top, c_right, c_bottom))
+                                img_filename = f"img_p{page_num:04d}_{c_top}_{c_left}.png"
+                                cropped.save(images_dir / img_filename, format="PNG")
+                                return f"![{caption}](images/{img_filename})"
+                        return match.group(0)
+                    
+                    text = re.sub(r"!\[(.*?)\]\(\[([^\]]+)\]\)", replace_img, text)
+                    page_md_file.write_text(text, encoding="utf-8")
+                    success = True
+                    with print_lock:
+                        print(f"✔{page_num}", end=" ", flush=True)
+                    break  # breaks the while loop (and later we check success to break the for loop)
+                except RateLimited:
+                    import time
+                    with print_lock:
+                        print(f"\n    [!] Rate limited for page {page_num}, waiting 10s...")
+                    time.sleep(10)
+                except AgentError as e:
+                    err_msg = str(e).replace("\n", " ")
+                    if len(err_msg) > 150: err_msg = err_msg[:147] + "..."
+                    with print_lock:
+                        print(f"\n    [!] Agent error on page {page_num}: {err_msg}")
+                    break  # breaks the while loop, moves to the next agent
+            
+            if success:
+                break  # breaks the for loop
                 
-                text = re.sub(r"!\[(.*?)\]\(\[([^\]]+)\]\)", replace_img, text)
-                page_md_file.write_text(text, encoding="utf-8")
-                break
-            except RateLimited:
-                import time; time.sleep(10)
-            except AgentError as e:
-                print(f"Agent error: {e}")
-                raise
+        if not success:
+            if use_pdftotext:
+                try:
+                    # pdftotext fallback
+                    r = subprocess.run(["pdftotext", "-f", str(page_num), "-l", str(page_num), "-layout", "-nopgbrk", str(pdf_path), "-"], 
+                                       capture_output=True, text=True, check=True)
+                    fallback_text = r.stdout.strip()
+                    
+                    # pdfimages fallback
+                    subprocess.run(["pdfimages", "-f", str(page_num), "-l", str(page_num), "-png", str(pdf_path), str(images_dir / f"fallback_p{page_num:04d}")], 
+                                   capture_output=True)
+                    
+                    # Append found images to text
+                    import glob
+                    fallback_images = glob.glob(str(images_dir / f"fallback_p{page_num:04d}-*.png"))
+                    if fallback_images:
+                        fallback_text += "\n\n"
+                        for fi in fallback_images:
+                            basename = Path(fi).name
+                            fallback_text += f"![image](images/{basename})\n"
+                            
+                    page_md_file.write_text(fallback_text, encoding="utf-8")
+                    with print_lock:
+                        print(f"✔{page_num}", end=" ", flush=True)
+                except Exception as e:
+                    with print_lock:
+                        print(f"\n    [!] pdftotext failed for page {page_num}: {e}")
+            else:
+                with print_lock:
+                    print(f"\n    [!] All OCR models failed or truncated for page {page_num} and no pdftotext fallback was specified.")
+
+    # Execute in parallel
+    if jobs > 1:
+        with ThreadPoolExecutor(max_workers=jobs) as executor:
+            list(executor.map(process_page, pages_to_extract))
+    else:
+        for p in pages_to_extract:
+            process_page(p)
+            
+    print()
 

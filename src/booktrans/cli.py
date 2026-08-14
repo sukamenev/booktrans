@@ -248,9 +248,9 @@ def _chain(s, agent=None):
             
         if len(parts) == 2:
             name = parts[0] or agent
-            model = parts[1] or None
+            model = parts[1]
         elif len(parts) == 1:
-            model = parts[0] or None
+            model = parts[0]
             
         out.append((name, model, effort))
     return out
@@ -467,10 +467,14 @@ def main():
     if "ocr" in steps:
         ext_rec = os.path.splitext(args.book)[1].lower() if args.book else ""
         if ext_rec == ".pdf":
-            if not ocr_agent:
+            ocr_agents = chain_for("ocrmodel")
+            if not ocr_agents:
                 raise ValueError("No OCR agent available for ocr step.")
             from . import extract
-            extract.ocr(args.book, ocr_agent, args.pages)
+            log("")
+            log(head("step_ocr"))
+            log("")
+            extract.ocr(args.book, ocr_agents, args.pages, jobs=args.jobs, log=log, T=T, prompt=task("ocr"))
             if args.only == "ocr":
                 return
         elif args.only == "ocr":
@@ -651,7 +655,7 @@ def main():
         # Порча от распознавания — свойство исходника, а не прохода: её видят
         # и разведка, и перевод, и редактура, поэтому место ей в общем промпте.
         if made_by_ocr:
-            parts.append(task("ocr"))
+            parts.append(task("ocr_error_fix"))
         rules = lang.rules(args.to)
         if rules:
             parts.append("# Правила целевого языка\n\n" + rules)

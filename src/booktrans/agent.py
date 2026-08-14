@@ -453,6 +453,13 @@ def make_agent(kind="claude", model=None, command=None, timeout=1800,
         inner = AgyAgent(model, timeout, effort)
     elif kind == "codex":
         inner = CodexAgent(model, timeout, effort)
+    elif kind == "local":
+        class LocalAgent(Agent):
+            def __init__(self, model):
+                self.kind = model or "unknown_local"
+            def run(self, sys, user, image=None):
+                raise AgentError(f"LocalAgent({self.kind}) is a pseudo-agent. It should be handled specially.")
+        inner = LocalAgent(model)
     elif kind == "cmd":
         if not command:
             raise SystemExit("--agent cmd требует --agent-cmd")
