@@ -21,7 +21,7 @@ ready-made wrappers, each one line away from `booktrans`:
 | | |
 |---|---|
 | `./bt_claude` | Claude Code, the same thing said out loud |
-| `./bt_agy` | Gemini through Antigravity, with Claude behind it |
+| `./bt_agy` | Gemini Pro & Flash through Antigravity |
 | `./bt_codex` | Codex |
 
 The key `--agent claude|agy|codex` does the same, and `--agent cmd

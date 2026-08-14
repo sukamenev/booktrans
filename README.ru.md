@@ -20,7 +20,7 @@ pdf или txt, на выходе готовая книга в epub, fb2, html, 
 | | |
 |---|---|
 | `./bt_claude` | Claude Code, то же самое явно |
-| `./bt_agy` | Gemini через Antigravity, с Claude на подстраховке |
+| `./bt_agy` | Gemini Pro & Flash через Antigravity |
 | `./bt_codex` | Codex |
 
 То же даёт ключ `--agent claude|agy|codex`, а `--agent cmd --agent-cmd '…'`
