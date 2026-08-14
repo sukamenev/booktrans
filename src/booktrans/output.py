@@ -243,7 +243,14 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     # режем на файлы по заголовкам: читалки грузят книгу по частям
     parts, cur, titles = [], [], []
     for it in items:
-        if it[0] == "title" and cur:
+        is_major_title = False
+        if it[0] == "title":
+            sp = it[4:]
+            level = sp[1] if len(sp) > 1 and sp[1] is not None else 1
+            if int(level) <= 2:
+                is_major_title = True
+                
+        if is_major_title and cur:
             parts.append(cur)
             cur = []
         cur.append(it)

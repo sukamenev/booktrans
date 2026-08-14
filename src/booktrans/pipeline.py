@@ -25,7 +25,7 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_ROUNDS, SCOUT_WORDS,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
-                   VERSE_GROUP)
+                   VERSE_GROUP, HEAD_CHUNK)
 
 HEAD_KINDS = ("title", "subtitle")
 
@@ -2124,32 +2124,48 @@ def headings(work, blocks, agent, system, retries, log, fallback=None):
             uniq.append(b["text"])
     if not uniq:
         return have
-    log("  " + T("heads_todo", len(uniq)), end="")
-    listing = "\n".join(f"{i}. {t}" for i, t in enumerate(uniq, 1))
+    
+    if len(uniq) > HEAD_CHUNK:
+        log("  " + T("heads_todo", len(uniq)))
+    else:
+        log("  " + T("heads_todo", len(uniq)), end="")
+
     prompt_tpl, _ = lang.prompt("headings")
-    prompt = prompt_tpl + "\n\n## Заголовки\n\n" + listing
+    who = [agent] + _backups(fallback)
+    total_dt = 0
+    
+    for start in range(0, len(uniq), HEAD_CHUNK):
+        chunk = uniq[start:start + HEAD_CHUNK]
+        if len(uniq) > HEAD_CHUNK:
+            log(f"    {start+1}-{start+len(chunk)} ... ", end="")
+            
+        listing = "\n".join(f"{i}. {t}" for i, t in enumerate(chunk, 1))
+        prompt = prompt_tpl + "\n\n## Заголовки\n\n" + listing
 
-    def parse_heads(out):
-        got = {}
-        for m in re.finditer(r"^\s*(\d+)[.)]\s*(.+)$", out, re.M):
-            i = int(m.group(1))
-            if 1 <= i <= len(uniq):
-                got[uniq[i - 1]] = m.group(2).strip()
-        missing = [t for t in uniq if t not in got]
-        if missing:
-            # Обрезаем: заголовок бывает и в тысячи знаков, если разметка
-            # приняла за него абзац, и такой список смывает весь вывод.
-            short = [re.sub(r"\s+", " ", t)[:70] + ("…" if len(t) > 70 else "")
-                     for t in missing[:3]]
-            raise ValueError(f"не переведено {len(missing)} заголовков: {short}")
-        return got, ""
+        def parse_heads(out):
+            got = {}
+            for m in re.finditer(r"^\s*(\d+)[.)]\s*(.+)$", out, re.M):
+                i = int(m.group(1))
+                if 1 <= i <= len(chunk):
+                    got[chunk[i - 1]] = m.group(2).strip()
+            missing = [t for t in chunk if t not in got]
+            if missing:
+                short = [re.sub(r"\s+", " ", t)[:70] + ("…" if len(t) > 70 else "")
+                         for t in missing[:3]]
+                raise ValueError(f"не переведено {len(missing)} заголовков: {short}")
+            return got, ""
 
-    (got, _), meta, dt = _chain_run([agent] + _backups(fallback), system, prompt,
-                                    retries, parse_heads, log)
-    have.update(got)
-    json.dump(have, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-    log(T("ready_in", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        (got, _), meta, dt = _chain_run(who, system, prompt, retries, parse_heads, log)
+        have.update(got)
+        json.dump(have, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        total_dt += dt
+        
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        if len(uniq) > HEAD_CHUNK:
+            log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+            
+    if len(uniq) <= HEAD_CHUNK:
+        log(T("ready_in", f"{total_dt:.0f}", f"{meta['model']}{cost}"))
     return have
 
 

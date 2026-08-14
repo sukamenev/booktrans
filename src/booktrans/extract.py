@@ -1852,6 +1852,20 @@ def _pdf_visual(path, agent):
     meta["title"] = os.path.splitext(os.path.basename(path))[0]
     meta["page_size"] = list(pdf[0].get_size())
     
+    if marks and "toc" in marks:
+        toc_set = set(marks["toc"])
+        for b in blocks:
+            if b["kind"] == "title":
+                t = b["text"].strip()
+                orig_level = b.get("level", 1)
+                
+                if t.startswith("Part ") or t == "Contents" or t == "Brief Contents":
+                    b["level"] = 1
+                elif t in toc_set or t.startswith("Chapter ") or "Module" in t or t in ["Preface", "Acknowledgments", "Glossary"]:
+                    b["level"] = 2
+                else:
+                    b["level"] = orig_level + 2
+
     cover = None
 
     return meta, blocks, cover, images
@@ -2621,7 +2635,7 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agen
         page1_md = pathlib.Path(path).with_suffix('.work') / 'pdf_pages' / 'page_0001.md'
         # Если есть агент и это современная модель (claude, codex, agy), пробуем визуальное извлечение
         if (agent and getattr(agent, "kind", "") in ("claude", "codex", "agy")) or page1_md.exists():
-            return _pdf_visual(path, agent)
+            return _pdf_visual(path, agent, marks)
         return _pdf(path, marks)
     if ext in (".html", ".htm"):
         return _html(path, styles, encoding, ask)
