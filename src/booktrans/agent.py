@@ -271,11 +271,13 @@ class ClaudeAgent(Agent):
         cmd = ["claude", "-p", "--output-format", "json",
                "--tools", "", "--strict-mcp-config",
                "--append-system-prompt-file", tmp.name]
-        
         # If an image is provided, Claude must have the Read tool to view it
         actual_tools = self.tools
-        if image and "Read" not in (actual_tools or ""):
-            actual_tools = (actual_tools + ",Read").strip(",")
+        if image:
+            if "Read" not in (actual_tools or ""):
+                actual_tools = (actual_tools + ",Read").strip(",")
+            img_dir = os.path.dirname(os.path.abspath(image))
+            cmd += ["--add-dir", img_dir]
             
         if actual_tools:                      # только для узких справочных задач
             cmd[cmd.index("--tools") + 1] = actual_tools
