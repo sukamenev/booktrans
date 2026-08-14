@@ -60,6 +60,7 @@ str.untitled: Libro
 str.translator: traducción automática
 str.about_notes: Las notas y las aclaraciones también son obra de la máquina. Pueden contener imprecisiones y, a veces, errores lisos y llanos: conviene comprobar por cuenta propia fechas, nombres y referencias a las fuentes.
 str.about_disclaimer: La traducción se ofrece tal cual, sin garantía de ninguna clase. Ni el autor de la canalización ni quien la ejecutó responden de las consecuencias del uso de este texto, incluidas las decisiones tomadas sobre un sentido transmitido de forma inexacta.
+str.about_community: Únase a nuestra comunidad en Telegram: t.me/BookTransPL. En el grupo, puede solicitar la traducción de un libro específico y obtener soporte técnico.
 str.source_caveat: La atribución de la traducción procede de la memoria de la máquina y no se ha cotejado con la edición.
 str.details_sources: Las citas se dan según traducciones publicadas. Las atribuciones proceden de la memoria de la máquina y ninguna se cotejó con su edición: compruébelo si importa:
 str.details_title: Detalles de la traducción

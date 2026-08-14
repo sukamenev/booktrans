@@ -42,6 +42,7 @@ str.untitled: Buch
 str.translator: maschinelle Übersetzung
 str.about_notes: Auch die Anmerkungen und Erläuterungen stammen von der Maschine. Sie können ungenau sein und gelegentlich schlicht falsch: Daten, Namen und Quellenangaben sollte man selbst nachprüfen.
 str.about_disclaimer: Diese Übersetzung wird ohne jede Gewähr bereitgestellt. Weder der Urheber der Pipeline noch derjenige, der sie ausgeführt hat, haftet für Folgen der Nutzung dieses Textes, einschließlich Entscheidungen, die auf ungenau wiedergegebenem Sinn beruhen.
+str.about_community: Treten Sie unserer Telegram-Community bei: t.me/BookTransPL. In der Gruppe können Sie die Übersetzung eines bestimmten Buches anfordern und technischen Support erhalten.
 str.source_caveat: Die Zuschreibung der Übersetzung stammt aus dem Gedächtnis der Maschine und wurde nicht mit der Ausgabe abgeglichen.
 str.details_sources: Zitate folgen veröffentlichten Übersetzungen. Die Zuschreibungen stammen aus dem Gedächtnis der Maschine und wurden mit keiner Ausgabe abgeglichen — prüfen Sie es, wenn es darauf ankommt:
 str.details_title: Angaben zur Übersetzung

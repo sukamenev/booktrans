@@ -11,6 +11,10 @@ produces a finished book as epub, fb2, html, txt, LaTeX or pdf.
 ./booktrans book.epub --to en -o Book.fb2
 ```
 
+## Community & Support
+Join our Telegram group **[BookTrans Pipeline](https://t.me/BookTransPL)**! 
+In the group, you can request the translation of a specific book you need or get technical support.
+
 That is all. Markup detection, reconnaissance, translation, footnotes,
 editing, assembly and checks — on its own. Interrupt whenever you like; it
 resumes where it stopped.
