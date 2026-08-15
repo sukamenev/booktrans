@@ -1698,7 +1698,7 @@ def _pdf(path, marks=None):
     return meta, blocks, cover, images
 
 
-def _pdf_visual(path, agent):
+def _pdf_visual(path, agent, marks=None):
     try:
         import pypdfium2 as pdfium
     except ImportError:
