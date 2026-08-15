@@ -53,6 +53,20 @@ def _plain(s):
     return re.sub(r"<[^>]+>", "", s)
 
 
+def _md_inline(s):
+    """Конвертирует markdown-разметку в теги перед рендерингом.
+
+    Нужно для текста сносок переводчика: модель пишет *курсив* и **жирный**,
+    а не XML-теги. extract.py делает это для блоков книги, но сноски генерируются
+    позже — их нужно конвертировать здесь, до передачи в _tex/_inline.
+    """
+    s = re.sub(r'\*\*\*(.*?)\*\*\*', r'<b><i>\1</i></b>', s)
+    s = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', s)
+    s = re.sub(r'\*(.*?)\*', r'<i>\1</i>', s)
+    s = re.sub(r'_(.*?)_', r'<i>\1</i>', s)
+    return s
+
+
 # ---------------------------------------------------------------- txt
 
 def _cells(row):
@@ -121,6 +135,7 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
+            body = _md_inline(body)
             out += [f"{i}. {body}", ""]
     open(path, "w", encoding="utf-8").write("\n".join(out).strip() + "\n")
 
@@ -201,6 +216,7 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
+            body = _md_inline(body)
             o.append(f'<li id="n{i}">{escape(body)} <a href="#r{i}">↑</a></li>')
         o.append("</ol></div>")
     o.append("</body></html>")
@@ -306,6 +322,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
+            body = _md_inline(body)
             o.append(f'<li id="n{i}">{escape(body)}</li>')
         o.append("</ol></div>")
         files["notes.xhtml"] = xhtml("".join(o), st.get("notes_title", "Примечания"))
@@ -698,6 +715,7 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                 body = v["text"] if isinstance(v, dict) else v
                 if not body.startswith(note_prefix):
                     body = note_prefix + body
+                body = _md_inline(body)
                 note = r"\footnote{%s}" % _tex(body, notes_dict=notes_dict)
             p_tex = _tex(text, links, notes_dict=notes_dict)
             if bid.startswith("_about") or bid.startswith("_details"):
