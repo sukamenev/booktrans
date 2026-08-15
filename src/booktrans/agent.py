@@ -234,6 +234,9 @@ class WaitingAgent:
 
 
 class Agent:
+    def default_model(self):
+        return "unknown"
+
     def run(self, system, user, image=None):
         """-> (текст ответа, {'model':..., 'cost_usd':...})"""
         raise NotImplementedError
@@ -244,8 +247,11 @@ class ClaudeAgent(Agent):
 
     kind = "claude"
 
+    def default_model(self):
+        return "claude-3-5-sonnet-20240620"
+
     def __init__(self, model=None, timeout=1800, tools="", effort=None):
-        self.model = model
+        self.model = model or self.default_model()
         self.timeout = timeout
         self.tools = tools
         self.effort = effort
@@ -373,8 +379,11 @@ class AgyAgent(Agent):
 
     kind = "agy"
 
+    def default_model(self):
+        return "gemini-3.1-pro-high"
+
     def __init__(self, model=None, timeout=1800, effort=None):
-        self.model = model
+        self.model = model or self.default_model()
         self.timeout = timeout
         self.effort = effort
 
@@ -404,7 +413,7 @@ class AgyAgent(Agent):
             text = env.get("result") or env.get("response") or r.stdout
         except json.JSONDecodeError:
             text = r.stdout
-        return text, {"model": self.model or "agy-default", "cost_usd": None}
+        return text, {"model": self.model, "cost_usd": None}
 
 
 class CodexAgent(Agent):
@@ -412,8 +421,11 @@ class CodexAgent(Agent):
 
     kind = "codex"
 
+    def default_model(self):
+        return "gpt-5.6-sol"
+
     def __init__(self, model=None, timeout=1800, effort=None):
-        self.model = model
+        self.model = model or self.default_model()
         self.timeout = timeout
         self.effort = effort
 
@@ -437,8 +449,8 @@ class CodexAgent(Agent):
             if limited(msg):
                 raise RateLimited(msg[:300])
             raise AgentError(f"codex вернул {r.returncode}: {msg[:400]}")
-        actual_model = self.model or "codex-default"
-        if not self.model and r.stderr:
+        actual_model = self.model
+        if r.stderr:
             m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)
             if m:
                 actual_model = m.group(1)
