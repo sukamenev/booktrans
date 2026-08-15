@@ -316,6 +316,12 @@ def esc(s, links=None, notes_map=None):
                                f'<a l:href="#{anchor}" type="note">[{num}]</a>',
                                s, flags=re.S)
                     continue
+                # Ссылка на сноску, которой нет (например, текст сноски был в
+                # конце главы и распознался как обычный абзац). Оставляем как
+                # простой текст, убирая битую синюю ссылку.
+                if url.startswith("#n"):
+                    s = re.sub(rf"&lt;a{i}&gt;(.*?)&lt;/a{i}&gt;", r"\1", s, flags=re.S)
+                    continue
                 if not url.startswith("#"):
                     continue
                 # Перекрёстная ссылка внутри книги: цель — блок, и его
