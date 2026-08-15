@@ -396,6 +396,8 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     # ставит на место code.swap, кода не касаясь.
     listings = pipe_blockmap(f"{work}/code.json")
     for b in blocks:
+        if b.get("drop"):
+            continue
         if b.get("asis"):
             tr.setdefault(b["id"], listings.get(b["id"], b["text"]))
     missing = [b["id"] for b in blocks
@@ -467,7 +469,8 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
         # книгу, но в тексте на них не оставалось ни одной ссылки.
         items += [(b["kind"],
                    b["text"] if b["kind"] == "image" else tr.get(b["id"], ""),
-                   b["id"], b.get("links"), b.get("spans"), b.get("level")) for b in blocks]
+                   b["id"], b.get("links"), b.get("spans"), b.get("level"))
+                  for b in blocks if not b.get("drop")]
         dhead, dbody = details_lines(work, st, blocks)
         if dhead:
             items += [("title", dhead, "_details", None, None, 1)]

@@ -2498,6 +2498,12 @@ BACK_HEAD = re.compile(
     r"|notas|índice|bibliografía|fuentes"
     r"|索引|注釈|参考文献)\b", re.I)
 
+# Предметный указатель — не переводится и в книгу не попадает:
+# читатель всё равно не найдёт по нему нужную страницу в переводе.
+INDEX_HEAD = re.compile(
+    r"^\W*(?:index|указател\w*|索引|indeks|stichwortverzeichnis|índice\s+onomástico|indice)\b",
+    re.I)
+
 
 def _sections(blocks):
     """Книга разделами: [(номер заголовка или -1, [номера блоков]), ...]."""
@@ -2559,10 +2565,13 @@ def _mark_back(blocks):
             back = False
             continue
         back = True
+        is_index = bool(INDEX_HEAD.match(strip_tags(head)))
         for i in idx:
             if not blocks[i].get("asis"):
                 blocks[i]["asis"] = True
                 n += 1
+            if is_index:
+                blocks[i]["drop"] = True
     return n
 
 
