@@ -1952,6 +1952,19 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     """
     if len(merged) <= SCOUT_MAX:
         return merged
+    
+    no_shrink_path = out_path.replace("scout.md", "scout.no_shrink.json")
+    failed_models = []
+    if os.path.exists(no_shrink_path):
+        try:
+            failed_models = json.load(open(no_shrink_path, encoding="utf-8"))
+        except Exception:
+            pass
+    primary_model = getattr(who[0], "model", "?")
+    if primary_model in failed_models:
+        log("  " + T("scout_big", out_path))
+        return merged
+        
     log("  " + T("scout_condense", len(merged), SCOUT_BUDGET), end="")
     t0, cost, model, now = time.time(), 0.0, "?", merged
     for _ in range(SCOUT_ROUNDS):
@@ -1972,6 +1985,10 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     if now == merged:
         log("  " + T("scout_condense_no", len(_rows(merged)), len(_rows(merged))))
         log("  " + T("scout_big", out_path))
+        if model != "?":
+            if model not in failed_models:
+                failed_models.append(model)
+            json.dump(failed_models, open(no_shrink_path, "w", encoding="utf-8"), ensure_ascii=False)
         return merged
     open(out_path, "w", encoding="utf-8").write(now)
     log("  " + T("scout_condense_ok", len(merged), len(now),
