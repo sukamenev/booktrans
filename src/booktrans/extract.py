@@ -1829,7 +1829,11 @@ def _pdf_visual(path, agent, marks=None):
 
     meta = {}
     meta["title"] = os.path.splitext(os.path.basename(path))[0]
-    meta["page_size"] = list(pdf[0].get_size())
+    
+    # Чтобы обложка-миниатюра не сломала формат всей книги,
+    # берём самый частый размер страницы из первых двадцати
+    sizes = [pdf[i].get_size() for i in range(min(20, len(pdf)))]
+    meta["page_size"] = list(collections.Counter(sizes).most_common(1)[0][0])
     
     if marks and "toc" in marks:
         toc_set = set(marks["toc"])
