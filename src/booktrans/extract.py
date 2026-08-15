@@ -1762,11 +1762,9 @@ def _pdf_visual(path, agent, marks=None):
                     if img_path_on_disk.exists():
                         images[img_name] = img_path_on_disk.read_bytes()
                         
-                        n += 1
-                        blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "image", "text": img_name, "_page": page_num})
+                        blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}", "kind": "image", "text": img_name, "_page": page_num})
                         if caption and caption != "image":
-                            n += 1
-                            blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": f"_{caption}_", "_page": page_num})
+                            blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}c", "kind": "p", "text": f"_{caption}_", "_page": page_num})
                                     
                     last_end = match.end()
                 

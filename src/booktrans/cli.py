@@ -491,6 +491,9 @@ def main():
         if os.path.isdir(f"{work}/images"):
             for n in sorted(os.listdir(f"{work}/images")):
                 images[n] = open(f"{work}/images/{n}", "rb").read()
+        elif os.path.isdir(f"{work}/pdf_pages/images"):
+            for n in sorted(os.listdir(f"{work}/pdf_pages/images")):
+                images[n] = open(f"{work}/pdf_pages/images/{n}", "rb").read()
     else:
         styles_map = {}
         if "structure" in steps:
@@ -549,6 +552,7 @@ def main():
         
         pipeline.note_source(work, reader={".pdf": pdf_reader}.get(ext, ""))
         log("  " + T("reading", args.book))
+        from . import extract
         try:
             meta, blocks, cover, images = extract.read_book(
                 args.book, styles_map, args.encoding, ask_model, marks, agent=ocr_agent)
