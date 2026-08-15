@@ -441,7 +441,18 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     ext = os.path.splitext(dest)[1].lower()
     if ext in output.WRITERS:
         head, body = about_lines(work, st, code)
-        items = [("title", head, "_about", None, None, 1)]
+        
+        meta_items = []
+        if ext != ".tex":
+            # For non-TeX formats, the user requested metadata to be explicitly visible
+            # on the first page (title page equivalent).
+            meta_items.append(("title", meta.get("title_target") or meta.get("title") or "Книга", "_meta_title", None, None, 1))
+            if meta.get("author"): meta_items.append(("p", meta["author"], "_meta_author", None, None, None))
+            if meta.get("edition"): meta_items.append(("p", meta["edition"], "_meta_edition", None, None, None))
+            if meta.get("publisher"): meta_items.append(("p", meta["publisher"], "_meta_pub", None, None, None))
+            if meta.get("year"): meta_items.append(("p", meta["year"], "_meta_year", None, None, None))
+        
+        items = meta_items + [("title", head, "_about", None, None, 1)]
         items += [("p", t, f"_about{i}", None, None, None) for i, t in enumerate(body)]
         # У картинки в тексте лежит имя файла, а не проза, и перевода у неё
         # нет. Возьми мы `tr`, вышла бы пустая строка — картинки паковались в

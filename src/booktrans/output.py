@@ -356,6 +356,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
                '<meta refines="#s" property="collection-type">series</meta>')
         if meta.get("series_no"):
             seq += f'<meta refines="#s" property="group-position">{meta["series_no"]}</meta>'
+    pub_tag = f'<dc:publisher>{escape(meta["publisher"])}</dc:publisher>' if meta.get("publisher") else ""
+    date_tag = f'<dc:date>{escape(str(meta["year"]))}</dc:date>' if meta.get("year") else ""
     opf = ('<?xml version="1.0" encoding="utf-8"?>\n'
            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
            'unique-identifier="uid"><metadata '
@@ -363,6 +365,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
            f'<dc:identifier id="uid">{escape(uid)}</dc:identifier>'
            f'<dc:title>{escape(title)}</dc:title>'
            f'<dc:creator>{escape(author)}</dc:creator>'
+           f'{pub_tag}{date_tag}'
            f'<dc:language>{code}</dc:language>'
            f'<dc:contributor>Booktrans</dc:contributor>'
            '<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>'
@@ -595,10 +598,25 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
         o.append(r"\includegraphics[width=\textwidth,height=0.8\textheight,"
                  r"keepaspectratio]{%s}\end{titlepage}" % name)
     o.append(r"\title{%s}" % _tex(title, notes_dict=notes_dict))
-    o.append(r"\author{%s}" % _tex(author, notes_dict=notes_dict))
+    
+    # Append edition and publisher under the author if present
+    author_tex = _tex(author, notes_dict=notes_dict)
+    edition = meta.get("edition")
+    publisher = meta.get("publisher")
+    extras = []
+    if edition:
+        extras.append(_tex(edition, notes_dict=notes_dict))
+    if publisher:
+        extras.append(_tex(publisher, notes_dict=notes_dict))
+    if extras:
+        author_tex += r" \\ \vspace{0.5cm} " + r" \\ ".join(extras)
+    
+    o.append(r"\author{%s}" % author_tex)
+    
     # Без этого LaTeX ставит на титул сегодняшнее число, и оно читается как
-    # дата издания. Когда книга переведена, сказано в разделе «О переводе».
-    o.append(r"\date{}")
+    # дата издания. Если год известен, ставим его, иначе пусто.
+    year = meta.get("year") or ""
+    o.append(r"\date{%s}" % _tex(year, notes_dict=notes_dict))
     o.append(r"\maketitle")
     nums = {b: i for i, b in enumerate(notes, 1)}
     toc_added = False

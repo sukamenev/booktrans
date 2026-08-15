@@ -1752,7 +1752,7 @@ def scout_meta(work):
     if not m:
         return {}
     out = {}
-    allowed = {"title", "author", "year", "publisher", "series", "series_no",
+    allowed = {"title", "author", "year", "publisher", "edition", "series", "series_no",
                "genre"}
     for line in m.group(1).splitlines():
         # Терпим к оформлению: модель любит завернуть строку в маркированный
