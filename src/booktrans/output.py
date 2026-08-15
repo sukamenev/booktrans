@@ -446,12 +446,27 @@ def _tex(s, links=None, notes_dict=None):
     s = re.sub(r"\$\$(.*?)\$\$", hide, s, flags=re.DOTALL)
     s = re.sub(r"\$(.*?)\$", hide, s, flags=re.DOTALL)
     
+    def hide_md_link(m):
+        url = m.group(2).replace("%", r"\%").replace("#", r"\#")
+        marks[len(marks)] = r"\href{%s}{" % url
+        marks[len(marks)] = "}"
+        return f"\x00{len(marks)-2}\x00{m.group(1)}\x00{len(marks)-1}\x00"
+
+    s = re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', hide_md_link, s)
+
+    def hide_bare_url(m):
+        url = m.group(1).replace("%", r"\%").replace("#", r"\#")
+        marks[len(marks)] = r"\url{%s}" % url
+        return f"\x00{len(marks)-1}\x00"
+
+    s = re.sub(r'(https?://[a-zA-Z0-9./\-?=_&]+[a-zA-Z0-9/])', hide_bare_url, s)
+
     s = re.sub(r"</?(?:%s|a\d+)>" % "|".join(TEX_INLINE), hide, s)
     s = "".join(TEX_ESC.get(c, c) for c in s)
 
     def back(m):
         t = marks[int(m.group(1))]
-        if t.startswith("$") or t.startswith(r"\footnote"):
+        if t.startswith("$") or t.startswith(r"\footnote") or t.startswith(r"\href") or t.startswith(r"\url") or t == "}":
             return t
         name = re.match(r"</?([a-z]+)", t).group(1)
         close = t.startswith("</")
@@ -462,13 +477,11 @@ def _tex(s, links=None, notes_dict=None):
                 return ""
             if close:
                 return "}"
-            # В адресе особые знаки экранируются иначе, чем в тексте: `#` —
-            # это якорь, и hyperref без обратной косой ломается на нём.
             return r"\href{%s}{" % url.replace("%", r"\%").replace("#", r"\#")
         return "}" if close else "\\%s{" % TEX_INLINE[name]
 
     s = re.sub(r"\x00(\d+)\x00", back, s)
-    return re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', r'\\href{\2}{\1}', s)
+    return s
 
 
 def _tex_preamble(meta, st, code):
