@@ -297,6 +297,8 @@ def esc(s, links=None, notes_map=None):
     Номерные ярлыки <a1>..</a1> заменяются на настоящие ссылки: URL хранится
     в блоке и через модель не проходил, поэтому доезжает побайтово.
     """
+    import html as _html
+    s = _html.unescape(s)
     s = escape(s)
     for src, dst in FB2_INLINE.items():
         s = s.replace(f"&lt;{src}&gt;", f"<{dst}>").replace(f"&lt;/{src}&gt;", f"</{dst}>")
