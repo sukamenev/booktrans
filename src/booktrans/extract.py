@@ -1715,16 +1715,33 @@ def _pdf_visual(path, agent, marks=None):
     total_pages = len(pdf)
     all_text = []
     
+    pure_toc_pages = set()
+    if marks:
+        txt = _pdf_text(path)
+        indent = INDENT_PDF
+        by_page = _by_page(txt, indent)
+        
+        from collections import defaultdict
+        page_marks = defaultdict(list)
+        for i, (p, n) in enumerate(by_page):
+            m = marks.get(i, "p")
+            if m != "skip":  # Ignore headers/footers when evaluating page content
+                page_marks[n].append(m)
+                
+        for n, m_list in page_marks.items():
+            if m_list and all(m == "toc" for m in m_list):
+                pure_toc_pages.add(n)
+
     for page_num in range(1, total_pages + 1):
         page_md_file = work_dir / f"page_{page_num:04d}.md"
         if page_md_file.exists():
             text = page_md_file.read_text(encoding="utf-8")
         else:
             raise BadBook(f"Страница {page_num} не найдена. Похоже, стадия OCR не была завершена или не запускалась. Пожалуйста, запустите распознавание (убедитесь, что шаг ocr включён).")
-        all_text.append(text)
+        all_text.append((page_num, text))
     
     final_md_path = pdf_path.with_suffix('.md')
-    final_md_path.write_text("\n\n---\n\n".join(all_text), encoding="utf-8")
+    final_md_path.write_text("\n\n---\n\n".join(t for _, t in all_text), encoding="utf-8")
     
     import re
     import io
@@ -1735,7 +1752,7 @@ def _pdf_visual(path, agent, marks=None):
     sec = 1
     n = 0
     
-    for page_num, text in enumerate(all_text, 1):
+    for page_num, text in all_text:
         page_img_path = work_dir / f"page_{page_num:04d}.png"
         page_img = None
         
@@ -1748,11 +1765,16 @@ def _pdf_visual(path, agent, marks=None):
             img_matches = list(re.finditer(r"!\[(.*?)\]\(images/([^)]+)\)", p))
             
             if img_matches:
+                # The old regex failed to match these images, so they fell through 
+                # to the default paragraph logic which did `n += 1` exactly once.
+                # To prevent all subsequent block IDs from shifting and colliding
+                # with the wrong cache entries, we must emulate that exact `n += 1`.
+                n += 1
+                
                 last_end = 0
                 for match in img_matches:
                     pre_text = p[last_end:match.start()].strip()
                     if pre_text:
-                        n += 1
                         blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": pre_text, "_page": page_num})
                     
                     caption = match.group(1).strip()
@@ -1770,7 +1792,6 @@ def _pdf_visual(path, agent, marks=None):
                 
                 post_text = p[last_end:].strip()
                 if post_text:
-                    n += 1
                     blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": post_text, "_page": page_num})
                 continue
                 
@@ -1833,19 +1854,27 @@ def _pdf_visual(path, agent, marks=None):
     sizes = [pdf[i].get_size() for i in range(min(20, len(pdf)))]
     meta["page_size"] = list(collections.Counter(sizes).most_common(1)[0][0])
     
-    if marks and "toc" in marks:
-        toc_set = set(marks["toc"])
-        for b in blocks:
-            if b["kind"] == "title":
-                t = b["text"].strip()
-                orig_level = b.get("level", 1)
-                
-                if t.startswith("Part ") or t == "Contents" or t == "Brief Contents":
-                    b["level"] = 1
-                elif t in toc_set or t.startswith("Chapter ") or "Module" in t or t in ["Preface", "Acknowledgments", "Glossary"]:
-                    b["level"] = 2
-                else:
-                    b["level"] = orig_level + 2
+    toc_json_path = work_dir.parent / "toc.json"
+    toc_set = set()
+    if toc_json_path.exists():
+        import json
+        toc_set = set(json.loads(toc_json_path.read_text(encoding="utf-8")))
+        
+    for b in blocks:
+        if b["kind"] == "title":
+            t = b["text"].strip()
+            orig_level = b.get("level", 1)
+            
+            if t.startswith("Part ") or t == "Contents" or t == "Brief Contents":
+                b["level"] = 1
+            elif t in toc_set or t.startswith("Chapter ") or "Module" in t or t in ["Preface", "Acknowledgments", "Glossary"]:
+                b["level"] = 2
+            else:
+                b["level"] = orig_level + 2
+
+    # Remove TOC blocks entirely. The counters advanced normally during parsing, 
+    # so dropping them here preserves the IDs of all subsequent blocks.
+    blocks = [b for b in blocks if b.get("_page") not in pure_toc_pages]
 
     cover = None
 

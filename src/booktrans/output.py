@@ -28,9 +28,6 @@ def _mime(name):
 def _inline(s, table, links=None):
     """Экранирует текст, разворачивая разрешённую разметку и ссылки."""
     s = escape(s)
-    for _ in range(3):
-        s = re.sub(r"&lt;([a-z]+)&gt;((?:(?!&lt;).)*?)&lt;([a-z]+)&gt;((?:(?!&lt;).)*?)&lt;/\1&gt;((?:(?!&lt;).)*?)&lt;/\3&gt;",
-                   r"&lt;\1&gt;\2&lt;\3&gt;\4&lt;/\3&gt;\5&lt;/\1&gt;", s)
     for src, dst in table.items():
         s = s.replace(f"&lt;{src}&gt;", f"<{dst}>").replace(f"&lt;/{src}&gt;", f"</{dst}>")
     if links:
