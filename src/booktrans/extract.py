@@ -1744,8 +1744,8 @@ def _pdf_visual(path, agent, marks=None):
             p = p.strip()
             if not p: continue
             
-            # Extract images and coordinates
-            img_matches = list(re.finditer(r"!\[(.*?)\]\(\[([^\]]+)\]\)", p))
+            # Extract images and their paths
+            img_matches = list(re.finditer(r"!\[(.*?)\]\(images/([^)]+)\)", p))
             
             if img_matches:
                 last_end = 0
@@ -1756,39 +1756,17 @@ def _pdf_visual(path, agent, marks=None):
                         blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": pre_text, "_page": page_num})
                     
                     caption = match.group(1).strip()
-                    coords_str = match.group(2)
-                    coords = []
-                    for c in coords_str.split(","):
-                        if c.strip().isdigit():
-                            coords.append(int(c.strip()))
+                    img_name = match.group(2).strip()
+                    img_path_on_disk = work_dir / "images" / img_name
                     
-                    if len(coords) == 4:
-                        if page_img is None and page_img_path.exists():
-                            page_img = Image.open(page_img_path)
+                    if img_path_on_disk.exists():
+                        images[img_name] = img_path_on_disk.read_bytes()
                         
-                        if page_img:
-                            ymin, xmin, ymax, xmax = coords
-                            W, H = page_img.size
-                            # Добавляем "подушку безопасности" в 0.4% во все стороны
-                            pad_w = int(W * 0.004)
-                            pad_h = int(H * 0.004)
-                            c_left = max(0, int(xmin * W / 1000.0) - pad_w)
-                            c_top = max(0, int(ymin * H / 1000.0) - pad_h)
-                            c_right = min(W, int(xmax * W / 1000.0) + pad_w)
-                            c_bottom = min(H, int(ymax * H / 1000.0) + pad_h)
-                            
-                            if c_right > c_left and c_bottom > c_top:
-                                cropped = page_img.crop((c_left, c_top, c_right, c_bottom))
-                                img_name = f"img_p{page_num:04d}_{n:04d}.png"
-                                img_byte_arr = io.BytesIO()
-                                cropped.save(img_byte_arr, format='PNG')
-                                images[img_name] = img_byte_arr.getvalue()
-                                
-                                n += 1
-                                blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "image", "text": img_name, "_page": page_num})
-                                if caption and caption != "image":
-                                    n += 1
-                                    blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": f"_{caption}_", "_page": page_num})
+                        n += 1
+                        blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "image", "text": img_name, "_page": page_num})
+                        if caption and caption != "image":
+                            n += 1
+                            blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": f"_{caption}_", "_page": page_num})
                                     
                     last_end = match.end()
                 

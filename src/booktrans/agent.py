@@ -234,6 +234,8 @@ class WaitingAgent:
 
 
 class Agent:
+    _default_cache = {}
+
     def default_model(self):
         return "unknown"
 
@@ -248,7 +250,17 @@ class ClaudeAgent(Agent):
     kind = "claude"
 
     def default_model(self):
-        return "claude-3-5-sonnet-20240620"
+        if "claude" not in Agent._default_cache:
+            import subprocess, json
+            try:
+                r = subprocess.run(["claude", "-p", "hi"], capture_output=True, text=True, timeout=15)
+                env = json.loads(r.stdout)
+                usage = env.get("modelUsage") or {}
+                main = {k: v for k, v in usage.items() if not k.startswith("claude-haiku")}
+                Agent._default_cache["claude"] = list(main)[0] if main else "claude-3-5-sonnet-20240620"
+            except Exception:
+                Agent._default_cache["claude"] = "claude-3-5-sonnet-20240620"
+        return Agent._default_cache["claude"]
 
     def __init__(self, model=None, timeout=1800, tools="", effort=None):
         self.model = model or self.default_model()
@@ -380,7 +392,15 @@ class AgyAgent(Agent):
     kind = "agy"
 
     def default_model(self):
-        return "gemini-3.1-pro-high"
+        if "agy" not in Agent._default_cache:
+            import subprocess, json
+            try:
+                r = subprocess.run(["agy", "--sandbox", "--output-format", "json"], input="hi", capture_output=True, text=True, timeout=15)
+                env = json.loads(r.stdout)
+                Agent._default_cache["agy"] = env.get("model", "gemini-3.1-pro-high")
+            except Exception:
+                Agent._default_cache["agy"] = "gemini-3.1-pro-high"
+        return Agent._default_cache["agy"]
 
     def __init__(self, model=None, timeout=1800, effort=None):
         self.model = model or self.default_model()
@@ -422,7 +442,15 @@ class CodexAgent(Agent):
     kind = "codex"
 
     def default_model(self):
-        return "gpt-5.6-sol"
+        if "codex" not in Agent._default_cache:
+            import subprocess, re
+            try:
+                r = subprocess.run(["codex", "exec", "--skip-git-repo-check", "-c", 'web_search="disabled"', "--sandbox", "read-only"], input="hi", capture_output=True, text=True, timeout=15)
+                m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)
+                Agent._default_cache["codex"] = m.group(1) if m else "gpt-5.6-sol"
+            except Exception:
+                Agent._default_cache["codex"] = "gpt-5.6-sol"
+        return Agent._default_cache["codex"]
 
     def __init__(self, model=None, timeout=1800, effort=None):
         self.model = model or self.default_model()
