@@ -1811,7 +1811,8 @@ def _pdf_visual(path, agent, marks=None):
             b["text"] = m_def.group(2)
             continue
             
-        # Курсив и полужирный
+        # Курсив и полужирный (начиная с самых длинных тегов)
+        b["text"] = re.sub(r'\*\*\*(.*?)\*\*\*', r'<b><i>\1</i></b>', b["text"])
         b["text"] = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', b["text"])
         b["text"] = re.sub(r'\*(.*?)\*', r'<i>\1</i>', b["text"])
         
