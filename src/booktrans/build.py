@@ -516,8 +516,12 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     if notes:
         log("  " + lang.T("notes_n", len(notes)))
 
-    # сборка нужного формата по расширению
+    # сборка нужного формата по расширению. `.fb2.zip` — двойное: fb2 в
+    # архиве, как его и раздают библиотеки. Оно вдвое легче: fb2 — простой
+    # XML-файл, и картинки в нём лежат текстом, в base64.
     ext = os.path.splitext(dest)[1].lower()
+    if ext == ".zip":
+        ext = os.path.splitext(os.path.splitext(dest)[0])[1].lower() + ext
     if ext in output.WRITERS:
         head, body = about_lines(work, st, code, to)
         
@@ -559,13 +563,15 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
             kw["tmp"] = work        # черновики LaTeX — в рабочую папку книги
 
         kw.update({
-            "note_seq": note_seq, "nid": nid, "notes_map": notes_map
+            "note_seq": note_seq, "nid": nid, "notes_map": notes_map,
+            # Сборщик сам считает, сколько картинок вложил: из набора в книгу
+            # идёт не всё, и сказать об этом может только он.
+            "log": log, "lang": lang,
         })
 
-        if ext == ".fb2":
+        if ext in (".fb2", ".fb2.zip"):
             kw.update({
-                "blocks": blocks, "tr": tr, "partial": partial, "log": log,
-                "lang": lang,
+                "blocks": blocks, "tr": tr, "partial": partial,
                 "about_head": head, "about_body": body,
                 "details_head": dhead, "details_body": dbody,
                 "esc": esc, "span_attr": output.span_attr

@@ -12,7 +12,7 @@ produces a finished book as epub, fb2, html, txt, LaTeX or pdf.
 ```
 
 With no output name the book names itself after its author and title and comes
-out **as both fb2 and epub**. If you want one particular file, say so:
+out **as both fb2.zip and epub**. If you want one particular file, say so:
 `-o Book.fb2`.
 
 ## Community & Support
@@ -115,13 +115,14 @@ read the "Security" and "Disclaimer" sections.
 ## Output formats
 
 The extension of `-o` decides. Without `-o` the book names itself after its
-author and title and comes out **as both fb2 and epub**: the language of a book
-says nothing about what it will be read on, and the second build costs no
+author and title and comes out **as both fb2.zip and epub**: the language of a
+book says nothing about what it will be read on, and the second build costs no
 attention and not a single request to a model.
 
 | | |
 |---|---|
 | `.fb2` | headings, footnotes, images, links, publication data, series |
+| `.fb2.zip` | the same, zipped: half the size, and nearly every reader opens it |
 | `.epub` | a chapter per file, a cover page, table of contents |
 | `.html` | one self-contained file — images and styles inside it, nothing beside it |
 | `.txt` | bare text, footnotes at the end |

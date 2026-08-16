@@ -371,6 +371,13 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     # весят как половина книги: на одной живой epub — 860 КБ из 3,2 МБ.
     used = {t for k, t, *_ in items if k == "image"}
     images = {n: r for n, r in images.items() if n in used or n == same}
+    # Отчёт тот же, что у fb2: из набора в книгу идёт не всё, и разойтись эти
+    # два числа могут по-разному — картинка на выброшенном блоке, картинка,
+    # которой в наборе не оказалось, разделитель глав на два десятка мест.
+    spots = [t for k, t, *_ in items if k == "image"]
+    n_img = sum(1 for n in images if n in used)
+    if n_img and kw.get("log") and kw.get("lang"):
+        kw["log"]("  " + kw["lang"].T("images_n", n_img, len(spots)))
     man, spine = [], []
     cmime, cext = _cover_mime(cover) if cover else ("", "")
     cover_href = f"img/{same}" if same else (f"img/cover.{cext}" if cover else "")
@@ -1233,4 +1240,23 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
         raise SystemExit(f"собранный fb2 невалиден: {e}")
     # О готовом файле говорит `build_book`, один раз и для всех форматов.
 
-WRITERS = {".tex": write_tex, ".pdf": write_pdf, ".txt": write_txt, ".html": write_html, ".htm": write_html, ".epub": write_epub, ".fb2": write_fb2}
+def write_fb2_zip(dest, *a, **kw):
+    """Fb2 в архиве — так его и раздают библиотеки, и так его понимают почти
+    все читалки. Вдвое легче: fb2 — простой XML-файл, сжимать его самому
+    нечем, а картинки лежат в нём текстом, в base64, и весят на треть больше
+    своего.
+
+    Внутри архива — одноимённый файл без `.zip`: читалка ищет именно его.
+    """
+    plain = dest[:-len(".zip")]
+    write_fb2(plain, *a, **kw)
+    try:
+        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(plain, os.path.basename(plain))
+    finally:
+        os.unlink(plain)
+
+
+WRITERS = {".tex": write_tex, ".pdf": write_pdf, ".txt": write_txt,
+           ".html": write_html, ".htm": write_html, ".epub": write_epub,
+           ".fb2": write_fb2, ".fb2.zip": write_fb2_zip}

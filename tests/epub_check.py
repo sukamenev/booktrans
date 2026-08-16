@@ -20,6 +20,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
+from booktrans import lang as O_lang                        # noqa: E402
 from booktrans import output as O                          # noqa: E402
 
 OPF = "{http://www.idpf.org/2007/opf}"
@@ -128,6 +129,16 @@ def main():
     ok("страница обложки идёт первой",
        re.findall(r'<itemref idref="([^"]+)"', opf)[:1] == ["cover"],
        re.findall(r'<itemref idref="([^"]+)"', opf)[:3])
+
+    # Сколько картинок легло в книгу, говорит сам сборщик: из набора идёт не
+    # всё, и у epub этой строки не было вовсе, хотя у fb2 была.
+    said = []
+    O.write_epub(os.path.join(d, "b2.epub"),
+                 {"title": "Книга", "target_lang": "ru"}, ITEMS, {},
+                 {"photo.png": OTHER, "cover.png": PIXEL}, "Прим.:", {},
+                 cover=PIXEL, log=said.append, lang=O_lang)
+    ok("epub говорит, сколько картинок вложил",
+       any("1" in x and "2" in x for x in said), said)
 
     ok("внутренняя ссылка несёт имя файла",
        bool(re.search(r'href="ch\d+\.xhtml#s02\.b0001"', x)),
