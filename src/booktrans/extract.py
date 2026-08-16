@@ -27,7 +27,7 @@ from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
                    NOTE_GAP, NOTE_RUN, OCR_TRUNC_MIN, OCR_TRUNC_RATIO,
                    PDF_MAX_PER_PAGE, PDF_MAX_RATIO,
                    PDF_MIN_SIDE, PDF_SAME_MAX, REFS_HOLE, REFS_RUN,
-                   REFS_STEP, REFS_TAIL, SKIP_MAX, TOC_PAGE)
+                   REFS_STEP, REFS_TAIL, SKIP_MAX, SPACED_MAX, TOC_PAGE)
 
 XH = "{http://www.w3.org/1999/xhtml}"
 OPF = "{http://www.idpf.org/2007/opf}"
@@ -2256,14 +2256,14 @@ def _from_text(txt, title, marks=None, indent=INDENT_TEXT, imgs=()):
                       r"\b[\s\dIVXLC.:\u2014-]*$", re.I)
     pagenum = re.compile(r"^[\dIVXLCivxlc]{1,6}$")
 
-    # Костыль для старого парсера PDF/TXT: если строка отбита 3 пустыми строками
-    # до и после, и таких строк в книге немного (до 50), считаем их заголовками.
+    # У pdf и txt разметки нет, и заголовок узнаётся только по отбивке:
+    # строка, вокруг которой пусто. Порог см. SPACED_MAX.
     spaced_out = set()
     for m in re.finditer(r"(?:\n\s*){4,}([^\n]+)(?:\n\s*){4,}", "\n\n\n\n" + raw + "\n\n\n\n"):
         cand = m.group(1).strip()
         if cand:
             spaced_out.add(cand)
-    if len(spaced_out) > 50:
+    if len(spaced_out) > SPACED_MAX:
         spaced_out.clear()
 
     def looks_like_title(p):
