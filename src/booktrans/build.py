@@ -475,7 +475,11 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
         if dhead:
             items += [("title", dhead, "_details", None, None, 1)]
             items += [("p", t, f"_details{i}", None, None, None) for i, t in enumerate(dbody)]
-        kw = {"cover": cover} if ext in (".epub", ".html", ".htm", ".pdf") else {}
+        # Обложку получают все сборщики. Перечислять форматы поимённо здесь
+        # было ошибкой: fb2 и tex в список не попали, и книга выходила без
+        # обложки, хотя место под неё в обоих сборщиках есть. Кому она не
+        # нужна, тот примет её в `**kw` и не заметит.
+        kw = {"cover": cover}
         if ext == ".pdf":
             kw["tmp"] = work        # черновики LaTeX — в рабочую папку книги
 

@@ -1178,7 +1178,6 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
         ET.parse(dest)
     except ET.ParseError as e:
         raise SystemExit(f"собранный fb2 невалиден: {e}")
-    log(lang.T("built_file", dest, f"{os.path.getsize(dest) / 1024 / 1024:.1f}",
-               sum(1 for b in blocks if b["kind"] == "p")))
+    # О готовом файле говорит `build_book`, один раз и для всех форматов.
 
 WRITERS = {".tex": write_tex, ".pdf": write_pdf, ".txt": write_txt, ".html": write_html, ".htm": write_html, ".epub": write_epub, ".fb2": write_fb2}
