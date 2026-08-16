@@ -589,6 +589,11 @@ def main():
     #   3) указания заказчика — сильнее всего, они правят и первое, и второе.
     for k, v in pipeline.scout_meta(work).items():
         meta.setdefault(k, v)
+    # Если разведка нашла разделы-указатели — помечаем их drop: true.
+    # _mark_back идемпотентна: asis-блоки остаются asis, добавляется только drop.
+    if meta.get("drop_sections"):
+        from . import extract as _extract
+        _extract._mark_back(blocks, drop_sections=meta["drop_sections"])
     meta.update(user_meta)
     meta.pop("_cleaned", None)
     # Язык перевода — свойство запуска, а не книги: по нему сборщик берёт

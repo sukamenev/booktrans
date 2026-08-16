@@ -1775,6 +1775,19 @@ def scout_meta(work):
                 continue
         if v and not v.startswith("("):
             out[key] = v
+
+    # Разделы-указатели: модель перечисляет их под ключом drop_sections:
+    # Ищем блок вида «drop_sections:\n- Index\n- Name Index»
+    ds_m = re.search(r"drop_sections\s*:\s*\n((?:\s*[-*]\s*.+\n?)+)", txt, re.I)
+    if ds_m:
+        sections = []
+        for line in ds_m.group(1).splitlines():
+            item = re.sub(r"^\s*[-*]\s*", "", line).strip().strip('"\'')
+            if item:
+                sections.append(item)
+        if sections:
+            out["drop_sections"] = sections
+
     return out
 
 

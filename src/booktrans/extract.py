@@ -2533,7 +2533,7 @@ def _reference_like(blocks, idx):
     return digits >= BACK_DIGITS and sum(map(len, ps)) / len(ps) < BACK_LEN
 
 
-def _mark_back(blocks):
+def _mark_back(blocks, drop_sections=None):
     """Пометить заднюю часть книги: её не переводят.
 
     Правило целиком механическое, и это нарочно. Задняя часть опознаётся по
@@ -2543,20 +2543,22 @@ def _mark_back(blocks):
     подхватываются подразделы примечаний, названные как главы («PART II
     CHRONIC KILLERS»).
 
-    Мера предосторожности одна и простая: заголовок раздела не трогаем. Он
-    переводится, и в готовой книге видно, где начинается непереведённое.
+    drop_sections — список точных заголовков от разведки (LLM): такие разделы
+    помечаются drop: true и полностью выбрасываются из книги вместе с заголовком.
     """
+    drop_set = {s.lower().strip() for s in (drop_sections or [])}
     words = [len(b["text"].split()) for b in blocks]
     total = sum(words) or 1
     seen, n, back = 0, 0, False
     for at, idx in _sections(blocks):
         head = blocks[at]["text"] if at >= 0 else ""
+        head_plain = strip_tags(head).strip()
         start = seen
         seen += sum(words[i] for i in idx) + (words[at] if at >= 0 else 0)
         if start < total * BACK_TAIL:
             back = False
             continue
-        if not (BACK_HEAD.match(strip_tags(head)) or back):
+        if not (BACK_HEAD.match(head_plain) or back):
             back = False
             continue
         # Раздел из одного заголовка («Notes» отдельной страницей) сам ничего
@@ -2565,12 +2567,17 @@ def _mark_back(blocks):
             back = False
             continue
         back = True
-        is_index = bool(INDEX_HEAD.match(strip_tags(head)))
+        # Раздел — указатель если: LLM назвал его явно, или имя совпадает с
+        # INDEX_HEAD. Заголовок тоже помечаем drop — он не должен попасть в книгу.
+        is_drop = (head_plain.lower() in drop_set) or bool(INDEX_HEAD.match(head_plain))
+        if is_drop and at >= 0:
+            blocks[at]["asis"] = True
+            blocks[at]["drop"] = True
         for i in idx:
             if not blocks[i].get("asis"):
                 blocks[i]["asis"] = True
                 n += 1
-            if is_index:
+            if is_drop:
                 blocks[i]["drop"] = True
     return n
 
