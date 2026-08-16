@@ -297,8 +297,11 @@ def about_lines(work, st, code):
         [_models_line(work, "tr", "tr", st, st["details_translate"]),
          _models_line(work, "ed", "blocks", st, st["details_edit"]),
          st["about_date"].format(date=span) if span else ""],
-        [st["about_quality"], st["about_caveat"],
-         st.get("about_notes", ""), st.get("about_disclaimer", "")],
+        [st["about_quality"], st["about_caveat"], st.get("about_notes", "")],
+        # Отказ от ответственности — своим куском: он не про качество
+        # перевода, а про то, чего у читателя нет вовсе, и сливаться с
+        # оговорками о ритмике и сносках ему не следует.
+        [st.get("about_disclaimer", "")],
     ]
     body = []
     for g in groups:
