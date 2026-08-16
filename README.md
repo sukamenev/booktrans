@@ -828,7 +828,8 @@ That covers footnotes, section headings, terminology consistency, and any
 sweeping replacements. You only go back to the translation if the prose itself
 is wrong.
 
-Four files in the work directory:
+Three files in the work directory (every file is described in
+[docs/DATA_FORMAT.md](docs/DATA_FORMAT.md)):
 
 - `headings.json` — heading translations (created automatically, editable);
 - `fixups.json` — sweeping replacements:
@@ -837,9 +838,11 @@ Four files in the work directory:
   and a regex does that silently. A rule may carry `"blocks": [...]` to apply
   only to listed paragraphs — a word can be right in one place and wrong in
   another;
-- `terms.json` — terminology checks: `{"English": "target"}`;
-- `notes.json` — translator's footnotes: `{"s05.b0042": "note text"}`. The key
-  is the paragraph the note attaches to; order in the file sets the numbering.
+- `terms.json` — terminology checks: `{"English": "target"}`.
+
+Footnotes are not edited through a file of their own: they live in
+`work/nt/NNNN.json` and in the `footnotes` field of the translation and
+editing chunks. The "translator's note" label is added at assembly.
 
 ```bash
 ./booktrans book.epub --only build -o Book.fb2
