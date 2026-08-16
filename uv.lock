@@ -4,7 +4,7 @@ requires-python = ">=3.9"
 
 [[package]]
 name = "booktrans"
-version = "1.8.98"
+version = "1.8.99"
 source = { editable = "." }
 dependencies = [
     { name = "charset-normalizer" },

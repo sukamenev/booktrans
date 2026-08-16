@@ -575,7 +575,8 @@ def main():
     user_meta, user_text = read_prompt(args.prompt, log, args.prompt_text)
     if args.prompt or args.prompt_text:
         json.dump({"meta": user_meta, "text": user_text},
-                  open(saved, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                  open(pipeline.mkparent(saved), "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
     elif os.path.exists(saved):
         d = json.load(open(saved, encoding="utf-8"))
         user_meta, user_text = d.get("meta") or {}, d.get("text") or ""

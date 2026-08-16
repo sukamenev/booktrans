@@ -506,26 +506,37 @@ def translate_prompt(chunk, nxt, summary, tail, terms, task):
 # ------------------------------------------------- языковые части папки
 
 def lpath(work, name, to=""):
-    """Путь к языковой части рабочей папки: `tr` → `work/tr_ru`.
+    """Путь к языковой части рабочей папки: `tr` → `work/ru/tr`.
 
     Одну книгу переводят на несколько языков, и делить между ними разбор
     оригинала, разметку и картинки — вся выгода: они стоят дороже всего после
     самого перевода. А перевод, редактура, сноски, справочник и конспект у
-    каждого языка свои, и лежат они под именем с суффиксом. Суффикс, а не
-    подпапка: общего в папке две трети, и `ru/tr` рядом с десятком общих
-    файлов читалось бы хуже, чем `tr_ru`.
+    каждого языка свои и лежат в его папке.
 
-    DEPRECATED: имени с суффиксом ещё нет, а без суффикса есть — берём его.
-    Так читаются папки выпусков до 1.8.98, и переводить в них заново ничего
-    не нужно. Когда таких папок в обиходе не останется, убрать `old` и обе
-    строки под этим словом.
+    Папка, а не суффикс в имени: язык удаляется одним движением, общий список
+    файлов не растёт с каждым новым языком, а главное — работая с одним
+    языком, в чужой не попадёшь. При плоской раскладке `scout_de.md` стоял бы
+    вплотную к `scout_ru.md`, и правка ушла бы не туда молча.
+
+    DEPRECATED: своего пути ещё нет, а рядом с общими файлами такое имя есть —
+    берём его. Так читаются папки выпусков до 1.8.99, и переводить в них
+    заново ничего не нужно. Когда таких папок в обиходе не останется, убрать
+    `old` и обе строки под этим словом.
     """
-    root, ext = os.path.splitext(name)
-    new = os.path.join(work, f"{root}_{to}{ext}") if to else ""
+    new = os.path.join(work, to, name) if to else ""
     old = os.path.join(work, name)
     if new and not os.path.exists(new) and os.path.exists(old):
         return old
     return new or old
+
+
+def mkparent(path):
+    """Завести папку под этот файл. Языковая папка появляется при первой
+    записи в неё, и заводить её отдельной строкой в каждом проходе незачем."""
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    return path
 
 
 BY_BLOCK = ("tr", "src", "edits")
@@ -589,7 +600,7 @@ def _save(path, obj, keep=True, stamp=True):
     # `saved` — и проход, считающий работу по блокам, падал на ней.
     if stamp:
         obj["saved"] = time.time()
-    tmp = path + ".tmp"
+    tmp = mkparent(path) + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=1)
     os.replace(tmp, path)
@@ -862,7 +873,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         state["sum"][str(idx)] = summ
         if terms:
             state["terms"][str(idx)] = terms
-        json.dump(state, open(sp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump(state, open(mkparent(sp), "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
         done += 1
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("ready_in", f"{dt:.0f}", f"{meta['model']}{cost}"))
@@ -1920,7 +1932,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,
                                         lambda o: (o, ""), log)
         findings.append(res)
-        json.dump(findings, open(half, "w", encoding="utf-8"), ensure_ascii=False)
+        json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
+                  ensure_ascii=False)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
 
@@ -1935,10 +1948,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     else:
         merged = findings[0] if findings else ""
 
-    open(out_path, "w", encoding="utf-8").write(merged)
+    open(mkparent(out_path), "w", encoding="utf-8").write(merged)
     # Модель разведки нигде больше не записана, а в книге её надо назвать.
     json.dump({"model": meta.get("model")},
-              open(lpath(work, "scout.json", to), "w", encoding="utf-8"),
+              open(mkparent(lpath(work, "scout.json", to)), "w", encoding="utf-8"),
               ensure_ascii=False)
     log("  " + T("scout_ref", out_path, len(merged)))
     merged = _condense_scout(merged, who, "", retries, log, out_path)
@@ -2066,9 +2079,10 @@ def _condense_scout(merged, who, system, retries, log, out_path):
         if model != "?":
             if model not in failed_models:
                 failed_models.append(model)
-            json.dump(failed_models, open(no_shrink_path, "w", encoding="utf-8"), ensure_ascii=False)
+            json.dump(failed_models, open(mkparent(no_shrink_path), "w",
+                                          encoding="utf-8"), ensure_ascii=False)
         return merged
-    open(out_path, "w", encoding="utf-8").write(now)
+    open(mkparent(out_path), "w", encoding="utf-8").write(now)
     log("  " + T("scout_condense_ok", len(merged), len(now),
                  len(_rows(merged)), len(_rows(now))))
     if len(now) > SCOUT_MAX:
@@ -2192,7 +2206,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
     out.append("")
     out += [f"- {x}" for x in done]
     merged = "\n".join(out)
-    open(out_path, "w", encoding="utf-8").write(merged)
+    open(mkparent(out_path), "w", encoding="utf-8").write(merged)
     for x in done:
         log(f"      {x}")
     return merged
@@ -2252,7 +2266,8 @@ def headings(work, blocks, agent, system, retries, log, fallback=None, to=""):
 
         (got, _), meta, dt = _chain_run(who, system, prompt, retries, parse_heads, log)
         have.update(got)
-        json.dump(have, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        json.dump(have, open(mkparent(path), "w", encoding="utf-8"),
+                  ensure_ascii=False, indent=1)
         total_dt += dt
         
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""

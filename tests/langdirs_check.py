@@ -3,11 +3,11 @@
 
 Разбор оригинала, разметка и картинки языка не имеют и стоят дороже всего
 после самого перевода, поэтому лежат общими. А перевод, редактура, сноски,
-справочник и конспект у каждого языка свои: `tr_ru` и `tr_de` рядом.
+справочник и конспект у каждого языка свои и лежат в папке языка: `ru/tr` и `de/tr`.
 
-Отдельно — папки прежнего вида, без имени языка: пока своей, с суффиксом,
-нет, работа берётся из них. Так продолжают читаться книги, переведённые
-прежними выпусками.
+Отдельно — папки прежнего вида, без языка: пока своего пути нет, работа
+берётся из них. Так продолжают читаться книги, переведённые прежними
+выпусками.
 
     python3 tests/langdirs_check.py
 """
@@ -28,7 +28,7 @@ RU = {"s01.b0001": "Он спустился в подвал и подцепил 
 
 def work(sub="tr", names=RU):
     d = tempfile.mkdtemp()
-    os.makedirs(f"{d}/{sub}")
+    os.makedirs(f"{d}/{sub}", exist_ok=True)
     json.dump({"index": 1, "model": "стенд", "cost_usd": 0, "footnotes": [],
                "tr": names}, open(f"{d}/{sub}/0001.json", "w", encoding="utf-8"),
               ensure_ascii=False)
@@ -45,33 +45,31 @@ def main():
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
 
-    # Имена: папка и файл получают суффикс, расширение остаётся последним.
-    for name, to, want in (("tr", "ru", "tr_ru"), ("ed", "de", "ed_de"),
-                           ("state.json", "ru", "state_ru.json"),
-                           ("scout.md", "uk", "scout_uk.md"),
-                           ("scout.part.json", "ru", "scout.part_ru.json"),
-                           ("tr", "", "tr")):
-        got = os.path.basename(P.lpath("/w", name, to))
+    # Языковое лежит в папке языка, общее — рядом с ней.
+    for name, to, want in (("tr", "ru", "/w/ru/tr"), ("ed", "de", "/w/de/ed"),
+                           ("state.json", "ru", "/w/ru/state.json"),
+                           ("scout.md", "uk", "/w/uk/scout.md"),
+                           ("tr", "", "/w/tr")):
+        got = P.lpath("/w", name, to)
         ok(f"{name} + {to or 'без языка'} → {want}", got == want, got)
 
-    # Имени с суффиксом ещё нет, а без суффикса есть — берём его: так
-    # читаются папки прежних выпусков, и переводить в них заново нечего.
+    # Своего пути ещё нет, а рядом с общими файлами такое имя есть — берём
+    # его: так читаются папки прежних выпусков, переводить в них нечего.
     d = work()
     tr, _ = P.all_translations(d, "ru")
-    ok("папка без суффикса читается", tr == RU, tr)
-    ok("путь ведёт к ней же", os.path.basename(P.lpath(d, "tr", "ru")) == "tr",
-       P.lpath(d, "tr", "ru"))
-    os.makedirs(f"{d}/tr_ru")
-    ok("но своя папка сильнее", os.path.basename(P.lpath(d, "tr", "ru")) == "tr_ru",
+    ok("папка прежнего вида читается", tr == RU, tr)
+    ok("путь ведёт к ней же", P.lpath(d, "tr", "ru") == f"{d}/tr", P.lpath(d, "tr", "ru"))
+    os.makedirs(f"{d}/ru/tr")
+    ok("но своя папка сильнее", P.lpath(d, "tr", "ru") == f"{d}/ru/tr",
        P.lpath(d, "tr", "ru"))
     shutil.rmtree(d, ignore_errors=True)
 
     # Два языка в одной папке не мешают друг другу.
-    d = work("tr_ru")
-    os.makedirs(f"{d}/tr_de")
+    d = work("ru/tr")
+    os.makedirs(f"{d}/de/tr")
     json.dump({"index": 1, "model": "стенд", "cost_usd": 0, "tr":
                {"s01.b0001": "Er ging in den Keller hinunter."}},
-              open(f"{d}/tr_de/0001.json", "w", encoding="utf-8"), ensure_ascii=False)
+              open(f"{d}/de/tr/0001.json", "w", encoding="utf-8"), ensure_ascii=False)
     ru, _ = P.all_translations(d, "ru")
     de, _ = P.all_translations(d, "de")
     ok("языки не мешают друг другу",

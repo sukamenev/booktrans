@@ -58,8 +58,8 @@ ANSWERS = {
 # метки протокола однажды поменяли, ответы в этой проверке остались прежними,
 # и разбор молча возвращал пустоту — а проверка всё равно была зелёной.
 LANDED = {
-    # Разведка пишет справочник под язык прогона: у `scout` он `ru`.
-    "scout": lambda d: "Пётр" in open(f"{d}/scout_ru.md", encoding="utf-8").read(),
+    # Разведка пишет справочник в папку языка прогона: у `scout` он `ru`.
+    "scout": lambda d: "Пётр" in open(f"{d}/ru/scout.md", encoding="utf-8").read(),
     "notes": lambda d: json.load(open(f"{d}/nt/0001.json",
                                       encoding="utf-8"))["notes"],
     "fix_ocr": lambda d: any(json.load(open(f"{d}/ocrfix.json",

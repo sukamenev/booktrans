@@ -9,7 +9,8 @@ from xml.sax.saxutils import escape
 
 from . import lang, output
 from .pipeline import _blockmap as pipe_blockmap
-from .pipeline import all_notes, all_translations, chunk_files, lpath, strip
+from .pipeline import all_notes, all_translations, chunk_files, lpath
+from .pipeline import mkparent, strip
 from .tune import CAPTION
 
 # Оговорка у цитаты, приведённой по чужому переводу. Умолчание на случай,
@@ -733,7 +734,7 @@ def review_report(work, log, T=None, to=""):
     # В консоли — первая мысль замечания, целиком — в файле рядом с кусками.
     # Замечание бывает на полстраницы, и вываливать сорок таких в поток значит
     # смыть остальной отчёт.
-    with open(p, "w", encoding="utf-8") as f:
+    with open(mkparent(p), "w", encoding="utf-8") as f:
         for idx, t in items:
             f.write(f"## {idx:04d}\n\n{t}\n\n")
     for idx, t in items:
