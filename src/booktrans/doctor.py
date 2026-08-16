@@ -106,7 +106,7 @@ def check(log=print, agent="claude"):
 
     # Где искать свои промпты — вопрос, на который иначе отвечают гаданием:
     # папка настроек называется по-разному на трёх системах.
-    from .cli import prompt_roots
+    from .lang import prompt_roots
     log("")
     log("  " + T("doc_prompts"))
     for r in prompt_roots():

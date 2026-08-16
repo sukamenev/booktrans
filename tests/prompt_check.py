@@ -16,9 +16,9 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
-from booktrans import cli                                # noqa: E402
+from booktrans import lang                               # noqa: E402
 
-BASE = "авторский промпт\n<<<P>>>\nTERM: слово"
+BASE = "авторский промпт\n[[[P]]]\nTERM: слово"
 
 
 def build(files):
@@ -87,10 +87,11 @@ ROOTS = [
 
 # Знаки протокола: что должно найтись пропавшим в перекрытом промпте.
 TOKENS = [
-    ("всё на месте", "deutsch\n<<<P>>>\nTERM: Wort", []),
-    ("метка потеряна", "deutsch\nTERM: Wort", ["<<<P"]),
-    ("ярлык переведён", "deutsch\n<<<P>>>\nBEGRIFF: Wort", ["TERM:"]),
-    ("потеряно всё", "deutsch ohne alles", ["<<<P", "TERM:"]),
+    ("всё на месте", "deutsch\n[[[P]]]\nTERM: Wort", []),
+    ("метка потеряна", "deutsch\nTERM: Wort", ["[[[P"]),
+    ("ярлык переведён", "deutsch\n[[[P]]]\nBEGRIFF: Wort", ["TERM:"]),
+    # Порядок — от sorted(): квадратная скобка стоит в таблице после букв.
+    ("потеряно всё", "deutsch ohne alles", ["TERM:", "[[[P"]),
 ]
 
 
@@ -98,7 +99,7 @@ def main():
     bad = 0
     for name, files, to, want, own_want in CASES:
         d = build(files)
-        text, own = cli.prompt("translate", to, [d])
+        text, own = lang.prompt("translate", to, [d])
         ok = text == "\n\n".join(want) and bool(own) == own_want
         print(f"  {name:34} {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}")
         if not ok:
@@ -108,7 +109,7 @@ def main():
         shutil.rmtree(d)
     for name, high, low, to, want in ROOTS:
         a, b = build(high), build(low)
-        text, _ = cli.prompt("translate", to, [a, b])
+        text, _ = lang.prompt("translate", to, [a, b])
         ok = text == "\n\n".join(want)
         print(f"  папки: {name:27} {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}")
         if not ok:
@@ -119,7 +120,7 @@ def main():
         shutil.rmtree(b)
     for name, over, want in TOKENS:
         d = build({"translate.md": BASE})
-        got = cli.lost_tokens("translate", over, d)
+        got = lang.lost_tokens("translate", over, d)
         ok = got == want
         print(f"  знаки: {name:27} {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}")
         if not ok:
