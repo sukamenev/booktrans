@@ -33,11 +33,11 @@ class Stub:
     def __init__(self):
         self.calls = 0
 
-    def run(self, system, prompt):
+    def run(self, system, prompt, image=None):
         self.calls += 1
-        ids = re.findall(r"<<<[PVT]\s+(\S+?)>>>", prompt)
-        body = "".join(f"<<<P {i}>>>\nперевод\n" for i in ids)
-        return body + "\n<<<META>>>\nSUMMARY: было и прошло\n", \
+        ids = re.findall(r"\[\[\[[PVT]\s+(\S+?)\]\]\]", prompt)
+        body = "".join(f"[[[P {i}]]]\nперевод\n" for i in ids)
+        return body + "\n[[[META]]]\nSUMMARY: было и прошло\n", \
             {"model": self.model, "cost_usd": 0}
 
 

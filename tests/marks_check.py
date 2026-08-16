@@ -82,7 +82,7 @@ def main():
         asked.append(first)
         if first > 2 * F.WINDOW:
             raise AgentError("agy вернул 1: Error 502")
-        return f"{first} title\n<<<TOC>>>\nГлава {first}\n"
+        return f"{first} title\n[[[TOC]]]\nГлава {first}\n"
 
     try:
         F.plan(PARAS, dies, hush, tries=1, save=keep)
