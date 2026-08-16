@@ -956,7 +956,6 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
     about_body = kw['about_body']
     details_head = kw['details_head']
     details_body = kw['details_body']
-    PIPELINE = kw['PIPELINE']
     esc = kw['esc']
     span_attr = kw['span_attr']
     code = meta.get("target_lang", "ru")
@@ -1011,13 +1010,10 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
     head, body = about_head, about_body
     w("<section>")
     w(f"<title><p>{esc(head)}</p></title>")
-    for i, line in enumerate(body):
-        # Мимо `_inline` этот раздел идёт потому, что собран не из блоков
-        # книги, — но адреса в нём тоже должны быть ссылками, а не текстом.
-        line = _autolink(esc(line), "a l:href")
-        if i == 0:
-            line = line.replace(PIPELINE, f"<strong>{PIPELINE}</strong>", 1)
-        w(f"<p>{line}</p>")
+    for line in body:
+        # Через общий разворот разметки, как и всё прочее: раздел собран не из
+        # блоков книги, но и выделение, и ссылки в нём должны выйти такими же.
+        w(f"<p>{_inline(line, FB2_INLINE)}</p>")
     w("</section>")
 
     open_sec = False

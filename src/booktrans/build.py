@@ -236,9 +236,9 @@ def about_lines(work, st, code):
         # «(5 августа 2026)» читается как дата перевода, а это дата сборки
         # конвейера — слово нужно, и оно на языке перевода.
         ver = st.get("about_version", "{date}").format(date=ver)
-        who = f"{PIPELINE} ({ver}, {PIPELINE_URL})"
+        who = f"<b>{PIPELINE}</b> ({ver}, {PIPELINE_URL})"
     else:
-        who = f"{PIPELINE} {ver} ({PIPELINE_URL})"
+        who = f"<b>{PIPELINE}</b> {ver} ({PIPELINE_URL})"
     body = [st["about_made"].format(pipeline=who)]
     if span:
         body.append(st["about_date"].format(date=span))
@@ -493,7 +493,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
                 "lang": lang,
                 "about_head": head, "about_body": body,
                 "details_head": dhead, "details_body": dbody,
-                "PIPELINE": PIPELINE, "esc": esc, "span_attr": output.span_attr
+                "esc": esc, "span_attr": output.span_attr
             })
         output.WRITERS[ext](dest, meta, items, notes, images or {},
                             st.get("note_prefix", NOTE_PREFIX).rstrip() + " ",
