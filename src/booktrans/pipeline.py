@@ -503,6 +503,31 @@ def translate_prompt(chunk, nxt, summary, tail, terms, task):
 
 # Что в файле куска хранится по номерам блоков: при слиянии эти словари
 # дополняются, а не заменяются целиком.
+# ------------------------------------------------- языковые части папки
+
+def lpath(work, name, to=""):
+    """Путь к языковой части рабочей папки: `tr` → `work/tr_ru`.
+
+    Одну книгу переводят на несколько языков, и делить между ними разбор
+    оригинала, разметку и картинки — вся выгода: они стоят дороже всего после
+    самого перевода. А перевод, редактура, сноски, справочник и конспект у
+    каждого языка свои, и лежат они под именем с суффиксом. Суффикс, а не
+    подпапка: общего в папке две трети, и `ru/tr` рядом с десятком общих
+    файлов читалось бы хуже, чем `tr_ru`.
+
+    DEPRECATED: имени с суффиксом ещё нет, а без суффикса есть — берём его.
+    Так читаются папки выпусков до 1.8.98, и переводить в них заново ничего
+    не нужно. Когда таких папок в обиходе не останется, убрать `old` и обе
+    строки под этим словом.
+    """
+    root, ext = os.path.splitext(name)
+    new = os.path.join(work, f"{root}_{to}{ext}") if to else ""
+    old = os.path.join(work, name)
+    if new and not os.path.exists(new) and os.path.exists(old):
+        return old
+    return new or old
+
+
 BY_BLOCK = ("tr", "src", "edits")
 
 
@@ -716,15 +741,15 @@ def _regrow(agent, system, task, blocks, res, retries, log, fallback=None):
 
 
 def translate(work, chunks, agent, system, task, retries, log, only=None,
-              fallback=None):
-    os.makedirs(f"{work}/tr", exist_ok=True)
-    os.makedirs(f"{work}/prompts", exist_ok=True)
-    sp = f"{work}/state.json"
+              fallback=None, to=""):
+    os.makedirs(lpath(work, "tr", to), exist_ok=True)
+    os.makedirs(lpath(work, "prompts", to), exist_ok=True)
+    sp = lpath(work, "state.json", to)
     state = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {"sum": {}, "terms": {}}
     # готовность считаем по блокам, а не по именам файлов: если нарезка
     # изменилась, старый файл покроет не те блоки и оставит дыру
     have, old = {}, False
-    for _, p_ in chunk_files(f"{work}/tr"):
+    for _, p_ in chunk_files(lpath(work, "tr", to)):
         x = json.load(open(p_, encoding="utf-8"))
         fp = x.get("src") or {}
         old = old or not fp
@@ -738,7 +763,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         idx = c["index"]
         if only and idx not in only:
             continue
-        out_path = f"{work}/tr/{idx:04d}.json"
+        out_path = f'{lpath(work, "tr", to)}/{idx:04d}.json'
         # Готово — это когда и блок тот же, и текст в нём тот же. Отпечатка
         # нет только у файлов от прежних версий: там верим на слово.
         if not only and all(
@@ -749,7 +774,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             continue
         summary = condense(state, idx, agent, retries, log, fallback)
         tail = ""
-        prev = f"{work}/tr/{idx - 1:04d}.json"
+        prev = f'{lpath(work, "tr", to)}/{idx - 1:04d}.json'
         if os.path.exists(prev):
             vals = [v for v in json.load(open(prev, encoding="utf-8"))["tr"].values() if v.strip()]
             tail = "\n\n".join(vals[-TAIL_PARAS:])
@@ -757,7 +782,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         here = " ".join(b["text"] for b in translatable(c["blocks"]))
         prompt = translate_prompt(c, nxt, summary, tail,
                                   accumulated_terms(state, idx, here), task)
-        open(f"{work}/prompts/{idx:04d}.txt", "w", encoding="utf-8").write(prompt)
+        open(f'{lpath(work, "prompts", to)}/{idx:04d}.txt', "w",
+             encoding="utf-8").write(prompt)
 
         expected = [b["id"] for b in translatable(c["blocks"])]
         srcs = {b["id"]: b["text"] for b in translatable(c["blocks"])}
@@ -896,8 +922,8 @@ def _split_meta(extra):
 # ---------------------------------------------------------------- редактура
 
 def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
-         fallback=None, force=False):
-    os.makedirs(f"{work}/ed", exist_ok=True)
+         fallback=None, force=False, to=""):
+    os.makedirs(lpath(work, "ed", to), exist_ok=True)
     now = getattr(agent, "model", None) or ""
 
     # Черновик собираем по всей книге, а не из файла с тем же номером.
@@ -907,7 +933,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     # править нечего, пустой файл правки ложился поверх старого, и сделанная
     # редактура пропадала кусок за куском.
     raw, whose = {}, {}
-    for _, p_ in chunk_files(f"{work}/tr"):
+    for _, p_ in chunk_files(lpath(work, "tr", to)):
         x = json.load(open(p_, encoding="utf-8"))
         for k, v in x["tr"].items():
             raw[k] = v
@@ -916,7 +942,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     # Что уже отредактировано — тоже по блокам, а не по номерам файлов. Кусок,
     # на котором правка оборвалась, считаем сделанным только до места обрыва.
     ready, stuck = set(), {}
-    d = f"{work}/ed"
+    d = lpath(work, "ed", to)
     if os.path.isdir(d):
         for n in sorted(os.listdir(d)):
             if not n.endswith(".json"):
@@ -974,7 +1000,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             return
         idx = c["index"]
         who = (c["label"] or "—")[:24]
-        out_path = f"{work}/ed/{idx:04d}.json"
+        out_path = f'{lpath(work, "ed", to)}/{idx:04d}.json'
         ids = [b["id"] for b in translatable(c["blocks"])]
         draft = {i: raw[i] for i in ids if i in raw}
         if not draft:
@@ -1000,7 +1026,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             # кусок совсем из другого места книги.
             pids = [b["id"] for b in translatable(prev["blocks"])]
             ptxt = {i: raw[i] for i in pids if i in raw}
-            ep = f"{work}/ed/{idx - 1:04d}.json"
+            ep = f'{lpath(work, "ed", to)}/{idx - 1:04d}.json'
             if os.path.exists(ep):
                 for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
                     if k in ptxt:
@@ -1041,7 +1067,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 lang.prompt("translate_hint_terms")[0] + "\n\n" + "\n".join(terms))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
-        open(f"{work}/prompts/{idx:04d}.edit.txt", "w", encoding="utf-8").write(prompt)
+        open(f'{lpath(work, "prompts", to)}/{idx:04d}.edit.txt', "w",
+             encoding="utf-8").write(prompt)
 
         def _stopped(res, ids):
             """Оборвалась ли правка. Редактура по замыслу возвращает только
@@ -1172,24 +1199,24 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     return done, skipped, total, halt[0]
 
 
-def current(work, idx):
-    tp = f"{work}/tr/{idx:04d}.json"
+def current(work, idx, to=""):
+    tp = f'{lpath(work, "tr", to)}/{idx:04d}.json'
     if not os.path.exists(tp):
         return {}
     base = json.load(open(tp, encoding="utf-8"))["tr"]
-    ep = f"{work}/ed/{idx:04d}.json"
+    ep = f'{lpath(work, "ed", to)}/{idx:04d}.json'
     if os.path.exists(ep):
         for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
             base[k] = e["new"]
     return base
 
 
-def all_translations(work):
+def all_translations(work, to=""):
     """Черновик с наложенной редактурой + счётчик правок."""
     tr, edited = {}, 0
-    for _, p_ in chunk_files(f"{work}/tr"):
+    for _, p_ in chunk_files(lpath(work, "tr", to)):
         tr.update(json.load(open(p_, encoding="utf-8"))["tr"])
-    for _, p_ in chunk_files(f"{work}/ed"):
+    for _, p_ in chunk_files(lpath(work, "ed", to)):
         for k, e in json.load(open(p_, encoding="utf-8"))["edits"].items():
             if k in tr:
                 tr[k] = e["new"]
@@ -1200,7 +1227,7 @@ def all_translations(work):
 # ---------------------------------------------------------------- сноски
 
 def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
-          fallback=None):
+          fallback=None, to=""):
     """Предложение сносок и проверка фактов.
 
     Идёт по кускам, накапливая уже предложенное: одно и то же понятие не должно
@@ -1209,14 +1236,14 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     глава, переведённая несколькими запросами, получит пояснение по разу
     на каждый.
     """
-    os.makedirs(f"{work}/nt", exist_ok=True)
+    os.makedirs(lpath(work, "nt", to), exist_ok=True)
     chain = [agent] + _backups(fallback)
     todo, skipped = [], 0
     for c in chunks:
         idx = c["index"]
         if only and idx not in only:
             continue
-        if os.path.exists(f"{work}/nt/{idx:04d}.json") and not only:
+        if os.path.exists(f'{lpath(work, "nt", to)}/{idx:04d}.json') and not only:
             skipped += 1
             continue
         todo.append(c)
@@ -1226,9 +1253,10 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     # окончательная дедупликация по термину всё равно делается при сборке,
     # так что дублей в книге не будет, лишними окажутся лишь предложения.
     already = []
-    for n in sorted(os.listdir(f"{work}/nt")):
+    for n in sorted(os.listdir(lpath(work, "nt", to))):
         if n.endswith(".json"):
-            for it in json.load(open(f"{work}/nt/{n}", encoding="utf-8"))["notes"]:
+            for it in json.load(open(f'{lpath(work, "nt", to)}/{n}',
+                                     encoding="utf-8"))["notes"]:
                 already.append(it["term"])
 
     done = total = 0
@@ -1241,7 +1269,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             return
         idx = c["index"]
         who = (c["label"] or "—")[:24]
-        out_path = f"{work}/nt/{idx:04d}.json"
+        out_path = f'{lpath(work, "nt", to)}/{idx:04d}.json'
         tr = current(work, idx)
         if not tr:
             return
@@ -1256,7 +1284,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             parts.append(hint_already + "\n\n" + "\n".join(sorted(set(already))))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
-        open(f"{work}/prompts/{idx:04d}.notes.txt", "w", encoding="utf-8").write(prompt)
+        open(f'{lpath(work, "prompts", to)}/{idx:04d}.notes.txt', "w",
+             encoding="utf-8").write(prompt)
 
         def parse_notes(out):
             items = []
@@ -1299,12 +1328,12 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     return done, skipped, total
 
 
-def all_notes(work, order):
+def all_notes(work, order, to=""):
     """Все сноски в порядке следования по книге, по одной на блок."""
     got, seen = {}, set()
     src = []
     for sub, key in (("tr", "footnotes"), ("ed", "footnotes"), ("nt", "notes")):
-        d = f"{work}/{sub}"
+        d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue
         for n in sorted(os.listdir(d)):
@@ -1464,7 +1493,7 @@ def _parse_code(out, allowed):
 
 
 def code_comments(work, blocks, agent, system, task, retries, log,
-                  fallback=None):
+                  fallback=None, to=""):
     """Перевод комментариев в листингах. Код остаётся байт в байт.
 
     Комментарии ищет модель — знаков комментария у языков сотни, разбором их
@@ -1477,7 +1506,7 @@ def code_comments(work, blocks, agent, system, task, retries, log,
     """
     from . import code as C
     who = [agent] + _backups(fallback)
-    p = f"{work}/code.json"
+    p = lpath(work, "code.json", to)
     done = _blockmap(p)
     todo = [b for b in blocks if b["kind"] == "code" and b["id"] not in done]
     if not todo:
@@ -1762,14 +1791,14 @@ def injected(merged):
     return out or [m.group(1).strip()]
 
 
-def scout_meta(work):
+def scout_meta(work, to=""):
     """Выходные данные, вычитанные разведкой из самого текста.
 
     Нужны там, где формат их не хранит: у txt и pdf метаданных нет вовсе,
     и без этого в заголовок книги попадает имя файла. Берётся только как
     запасной вариант — порядок старшинства задан в booktrans.
     """
-    p = f"{work}/scout.md"
+    p = lpath(work, "scout.md", to)
     if not os.path.exists(p):
         return {}
     txt = open(p, encoding="utf-8").read()
@@ -1830,7 +1859,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     каждого запроса, так что решения по именам и интонациям принимаются
     один раз на всю книгу, а не заново в каждом куске.
     """
-    out_path = f"{work}/scout.md"
+    out_path = lpath(work, "scout.md", to)
     who = [agent] + _backups(fallback)
     if os.path.exists(out_path):
         log("  " + T("scout_done_already"))
@@ -1854,7 +1883,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if cur:
         parts.append(cur)
 
-    half = f"{work}/scout.part.json"
+    half = lpath(work, "scout.part.json", to)
     if os.path.exists(half):
         findings = json.load(open(half, encoding="utf-8"))
     else:
@@ -1909,7 +1938,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     open(out_path, "w", encoding="utf-8").write(merged)
     # Модель разведки нигде больше не записана, а в книге её надо назвать.
     json.dump({"model": meta.get("model")},
-              open(f"{work}/scout.json", "w", encoding="utf-8"), ensure_ascii=False)
+              open(lpath(work, "scout.json", to), "w", encoding="utf-8"),
+              ensure_ascii=False)
     log("  " + T("scout_ref", out_path, len(merged)))
     merged = _condense_scout(merged, who, "", retries, log, out_path)
 
@@ -1995,7 +2025,13 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     if len(merged) <= SCOUT_MAX:
         return merged
     
-    no_shrink_path = out_path.replace("scout.md", "scout.no_shrink.json")
+    # Имя выводим из пути справочника: у него уже стоит суффикс языка,
+    # и разойтись эти два файла не должны.
+    root = os.path.splitext(out_path)[0]                  # …/scout_ru
+    head, _, suffix = os.path.basename(root).partition("_")
+    no_shrink_path = os.path.join(
+        os.path.dirname(root),
+        f"{head}.no_shrink" + (f"_{suffix}" if suffix else "") + ".json")
     failed_models = []
     if os.path.exists(no_shrink_path):
         try:
@@ -2164,7 +2200,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
 
 # ---------------------------------------------------------------- заголовки
 
-def headings(work, blocks, agent, system, retries, log, fallback=None):
+def headings(work, blocks, agent, system, retries, log, fallback=None, to=""):
     """Заголовки и подзаголовки — одним запросом на всю книгу.
 
     Их немного (десятки), и они обязаны совпадать дословно между собой:
@@ -2172,7 +2208,7 @@ def headings(work, blocks, agent, system, retries, log, fallback=None):
     Отдельно от прозы ещё и потому, что короткая строка в начале запроса
     принимается моделью за шапку промпта и молча теряется.
     """
-    path = f"{work}/headings.json"
+    path = lpath(work, "headings.json", to)
     have = {}
     if os.path.exists(path):
         have = {k: v for k, v in json.load(open(path, encoding="utf-8")).items()

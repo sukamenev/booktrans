@@ -438,7 +438,7 @@ def main():
 
     agent = agent_for()
     ocr_agent = agent_for("ocrmodel") or agent
-    os.makedirs(f"{work}/prompts", exist_ok=True)
+    os.makedirs(pipeline.lpath(work, "prompts", args.to), exist_ok=True)
 
     def ask_model(prompt):
         """Спросить модель — этим разрешаются споры о кодировке файла.
@@ -571,7 +571,7 @@ def main():
 
     # Указания заказчика запоминаются в рабочей папке: иначе пересборка
     # без -p молча потеряет название, автора и серию.
-    saved = f"{work}/prompt_meta.json"
+    saved = pipeline.lpath(work, "prompt_meta.json", args.to)
     user_meta, user_text = read_prompt(args.prompt, log, args.prompt_text)
     if args.prompt or args.prompt_text:
         json.dump({"meta": user_meta, "text": user_text},
@@ -585,7 +585,7 @@ def main():
     #      полей, которых нет в файле (у txt и pdf их нет вовсе);
     #   2) метаданные формата — epub и fb2 хранят их сами;
     #   3) указания заказчика — сильнее всего, они правят и первое, и второе.
-    for k, v in pipeline.scout_meta(work).items():
+    for k, v in pipeline.scout_meta(work, args.to).items():
         meta.setdefault(k, v)
     # Если разведка нашла разделы-указатели — помечаем их drop: true.
     # _mark_back идемпотентна: asis-блоки остаются asis, добавляется только drop.
@@ -665,7 +665,7 @@ def main():
         rules = lang.rules(args.to)
         if rules:
             parts.append("# Правила целевого языка\n\n" + rules)
-        sp = f"{work}/scout.md"
+        sp = pipeline.lpath(work, "scout.md", args.to)
         if os.path.exists(sp):
             parts.append("# Справочник по этой книге\n\n"
                          "Собран разведочным проходом. Решения по именам, родам и "
@@ -721,7 +721,7 @@ def main():
         # собраны до неё. Без этого перечитывания книга первого прогона
         # выходила с заглавием оригинала, и оно появлялось лишь при повторной
         # сборке — а человек к тому времени уже считал книгу готовой.
-        for k, v in pipeline.scout_meta(work).items():
+        for k, v in pipeline.scout_meta(work, args.to).items():
             meta.setdefault(k, v)
         meta.update(user_meta)
         if not meta.get("title_target"):
@@ -733,17 +733,19 @@ def main():
         log("")
         log(head("step_translate", n))
         pipeline.headings(work, blocks, agent_for("translator"), sysprompt(),
-                          args.retries, log, fallback=backup_for("translator"))
+                          args.retries, log, fallback=backup_for("translator"),
+                          to=args.to)
         d, s, halted = pipeline.translate(
             work, chunks, agent_for("translator"), sysprompt(),
             task("translate", model=agent_for("translator").model or agent_for("translator").kind.capitalize()),
-            args.retries, log, only_chunks, fallback=backup_for("translator"))
+            args.retries, log, only_chunks, fallback=backup_for("translator"),
+            to=args.to)
         # Листинги в перевод не идут, но комментарии в них — проза, и
         # читателю нужны они, а не английский подстрочник в коде.
         if args.code == "comments" and any(b["kind"] == "code" for b in blocks):
             pipeline.code_comments(work, blocks, agent_for("translator"),
                                    sysprompt(), task("code"), args.retries, log,
-                                   fallback=backup_for("translator"))
+                                   fallback=backup_for("translator"), to=args.to)
         log("  " + (T("done_translate", d, s) if d else T("nothing_translate", s)))
         # Дальше идти незачем: следующие проходы зовут ту же цепочку, которая
         # только что перестала отвечать, а сборка книги с дырой всё равно
@@ -761,7 +763,7 @@ def main():
         d, s, t, halted = pipeline.edit(
             work, chunks, agent_for("editor"), sysprompt(), task("edit"),
             args.retries, log, only_chunks, args.jobs,
-            fallback=backup_for("editor"), force=args.force_editing)
+            fallback=backup_for("editor"), force=args.force_editing, to=args.to)
         if d or not halted:
             log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
         if halted:
@@ -775,7 +777,7 @@ def main():
         log(head("step_notes", n))
         d, s, t = pipeline.notes(work, chunks, agent_for("editor"), sysprompt(), task("notes"),
                                  args.retries, log, only_chunks, args.jobs,
-                                 fallback=backup_for("editor"))
+                                 fallback=backup_for("editor"), to=args.to)
         log("  " + (T("done_notes", d, s, t) if d else T("notes_already", s)))
         log("")
 
@@ -807,10 +809,10 @@ def main():
         log("")
         log(head("step_qa", n))
         build.qa(work, blocks, log, T, meta.get("lang"), args.to, bool(made_by_ocr))
-        build.unfinished_edits(work, log, T)
-        build.review_report(work, log)
-        build.sources_report(work, log)
-        build.usage_report(work, log, T)
+        build.unfinished_edits(work, log, T, args.to)
+        build.review_report(work, log, to=args.to)
+        build.sources_report(work, log, to=args.to)
+        build.usage_report(work, log, T, args.to)
 
 
 def run():

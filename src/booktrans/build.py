@@ -9,7 +9,7 @@ from xml.sax.saxutils import escape
 
 from . import lang, output
 from .pipeline import _blockmap as pipe_blockmap
-from .pipeline import all_notes, all_translations, chunk_files, strip
+from .pipeline import all_notes, all_translations, chunk_files, lpath, strip
 from .tune import CAPTION
 
 # Оговорка у цитаты, приведённой по чужому переводу. Умолчание на случай,
@@ -30,12 +30,12 @@ def _date(ts, code="ru"):
     return lang.fmt_date(ts, code)
 
 
-def _work_span(work, code="ru"):
+def _work_span(work, code="ru", to=""):
     """Когда книгу переводили — по времени файлов кусков, а не по моменту
     сборки: пересобрать fb2 можно и через год."""
     times = []
     for sub in ("tr", "ed", "nt"):
-        d = os.path.join(work, sub)
+        d = lpath(work, sub, to)
         if os.path.isdir(d):
             times += [os.path.getmtime(os.path.join(d, n))
                       for n in os.listdir(d) if n.endswith(".json")]
@@ -45,10 +45,10 @@ def _work_span(work, code="ru"):
     return a if a == b else f"{a} — {b}"
 
 
-def _models(work):
+def _models(work, to=""):
     out = set()
     for sub in ("tr", "ed", "nt"):
-        d = os.path.join(work, sub)
+        d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue
         for n in sorted(os.listdir(d)):
@@ -143,10 +143,10 @@ def _chapter_of(blocks):
     return out
 
 
-def _pass_models(work, sub, key, chapter):
+def _pass_models(work, sub, key, chapter, to=""):
     """Какие главы какой моделью пройдены: {модель: {глава: сколько блоков}}."""
     out, total = {}, {}
-    d = os.path.join(work, sub)
+    d = lpath(work, sub, to)
     if not os.path.isdir(d):
         return out, total
     for n in sorted(os.listdir(d)):
@@ -166,7 +166,7 @@ def _pass_models(work, sub, key, chapter):
     return out, total
 
 
-def _pass_share(work, sub, key):
+def _pass_share(work, sub, key, to=""):
     """Сети прохода долями сделанного, от большей к меньшей.
 
     Считаем по блокам, а не по файлам кусков: один блок лежит в двух файлах,
@@ -174,7 +174,7 @@ def _pass_share(work, sub, key):
     его последней. Порядок записи и берём — по нему же собирается книга.
     """
     who = {}
-    for _, p in chunk_files(os.path.join(work, sub)):
+    for _, p in chunk_files(lpath(work, sub, to)):
         x = json.load(open(p, encoding="utf-8"))
         model = x.get("model") or "?"
         for i in x.get(key) or []:
@@ -184,13 +184,13 @@ def _pass_share(work, sub, key):
     return [(m, c / total) for m, c in n.most_common()] if total else []
 
 
-def _models_line(work, sub, key, st, label):
+def _models_line(work, sub, key, st, label, to=""):
     """Строка «Перевод: сеть (вся книга)» или с долями, если сетей несколько.
 
     Долю округляем не ниже процента: модель, взявшая один кусок из трёхсот,
     сделала мало, но сделала, и «0 %» об этом сказало бы неправду.
     """
-    share = _pass_share(work, sub, key)
+    share = _pass_share(work, sub, key, to)
     if not share:
         return ""
     if len(share) == 1:
@@ -200,9 +200,9 @@ def _models_line(work, sub, key, st, label):
     return label.format(models=names)
 
 
-def _pass_line(work, sub, key, chapter, st, label):
+def _pass_line(work, sub, key, chapter, st, label, to=""):
     """Строка вида «Перевод: opus — главы 1–15; gemini — глава 16 (частично)»."""
-    by, total = _pass_models(work, sub, key, chapter)
+    by, total = _pass_models(work, sub, key, chapter, to)
     if not by:
         return ""
     if len(by) == 1:
@@ -220,7 +220,7 @@ def _pass_line(work, sub, key, chapter, st, label):
     return label.format(models="; ".join(parts))
 
 
-def details_lines(work, st, blocks):
+def details_lines(work, st, blocks, to=""):
     """Раздел «Детали перевода» в конце книги.
 
     Читателю эти сведения в начале книги не нужны, а тому, кто найдёт в
@@ -238,14 +238,14 @@ def details_lines(work, st, blocks):
             body.append(st["details_format"].format(models=src["formatter"]))
         if src.get("fixer"):
             body.append(st["details_fix"].format(models=src["fixer"]))
-    p = os.path.join(work, "scout.json")
+    p = lpath(work, "scout.json", to)
     if os.path.exists(p):
         m = json.load(open(p, encoding="utf-8")).get("model")
         if m:
             body.append(st["details_scout"].format(models=m))
     for sub, key, name in (("tr", "tr", "details_translate"),
                            ("ed", "blocks", "details_edit")):
-        line = _pass_line(work, sub, key, chapter, st, st[name])
+        line = _pass_line(work, sub, key, chapter, st, st[name], to)
         if line:
             body.append(line)
     if not body:
@@ -254,7 +254,7 @@ def details_lines(work, st, blocks):
     # Цитаты по чужим переводам — списком, чтобы взявшийся сверять видел
     # объём работы, а не искал сноски по всей книге. У самой цитаты стоит
     # своя оговорка; здесь она не повторяется.
-    src = _by_work(_source_items(work))
+    src = _by_work(_source_items(work, to))
     if src:
         body.append(st.get("details_sources", DETAILS_SOURCES))
         for work_name, group in src:
@@ -262,14 +262,14 @@ def details_lines(work, st, blocks):
     return st["details_title"], body
 
 
-def about_lines(work, st, code):
+def about_lines(work, st, code, to=""):
     """Служебный раздел «О переводе»: заголовок и абзацы.
 
     Собирается в одном месте, потому что нужен всем форматам: читатель
     epub или txt имеет такое же право знать, чем и когда переведена книга,
     как читатель fb2.
     """
-    span = _work_span(work, code)
+    span = _work_span(work, code, to)
     release, when = version(code)
     num = release_version()
     if release:
@@ -294,8 +294,8 @@ def about_lines(work, st, code):
     groups = [
         [st["about_made"].format(pipeline=who)],
         [st.get("about_community", "")],
-        [_models_line(work, "tr", "tr", st, st["details_translate"]),
-         _models_line(work, "ed", "blocks", st, st["details_edit"]),
+        [_models_line(work, "tr", "tr", st, st["details_translate"], to),
+         _models_line(work, "ed", "blocks", st, st["details_edit"], to),
          st["about_date"].format(date=span) if span else ""],
         [st["about_quality"], st["about_caveat"], st.get("about_notes", "")],
         # Отказ от ответственности — своим куском: он не про качество
@@ -410,18 +410,21 @@ def link_targets(blocks):
 
 
 def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None):
+    # Язык перевода — свойство прогона, и он же выбирает языковую часть
+    # рабочей папки: `tr_ru` против `tr_de`.
+    to = meta.get("target_lang", "")
     targets = link_targets(blocks)
 
     def aid(b):
         """Атрибут `id`, если на блок ссылаются изнутри книги."""
         return f' id="{b["id"]}"' if b["id"] in targets else ""
 
-    tr, edited = all_translations(work)
+    tr, edited = all_translations(work, to)
     if edited:
         log("  " + lang.T("applied_edits", edited))
 
     # заголовки — из таблицы, чтобы одинаковые совпадали дословно
-    hp = f"{work}/headings.json"
+    hp = lpath(work, "headings.json", to)
     if os.path.exists(hp):
         heads = {k: v for k, v in json.load(open(hp, encoding="utf-8")).items()
                  if not k.startswith("_")}
@@ -438,7 +441,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
                 tr[b["id"]] = v
 
     # сквозные правки — точными строками: regex ломает согласование
-    fp = f"{work}/fixups.json"
+    fp = lpath(work, "fixups.json", to)
     if os.path.exists(fp):
         n = 0
         for rule in json.load(open(fp, encoding="utf-8")).get("rules", []):
@@ -459,7 +462,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     # Список литературы и листинги в книгу идут как есть: они не переводились
     # и непереведёнными не считаются. В листинге переведены комментарии — их
     # ставит на место code.swap, кода не касаясь.
-    listings = pipe_blockmap(f"{work}/code.json")
+    listings = pipe_blockmap(lpath(work, "code.json", to))
     for b in blocks:
         if b.get("drop"):
             continue
@@ -482,7 +485,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     st = lang.book_strings(code)
 
     order = {b["id"]: i for i, b in enumerate(blocks)}
-    notes = all_notes(work, order)
+    notes = all_notes(work, order, to)
     notes = {k: v for k, v in notes.items() if k in tr}
     # Оговорка про цитату — здесь, до развилки по форматам: она нужна читателю
     # любой книги, а не только fb2.
@@ -515,14 +518,19 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     # сборка нужного формата по расширению
     ext = os.path.splitext(dest)[1].lower()
     if ext in output.WRITERS:
-        head, body = about_lines(work, st, code)
+        head, body = about_lines(work, st, code, to)
         
         meta_items = []
         if ext != ".tex":
             # For non-TeX formats, the user requested metadata to be explicitly visible
             # on the first page (title page equivalent).
             meta_items.append(("title", meta.get("title_target") or meta.get("title") or "Книга", "_meta_title", None, None, 1))
-            if meta.get("author"): meta_items.append(("p", meta["author"], "_meta_author", None, None, None))
+            # Имя автора — на языке перевода, как и заглавие: на титуле
+            # «Узурпация» под именем «Sue Burke» читается так, будто перевели
+            # половину. Издательство и год остаются как есть — это выходные
+            # данные оригинала, по ним книгу ищут.
+            who = meta.get("author_target") or meta.get("author")
+            if who: meta_items.append(("p", who, "_meta_author", None, None, None))
             if meta.get("edition"): meta_items.append(("p", meta["edition"], "_meta_edition", None, None, None))
             if meta.get("publisher"): meta_items.append(("p", meta["publisher"], "_meta_pub", None, None, None))
             if meta.get("year"): meta_items.append(("p", meta["year"], "_meta_year", None, None, None))
@@ -537,7 +545,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
                    b["text"] if b["kind"] == "image" else tr.get(b["id"], ""),
                    b["id"], b.get("links"), b.get("spans"), b.get("level"))
                   for b in blocks if not b.get("drop")]
-        dhead, dbody = details_lines(work, st, blocks)
+        dhead, dbody = details_lines(work, st, blocks, to)
         if dhead:
             items += [("title", dhead, "_details", None, None, 1)]
             items += [("p", t, f"_details{i}", None, None, None) for i, t in enumerate(dbody)]
@@ -690,7 +698,7 @@ def _cut(s, n):
     return s[:n].rsplit(" ", 1)[0].rstrip(" ,;:.—-") + "…"
 
 
-def review_report(work, log, T=None):
+def review_report(work, log, T=None, to=""):
     T = T or lang.T
     """Места, которые просит посмотреть глазами.
 
@@ -700,7 +708,7 @@ def review_report(work, log, T=None):
     в котором она не уверена.
     """
     items = []
-    d = os.path.join(work, "ed")
+    d = lpath(work, "ed", to)
     if os.path.isdir(d):
         for n in sorted(os.listdir(d)):
             if not n.endswith(".json"):
@@ -712,7 +720,7 @@ def review_report(work, log, T=None):
             if t and len(t) > 12 and t.lower().rstrip(".") not in (
                     "нет", "none", "keine", "aucune", "无", "なし", "-", "—"):
                 items.append((x.get("index"), t))
-    p = os.path.join(work, "review.md")
+    p = lpath(work, "review.md", to)
     if not items:
         # Замечания помечены номером куска. Убрали редактуру — файл обязан
         # уйти с ней: от прежней нарезки он остался бы лежать как свежий и
@@ -733,7 +741,7 @@ def review_report(work, log, T=None):
     log("  " + T("review_file", p))
 
 
-def unfinished_edits(work, log, T=None):
+def unfinished_edits(work, log, T=None, to=""):
     """Куски, где правка оборвалась и кусок остался наполовину нетронутым.
 
     Файл редактуры при этом записан, и возобновление сочтёт кусок готовым —
@@ -742,7 +750,7 @@ def unfinished_edits(work, log, T=None):
     """
     T = T or lang.T
     items = []
-    d = os.path.join(work, "ed")
+    d = lpath(work, "ed", to)
     if not os.path.isdir(d):
         return
     for n in sorted(os.listdir(d)):
@@ -768,11 +776,11 @@ def unfinished_edits(work, log, T=None):
 WORK = re.compile(r"[«\"“„]([^«»\"“”„]{3,80})[»\"”“]|\*([^*\n]{3,80})\*")
 
 
-def _source_items(work):
+def _source_items(work, to=""):
     """Цитаты, приведённые по чужому переводу: по одной на понятие."""
     out, seen = [], set()
     for sub, key in (("tr", "footnotes"), ("ed", "footnotes"), ("nt", "notes")):
-        d = os.path.join(work, sub)
+        d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue
         for n in sorted(os.listdir(d)):
@@ -804,7 +812,7 @@ def _by_work(items):
     return out
 
 
-def sources_report(work, log, T=None):
+def sources_report(work, log, T=None, to=""):
     T = T or lang.T
     """Все цитаты, приведённые по чужому переводу, — списком.
 
@@ -815,7 +823,7 @@ def sources_report(work, log, T=None):
     """
     items = []
     for sub, key in (("tr", "footnotes"), ("ed", "footnotes"), ("nt", "notes")):
-        d = os.path.join(work, sub)
+        d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue
         for n in sorted(os.listdir(d)):
@@ -854,7 +862,7 @@ def sources_report(work, log, T=None):
     log("  " + T("sources_hint"))
 
 
-def usage_report(work, log, T=None):
+def usage_report(work, log, T=None, to=""):
     T = T or lang.T
     """Что израсходовано: по моделям и по проходам.
 
@@ -864,7 +872,7 @@ def usage_report(work, log, T=None):
     rows = {}
     for sub, name in (("tr", T("pass_tr")), ("ed", T("pass_ed")),
                       ("nt", T("pass_nt"))):
-        d = os.path.join(work, sub)
+        d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue
         for n in sorted(os.listdir(d)):
@@ -920,7 +928,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     src = {b["id"]: b["text"] for b in blocks
            if b["kind"] not in ("break", "image") + HEAD_KINDS
            and not b.get("asis")}
-    tr, edited = all_translations(work)
+    tr, edited = all_translations(work, to)
     problems = 0
 
     log(T("qa1"))
@@ -1080,7 +1088,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     # прогоне ничего не проверяет и читается как замечание. Про terms.json
     # сказано в README, там ему и место.
     rules = {}
-    tp = f"{work}/terms.json"
+    tp = lpath(work, "terms.json", to)
     if os.path.exists(tp):
         rules = {k: v for k, v in json.load(open(tp, encoding="utf-8")).items()
                  if not k.startswith("_")}
