@@ -22,7 +22,8 @@ import xml.etree.ElementTree as ET
 
 
 from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
-                   COL_LINES, COL_PAGES, HEAD_GAP, HEAD_LETTERS, HEAD_MAX,
+                   COL_LINES, COL_PAGES, COVER_AREA,
+                   HEAD_GAP, HEAD_LETTERS, HEAD_MAX,
                    HEAD_NEAR,
                    NOTE_GAP, NOTE_RUN, OCR_TRUNC_MIN, OCR_TRUNC_RATIO,
                    PDF_MAX_PER_PAGE, PDF_MAX_RATIO,
@@ -1131,6 +1132,48 @@ def _pdf_images(path, npages):
     return dict(out)
 
 
+def _pdf_cover(path, pages, imgs):
+    """Обложка pdf: первая страница, если на ней нет ничего, кроме картинки.
+
+    Текстовый слой значит, что это титул, а не обложка: у учебника там имена
+    авторов и номер издания, и переводить их надо. Растр без текстового слоя
+    терять не жаль — читать в нём нечего.
+
+    Форма страницы признаком не служит. У одной книги обложку подклеивают
+    отдельным листом другого размера, у другой она той же полосы, что и весь
+    блок, — обложкой является и та, и другая. А зрячая модель тут не помощник
+    вовсе: она видит отрисованную страницу и не отличит текст, впечатанный в
+    растр, от настоящего слоя, — а решает дело именно это различие.
+    """
+    if len(imgs.get(1, [])) != 1 or (pages and pages[0].strip()):
+        return None
+    if not (_which("pdfinfo") and _which("pdfimages")):
+        return None
+    r = subprocess.run(["pdfinfo", "-f", "1", "-l", "1", path],
+                       capture_output=True, text=True)
+    m = re.search(r"Page\s+1\s+size:\s+([\d.]+)\s+x\s+([\d.]+)", r.stdout)
+    if not m:
+        return None
+    page = float(m.group(1)) * float(m.group(2))
+    r = subprocess.run(["pdfimages", "-list", "-f", "1", "-l", "1", path],
+                       capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        f = line.split()
+        if len(f) < 15 or not f[0].isdigit():
+            continue
+        try:
+            w, h, xppi, yppi = int(f[3]), int(f[4]), float(f[12]), float(f[13])
+        except ValueError:
+            continue
+        # Картинку кладут на полосу с растяжением, поэтому меряем её место на
+        # странице, а не отношение сторон самого растра: у обложки «Super
+        # Agers» растр 1456×2200 лежит на полосе 612×792.
+        if xppi > 0 and yppi > 0 \
+                and (w / xppi) * (h / yppi) * 72 * 72 >= page * COVER_AREA:
+            return imgs[1][0]
+    return None
+
+
 def _place_images(blocks, pages, imgs):
     """Поставить картинки на их страницы.
 
@@ -1692,6 +1735,12 @@ def _pdf(path, marks=None):
                 m = re.match(r"([\d.]+)\s*x\s*([\d.]+)\s*pts", v)
                 if m:
                     meta["page_size"] = [float(m.group(1)), float(m.group(2))]
+    # Обложку вынимаем из набора: иначе она пойдёт картинкой в поток, а у
+    # первой страницы блоков нет, и расстановка уносила её в самый конец
+    # книги — обложка печаталась последним блоком.
+    cover = cover or _pdf_cover(path, pages, imgs)
+    if cover:
+        imgs.pop(1, None)
     if imgs:
         blocks, images = _place_images(blocks, pages, imgs)
     return meta, blocks, cover, images

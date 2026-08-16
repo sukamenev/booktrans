@@ -554,7 +554,9 @@ reversible. That is where a cheaper model is worth trying first.
 
 - **the whole text**, including epigraphs, prefaces, acknowledgements, "About
   the author" and afterwords — all of it is translated;
-- **images** from the text plus the cover;
+- **images** from the text plus the cover; epub and fb2 carry their own, a pdf
+  gets one from its first page when that page holds no text at all and an image
+  fills it. A text layer means a title page, not a cover, and it is translated;
 - **the author's links** — website, social media; addresses are substituted at
   assembly and never pass through the model, so they arrive byte for byte;
 - **publication data** — publisher, year, original title, ISBN;
