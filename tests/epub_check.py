@@ -50,10 +50,11 @@ def build():
 
 
 def main():
-    bad = 0
+    bad = seen = 0
 
     def ok(name, cond, got=""):
-        nonlocal bad
+        nonlocal bad, seen
+        seen += 1
         print(f"  {name:42} {'совпадает' if cond else 'РАСХОЖДЕНИЕ'}"
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
@@ -107,7 +108,20 @@ def main():
     # Обложка лежит и среди картинок книги — второй копии не нужно.
     ok("обложка не задвоена", "OEBPS/img/cover.jpg" not in names,
        [n for n in names if "cover" in n])
-    ok("обложка помечена", 'properties="cover-image"' in z.read("OEBPS/content.opf").decode())
+    # Обложку читалки ищут тремя способами, и все три должны быть на месте:
+    # пометка в описи — по-нынешнему, `meta name="cover"` — по-старому, а
+    # страница первой в череде — иначе книга откроется сразу на первой главе,
+    # и обложки читатель не увидит вовсе.
+    opf = z.read("OEBPS/content.opf").decode()
+    ok("обложка помечена в описи", 'properties="cover-image"' in opf)
+    ok("обложка названа по-старому",
+       bool(re.search(r'<meta name="cover" content="img\d+"/>', opf)),
+       re.findall(r'<meta name="cover"[^>]*/>', opf))
+    ok("обложка отдельной страницей", "OEBPS/cover.xhtml" in names,
+       [n for n in names if n.endswith(".xhtml")])
+    ok("страница обложки идёт первой",
+       re.findall(r'<itemref idref="([^"]+)"', opf)[:1] == ["cover"],
+       re.findall(r'<itemref idref="([^"]+)"', opf)[:3])
 
     ok("внутренняя ссылка несёт имя файла",
        bool(re.search(r'href="ch\d+\.xhtml#s02\.b0001"', x)),
@@ -134,7 +148,7 @@ def main():
        re.findall(r'href="#[^"]*"', t))
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 18   с расхождениями: {bad}")
+    print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

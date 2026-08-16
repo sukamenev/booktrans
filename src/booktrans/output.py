@@ -373,6 +373,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     images = {n: r for n, r in images.items() if n in used or n == same}
     man, spine = [], []
     cmime, cext = _cover_mime(cover) if cover else ("", "")
+    cover_href = f"img/{same}" if same else (f"img/cover.{cext}" if cover else "")
+    cover_id = "cover-img" if cover and not same else ""
     if cover and not same:
         man.append(f'<item id="cover-img" href="img/cover.{cext}" '
                    f'media-type="{cmime}" properties="cover-image"/>')
@@ -385,8 +387,17 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         spine.append('<itemref idref="notes"/>')
     for j, name in enumerate(images):
         cov = ' properties="cover-image"' if name == same else ""
+        if name == same:
+            cover_id = f"img{j}"
         man.append(f'<item id="img{j}" href="img/{escape(name)}" '
                    f'media-type="{_mime(name)}"{cov}/>')
+    # Обложка отдельной страницей и первой в череде. Пометки `cover-image` в
+    # описи мало: по ней читалка берёт картинку для полки, а книгу открывает
+    # сразу на первой главе — обложки читатель так и не увидит.
+    if cover_href:
+        man.insert(0, '<item id="cover" href="cover.xhtml" '
+                      'media-type="application/xhtml+xml"/>')
+        spine.insert(0, '<itemref idref="cover"/>')
     man.append('<item id="css" href="style.css" media-type="text/css"/>')
     man.append('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" '
                'properties="nav"/>')
@@ -410,6 +421,10 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
            f'<dc:language>{code}</dc:language>'
            f'<dc:contributor>Booktrans</dc:contributor>'
            '<meta property="dcterms:modified">2026-01-01T00:00:00Z</meta>'
+           # Обложку читалки ищут двумя способами: `properties="cover-image"`
+           # в описи — по-нынешнему, и `meta name="cover"` — по-старому.
+           # Второй понимают все, первый — не все, поэтому пишем оба.
+           + (f'<meta name="cover" content="{cover_id}"/>' if cover_id else "")
            + seq + "</metadata><manifest>" + "".join(man) +
            '</manifest><spine>' + "".join(spine) + "</spine></package>")
 
@@ -431,6 +446,10 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             z.writestr("OEBPS/img/" + name, raw)
         if cover and not same:
             z.writestr(f"OEBPS/img/cover.{cext}", cover)
+        if cover_href:
+            z.writestr("OEBPS/cover.xhtml",
+                       xhtml(f'<img class="cover" src="{escape(cover_href)}" alt=""/>',
+                             title))
 
 
 
