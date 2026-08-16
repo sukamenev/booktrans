@@ -199,15 +199,29 @@ def translatable(blocks):
 MARK = {"verse": "V", "table": "T"}
 
 
-# Чем модель закрывает последний кусок ответа: своей оградкой, закрывающей
-# скобкой к нашей метке (`</<<NOTES]]]`) или тегом внутренней разметки. Смысла
-# в них нет, а в файл замечаний они попадали как есть — в каждом четвёртом куске.
+# Чем модель закрывает последний кусок ответа: своей оградкой, тегом
+# внутренней разметки (`</invoke>`, `</summary>`) или закрывающей скобкой к
+# нашей же метке — прежде `</<<NOTES>>>`, теперь `[[[/NOTES]]]`. Смысла в них
+# нет, а в файл замечаний они попадали как есть — в каждом четвёртом куске.
+SCAFFOLD = re.compile(r"```\w*|</(?:<<)?[^\s<>]{1,24}(?:>>)?>"
+                      r"|\[\[\[/?[A-Z]{1,12}(?:\s+\S+)?\]\]\]")
+
+
+def _unscaffold(s):
+    """Снять строительные леса с хвоста ответа. Только строки, где кроме них
+    ничего нет: `</a1>` в конце замечания — это ярлык ссылки, а не леса."""
+    lines = s.strip().split("\n")
+    while lines and SCAFFOLD.fullmatch(lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
 def parse_blocks(out, expected=None, allowed=None, extra_tag=None):
     tail = ""
     if extra_tag:
         m = re.search(rf"\[\[\[{extra_tag}\]\]\]\s*(.*)$", out, re.S)
         if m:
-            tail = m.group(1).strip()
+            tail = _unscaffold(m.group(1))
         out = re.split(rf"\[\[\[{extra_tag}\]\]\]", out)[0]
     got = {}
     for m in re.finditer(r"\[\[\[[PVT]\s+(\S+?)\]\]\]\s*(.*?)(?=\[\[\[[PVT]\s+\S+?\]\]\]|$)", out, re.S):
@@ -868,7 +882,7 @@ def _parse_translate(out, expected, src=None):
                          f"— оригиналы у них разные")
     m = re.search(r"\[\[\[META\]\]\]\s*(.*)$", out, re.S)
     if m:
-        extra = m.group(1).strip()
+        extra = _unscaffold(m.group(1))
     return res, (extra, found)
 
 
