@@ -45,7 +45,8 @@ code: es
 
 str.about_title: Sobre esta traducción
 str.about_made: Traducción automática realizada con la canalización {pipeline}.
-str.about_version: versión del {date}
+str.about_version: versión {version} del {date}
+str.about_release: versión {version}
 str.about_date: Traducido el: {date}.
 str.about_quality: La terminología y los nombres se mantienen uniformes en todo el libro, el texto ha pasado por una revisión literaria aparte y las notas del traductor van marcadas de forma explícita.
 str.about_caveat: En los diálogos largos, los juegos de palabras y el ritmo del autor caben deslices.

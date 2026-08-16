@@ -47,7 +47,8 @@ itself does so.
 
 str.about_title: About this translation
 str.about_made: Machine translation produced by the {pipeline} pipeline.
-str.about_version: version of {date}
+str.about_version: version {version} of {date}
+str.about_release: version {version}
 str.about_date: Translated: {date}.
 str.about_quality: Terminology and names are kept consistent throughout, the text went through a separate editing pass, and the translator's footnotes are marked explicitly.
 str.about_caveat: Long dialogue, wordplay and the author's rhythm may suffer.

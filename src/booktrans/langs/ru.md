@@ -65,7 +65,8 @@ code: ru
 
 str.about_title: О переводе
 str.about_made: Перевод машинный, выполнен конвейером {pipeline}.
-str.about_version: версия от {date}
+str.about_version: версия {version} от {date}
+str.about_release: версия {version}
 str.about_date: Дата перевода: {date}.
 str.about_quality: Терминология и имена выдержаны по всей книге, текст прошёл отдельный проход литературной редактуры, сноски переводчика помечены явно.
 str.about_caveat: На длинных диалогах, игре слов и авторской ритмике возможны огрехи.

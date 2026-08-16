@@ -28,7 +28,8 @@ code: fr
 
 str.about_title: À propos de cette traduction
 str.about_made: Traduction automatique réalisée par la chaîne {pipeline}.
-str.about_version: version du {date}
+str.about_version: version {version} du {date}
+str.about_release: version {version}
 str.about_date: Traduit le : {date}.
 str.about_quality: La terminologie et les noms sont homogènes dans tout le livre, le texte a fait l'objet d'une passe de révision distincte, et les notes du traducteur sont signalées explicitement.
 str.about_caveat: Les longs dialogues, les jeux de mots et le rythme de l'auteur peuvent en pâtir.

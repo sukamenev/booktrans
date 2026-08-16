@@ -51,7 +51,8 @@ code: hi
 
 str.about_title: अनुवाद के बारे में
 str.about_made: यह मशीनी अनुवाद है, {pipeline} पाइपलाइन द्वारा किया गया।
-str.about_version: {date} का संस्करण
+str.about_version: {date} का संस्करण {version}
+str.about_release: संस्करण {version}
 str.about_date: अनुवाद की तिथि: {date}।
 str.about_quality: पारिभाषिक शब्द और नाम पूरी पुस्तक में एक-से रखे गए हैं, पाठ एक अलग संपादन-चरण से गुज़रा है, और अनुवादक की टिप्पणियाँ स्पष्ट रूप से चिह्नित हैं।
 str.about_caveat: लंबे संवादों, शब्दक्रीड़ा और लेखक की लय में त्रुटियाँ संभव हैं।

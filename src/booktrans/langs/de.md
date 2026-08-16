@@ -27,7 +27,8 @@ code: de
 
 str.about_title: Über diese Übersetzung
 str.about_made: Maschinelle Übersetzung, erstellt mit der Pipeline {pipeline}.
-str.about_version: Fassung vom {date}
+str.about_version: Fassung {version} vom {date}
+str.about_release: Fassung {version}
 str.about_date: Übersetzt am: {date}.
 str.about_quality: Terminologie und Namen sind im ganzen Buch einheitlich, der Text wurde in einem eigenen Durchgang lektoriert, und Anmerkungen des Übersetzers sind ausdrücklich gekennzeichnet.
 str.about_caveat: Bei langen Dialogen, Wortspielen und dem Rhythmus des Autors sind Mängel möglich.

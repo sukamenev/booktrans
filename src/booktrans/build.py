@@ -231,14 +231,20 @@ def about_lines(work, st, code):
     как читатель fb2.
     """
     span = _work_span(work, code)
-    release, ver = version(code)
-    if not release:
-        # «(5 августа 2026)» читается как дата перевода, а это дата сборки
-        # конвейера — слово нужно, и оно на языке перевода.
-        ver = st.get("about_version", "{date}").format(date=ver)
-        who = f"<b>{PIPELINE}</b> ({ver}, {PIPELINE_URL})"
+    release, when = version(code)
+    num = release_version()
+    if release:
+        # Выпуск: номер точен, а даты сборки в пакете не записано — и
+        # подставлять вместо неё день установки значило бы соврать.
+        ver = st.get("about_release", "версия {version}").format(version=num)
     else:
-        who = f"<b>{PIPELINE}</b> {ver} ({PIPELINE_URL})"
+        # Рабочая копия: номер в pyproject уже поднят под следующий выпуск,
+        # поэтому одного его мало. Рядом идёт дата последнего изменения — по
+        # ней и видно, что сборка не выпущенная. Слово «версия» тут нужно:
+        # «(16 августа 2026)» читается как дата перевода, а это не она.
+        ver = st.get("about_version", "версия {version} от {date}").format(
+            version=num, date=when)
+    who = f"<b>{PIPELINE}</b> ({ver}, {PIPELINE_URL})"
     body = [st["about_made"].format(pipeline=who)]
     if span:
         body.append(st["about_date"].format(date=span))

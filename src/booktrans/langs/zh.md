@@ -25,7 +25,8 @@ code: zh
 
 str.about_title: 关于本译本
 str.about_made: 本书由翻译流水线 {pipeline} 机器翻译而成。
-str.about_version: {date}版本
+str.about_version: {date}的{version}版本
+str.about_release: {version}版本
 str.about_date: 翻译日期：{date}
 str.about_quality: 全书术语与专名保持一致，文本另经一道润色工序，译者注均已明确标注。
 str.about_caveat: 长对话、文字游戏和作者的节奏可能有所折损。
