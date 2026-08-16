@@ -38,18 +38,39 @@ def hush(m="", end="\n"):
 
 BLOCKS = [{"id": "s01.b0001", "kind": "title", "text": "Chapter One"},
           {"id": "s01.b0002", "kind": "p", "text": "Пробный абзац с dеfектом."},
-          {"id": "s01.b0003", "kind": "code", "text": "x = 1  # count them"}]
+          {"id": "s01.b0003", "kind": "code",
+           "text": "x = 1  # here we count the items"}]
 CHUNKS = [{"index": 1, "label": "Проба", "words": 3, "blocks": BLOCKS}]
 STYLES = [{"tag": "p", "cls": "tx", "count": 40, "samples": ["Проза."]}]
 
 # Что должна ответить запасная модель, чтобы её ответ разобрался.
 ANSWERS = {
     "scout": "## ИМЕНА\n\nПётр = Пётр\n",
-    "notes": "<<<NOTE s01.b0002 term>>>\nTERM: дефект\nTEXT: Пояснение.\n",
-    "fix_ocr": "<<<F s01.b0002>>>\nORIG: dеfектом\nFIX: дефектом\n",
+    "notes": "[[[NOTE s01.b0002 term]]]\nTERM: дефект\nTEXT: Пояснение.\n",
+    "fix_ocr": "[[[F s01.b0002]]]\nORIG: dеfектом\nFIX: дефектом\n",
     "headings": "1. Глава первая\n",
     "detect_structure": "p|tx = p\n",
-    "code_comments": "<<<C s01.b0003 1>>>\nORIG: count them\nTR: сосчитать их\n",
+    "code_comments": "[[[C s01.b0003 1]]]\n"
+                     "ORIG: here we count the items\nTR: тут мы считаем предметы\n",
+}
+
+# Чем в рабочей папке отпечаталась работа запасной. Одного «её позвали» мало:
+# метки протокола однажды поменяли, ответы в этой проверке остались прежними,
+# и разбор молча возвращал пустоту — а проверка всё равно была зелёной.
+LANDED = {
+    "scout": lambda d: "Пётр" in open(f"{d}/scout.md", encoding="utf-8").read(),
+    "notes": lambda d: json.load(open(f"{d}/nt/0001.json",
+                                      encoding="utf-8"))["notes"],
+    "fix_ocr": lambda d: any(json.load(open(f"{d}/ocrfix.json",
+                                            encoding="utf-8")).values()),
+    "headings": lambda d: "Глава первая" in
+                          json.load(open(f"{d}/headings.json",
+                                         encoding="utf-8")).values(),
+    "detect_structure": lambda d: json.load(open(f"{d}/structure.json",
+                                                 encoding="utf-8"))["p|tx"] == "p",
+    "code_comments": lambda d: "считаем" in
+                               json.load(open(f"{d}/code.json",
+                                              encoding="utf-8"))["s01.b0003"],
 }
 
 
@@ -91,7 +112,7 @@ class Says:
         self.model, self.boom, self.answer = model, boom, answer
         self.deaf, self.calls = deaf, 0
 
-    def run(self, system, user):
+    def run(self, system, user, image=None):
         if user == A.PING_ASK:
             if self.deaf:
                 raise self.boom or AgentError("молчит")
@@ -331,11 +352,11 @@ def main():
         os.makedirs(f"{d}/prompts", exist_ok=True)   # это делает cli
         try:
             run(d, first, second)
-            done = second.calls > 0
-            why = "запасную не позвали"
+            done = second.calls > 0 and bool(LANDED[name](d))
+            why = "запасную не позвали" if not second.calls else "ответ пропал"
         except Exception as e:                              # noqa: BLE001
             done, why = False, f"{type(e).__name__}: {e}"
-        ok(f"проход {name} доходит до запасной модели", done, why)
+        ok(f"работа запасной доехала: {name}", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
