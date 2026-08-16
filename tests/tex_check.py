@@ -34,10 +34,11 @@ ITEMS = [
 
 
 def main():
-    bad = 0
+    bad = seen = 0
 
     def ok(name, cond, got=""):
-        nonlocal bad
+        nonlocal bad, seen
+        seen += 1
         print(f"  {name:44} {'совпадает' if cond else 'РАСХОЖДЕНИЕ'}"
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
@@ -49,6 +50,10 @@ def main():
                 {}, "Прим.: ", {})
     t = open(p, encoding="utf-8").read()
 
+    # Строка таблицы: там `&` — разделитель, а не текст. Кончается она `\\`,
+    # за которыми с недавних пор стоит ещё и линейка.
+    row = re.compile(r"\\\\(\s*\\hline)?\s*$")
+
     # Ни один особый знак не должен остаться голым в тексте книги.
     body = t[t.index(r"\begin{document}"):]
     # Листинг идёт дословно, экранировать его нельзя и проверять незачем.
@@ -59,7 +64,7 @@ def main():
                  if ch in l.replace(esc, "") and not l.startswith("%")
                  and "verbatim" not in l and r"\begin" not in l
                  and r"\end" not in l and r"\href" not in l
-                 and not l.endswith(r"\\")]      # строка таблицы: & — разделитель
+                 and not row.search(l)]
         ok(f"знак {ch} экранирован", not naked, naked[:1])
 
     ok("разметка стала командами",
@@ -71,10 +76,28 @@ def main():
     ok("таблица со слиянием", r"\multicolumn{2}" in t)
     # Число столбцов объявляется заранее, и короткая строка ломает таблицу:
     # шапка из двух ячеек добивается пустой до трёх.
-    rows = [l for l in t.splitlines() if l.endswith(r"\\")]
+    rows = [l for l in t.splitlines() if row.search(l)]
     ok("короткая строка добита пустой ячейкой",
        len(rows) == 2 and rows[0].count("&") == rows[1].count("&") + 1
-       and rows[0].rstrip(r"\\ ").endswith("&"), rows)
+       and re.sub(r"\\\\.*$", "", rows[0]).rstrip().endswith("&"), rows)
+    # Доллар в книге чаще знак денег, чем знак математики, а распознавание
+    # оборачивает формулы именно в `$…$`. Спутать дорого в обе стороны: проза
+    # между долларов уедет в формулу (курсивом, а с кириллицей внутри
+    # lualatex и вовсе откажется собирать), формула без долларов рассыплется.
+    for src, want, why in (
+            ("$доллар$", False, "слово между долларами"),
+            ("цена с $5 до $10", False, "две суммы в строке"),
+            ("price from $5 to $10", False, "то же на латинице"),
+            ("сумма $1,000,000$ ровно", False, "разряды, а не формула"),
+            ("формула $E = mc^2$ тут", True, "равенство со степенью"),
+            ("индекс $x_1$ тут", True, "подчёрк — знак индекса"),
+            (r"буква $\alpha$ тут", True, "команда TeX"),
+            ("переменная $x$ тут", True, "одиночная переменная"),
+    ):
+        got = O._tex(src)
+        math = "$" in got.replace(r"\$", "")
+        ok(f"формула или деньги: {why}", math == want, got)
+
     # Babel закомментирован, поэтому подписи ставим свои: иначе оглавление
     # в русской книге называется Contents.
     ok("оглавление названо на языке книги",
@@ -87,7 +110,7 @@ def main():
        t.count(r"\IfFontExistsTF") >= 3 and "DejaVu Serif" in t)
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 15   с расхождениями: {bad}")
+    print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

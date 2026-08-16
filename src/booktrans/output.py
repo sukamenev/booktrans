@@ -8,7 +8,7 @@ import os
 import re
 import zipfile
 from xml.sax.saxutils import escape
-from .tune import TEX_HEAD, CAPTION
+from .tune import TEX_HEAD, CAPTION, MATH_MAX
 
 FB2_INLINE = {
     "i": "emphasis", "em": "emphasis",
@@ -418,6 +418,25 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
 TEX_ESC = {"\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "$": r"\$",
            "&": r"\&", "#": r"\#", "^": r"\textasciicircum{}", "_": r"\_",
            "~": r"\textasciitilde{}", "%": r"\%"}
+# Формула или просто два доллара в строке. Распознавание оборачивает формулы
+# в `$…$` (см. prompts/ocr.md), но `$` в книге чаще знак денег: «с $5 до $10»
+# отдавало в формулу обычную прозу — курсивом, а с кириллицей внутри lualatex
+# отказывался собирать книгу вовсе. Формулу отличаем по письму и по знакам:
+# в ней латиница и служебные знаки TeX, а не слова живого языка.
+MATH_SIGN = re.compile(r"[\\^_{}]|[=+*/<>]\s*\d|\d\s*[=+*/<>]")
+
+
+def is_math(s):
+    s = s.strip()
+    if not s or len(s) > MATH_MAX:
+        return False
+    # Кириллица, греческий, иврит, восточное письмо: в формуле их не бывает —
+    # там `\alpha`, а не «α». Латиница ниже 0x250 остаётся: `x`, `mc`, `\sin`.
+    if any(c.isalpha() and ord(c) > 0x24F for c in s):
+        return False
+    return len(s) <= 3 or bool(MATH_SIGN.search(s))
+
+
 TEX_INLINE = {"i": "textit", "em": "textit", "b": "textbf", "strong": "textbf",
               "s": "sout", "del": "sout", "strike": "sout",
               "sub": "textsubscript", "sup": "textsuperscript", "code": "texttt"}
@@ -467,9 +486,12 @@ def _tex(s, links=None, notes_dict=None):
             return m.group(0)
         s = re.sub(r"<a(\d+)>.*?</a\1>", replace_fn, s)
 
-    # Hide math blocks before escaping
+    # Формулы прячем от экранирования: внутри `$…$` знаки TeX не гости, а
+    # хозяева. Одиночные доллары — только если между ними правда формула.
     s = re.sub(r"\$\$(.*?)\$\$", hide, s, flags=re.DOTALL)
-    s = re.sub(r"\$(.*?)\$", hide, s, flags=re.DOTALL)
+    s = re.sub(r"\$([^$]*?)\$",
+               lambda m: hide(m) if is_math(m.group(1)) else m.group(0),
+               s, flags=re.DOTALL)
     
     def hide_md_link(m):
         url = m.group(2).replace("%", r"\%").replace("#", r"\#")
@@ -837,8 +859,10 @@ def _render_math_to_images(items, images):
     for item in items:
         if item[0] in ("p", "title", "table", "verse"):
             for m in math_re.finditer(item[1]):
-                f = m.group(1) or m.group(2)
-                formulas.add(f.strip())
+                f = m.group(1)
+                if f is None and not is_math(m.group(2)):
+                    continue          # два доллара в прозе — не формула
+                formulas.add((f if f is not None else m.group(2)).strip())
     if not formulas:
         return items
     formulas = sorted(list(formulas))
@@ -885,7 +909,9 @@ def _render_math_to_images(items, images):
         if item[0] in ("p", "title", "table", "verse"):
             t = item[1]
             def repl(m):
-                f = (m.group(1) or m.group(2)).strip()
+                if m.group(1) is None and not is_math(m.group(2)):
+                    return m.group(0)
+                f = (m.group(1) if m.group(1) is not None else m.group(2)).strip()
                 if f in formula_images:
                     name = formula_images[f]
                     # We output the unescaped fake tag which _inline will escape, 
