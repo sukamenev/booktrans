@@ -8,8 +8,12 @@ produces a finished book as epub, fb2, html, txt, LaTeX or pdf.
 ## Translating a book
 
 ```bash
-./booktrans book.epub --to en -o Book.fb2
+./booktrans book.epub --to en
 ```
+
+With no output name the book names itself after its author and title and comes
+out **as both fb2 and epub**. If you want one particular file, say so:
+`-o Book.fb2`.
 
 ## Community & Support
 Join our Telegram group **[BookTrans Pipeline](https://t.me/BookTransPL)**! 
