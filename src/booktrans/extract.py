@@ -2087,6 +2087,30 @@ def _fix_mojibake(text):
         cyr = sum(1 for c in fixed[:20000] if "\u0400" <= c <= "\u04ff")
         if cyr > best_cyr:
             best, best_cyr = fixed, cyr
+    # Линейный проход для drop_set: _sections() дробит «Name Index» на пустую
+    # секцию + подсекции «A», «B», «C» — content туда не попадает. Проходим
+    # напрямую: нашли заголовок из drop_set → помечаем всё до следующего
+    # заголовка ТОГО ЖЕ или БОЛЕЕ ВЫСОКОГО уровня не из drop_set.
+    if drop_set:
+        in_drop = False
+        drop_level = None
+        for b in blocks:
+            head_plain = strip_tags(b["text"]).strip() if b["kind"] == "title" else ""
+            if b["kind"] == "title":
+                if head_plain.lower() in drop_set:
+                    in_drop = True
+                    drop_level = b.get("level") or 1
+                    b["asis"] = True
+                    b["drop"] = True
+                    continue
+                # Заголовок того же или более высокого уровня — закрывает раздел
+                lvl = b.get("level") or 1
+                if in_drop and lvl <= drop_level:
+                    in_drop = False
+                    drop_level = None
+            if in_drop:
+                b["asis"] = True
+                b["drop"] = True
     return best if best_cyr > len(sample) * 0.25 else text
 
 
@@ -2554,14 +2578,12 @@ def _mark_back(blocks, drop_sections=None):
     # секцию + подсекции «A», «B», «C» — content туда не попадает. Проходим
     # напрямую: нашли заголовок из drop_set → помечаем всё до следующего
     # заголовка ТОГО ЖЕ или БОЛЕЕ ВЫСОКОГО уровня не из drop_set.
+    # BACK_TAIL здесь не нужен: LLM уже приняла семантическое решение,
+    # позиционный фильтр только мешает.
     if drop_set:
-        seen_words = 0
         in_drop = False
         drop_level = None
-        for i, b in enumerate(blocks):
-            seen_words += words[i]
-            if seen_words < total * BACK_TAIL:
-                continue
+        for b in blocks:
             head_plain = strip_tags(b["text"]).strip() if b["kind"] == "title" else ""
             if b["kind"] == "title":
                 if head_plain.lower() in drop_set:
