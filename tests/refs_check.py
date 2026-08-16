@@ -83,7 +83,8 @@ def back(head, texts, before=(), after=()):
     for b in bs:
         b.pop("asis", None)
     E._mark_back(bs)
-    return [b["text"] for b in bs if b.get("asis")]
+    return ([b["text"] for b in bs if b.get("asis")],
+            [b["text"] for b in bs if b.get("drop")])
 
 
 # (имя, блоки, сколько блоков обязано стать asis).
@@ -155,35 +156,45 @@ CASES = [
 
 
 # Задняя часть книги: раздел целиком, по трём признакам сразу.
+# (имя, заголовок, блоки, сколько станет asis, сколько ещё и выброшено).
+#
+# `asis` и `drop` — разные меры. Литература и примечания остаются в книге
+# слово в слово: по ним читатель ищет источник. Предметный указатель из книги
+# выбрасывается целиком, вместе со своим заголовком: он отсылает к страницам
+# оригинала, которых в переводе нет, и пользы от него никакой.
 BACK = [
     # Назван своим именем, стоит в конце, состоит из записей — помечается.
-    ("указатель", "Index", [f"термин номер {i}, {i * 7}, {i * 9}" for i in range(1, 12)], 11),
-    ("примечания", "Notes", cites(11), 11),
-    ("литература по-русски", "Список литературы", refs(6, cont=False), 6),
+    ("указатель", "Index",
+     [f"термин номер {i}, {i * 7}, {i * 9}" for i in range(1, 12)], 12, 12),
+    ("примечания", "Notes", cites(11), 11, 0),
+    ("литература по-русски", "Список литературы", refs(6, cont=False), 6, 0),
 
     # Имя то, а содержимое — проза: не трогаем. Так выглядит глава, которую
     # автор назвал «Источники нашего беспокойства».
     ("проза под тем же заголовком", "Sources", [LONG + f" Было это в {1900 + i} году."
-                                                for i in range(1, 12)], 0),
+                                                for i in range(1, 12)], 0, 0),
     # Содержимое то, а имени нет и ряд не начат: у книги бывает глава сплошь
     # из дат и номеров.
     ("записи без заголовка", "Chapter Twelve",
-     [f"термин номер {i}, {i * 7}, {i * 9}" for i in range(1, 12)], 0),
+     [f"термин номер {i}, {i * 7}, {i * 9}" for i in range(1, 12)], 0, 0),
     # Всё то же, но в начале книги: задняя часть на то и задняя.
-    ("указатель в начале", "Index", [f"термин номер {i}, {i * 7}" for i in range(1, 12)], 0),
+    ("указатель в начале", "Index",
+     [f"термин номер {i}, {i * 7}" for i in range(1, 12)], 0, 0),
 ]
 
 
 def main():
     bad = 0
-    for name, head, texts, want in BACK:
+    for name, head, texts, want, want_drop in BACK:
         early = name == "указатель в начале"
-        got = back(head, texts, [LONG] if early else [LONG] * 12,
-                   [LONG] * 12 if early else ())
-        okk = len(got) == want and LONG not in got
+        got, gone = back(head, texts, [LONG] if early else [LONG] * 12,
+                         [LONG] * 12 if early else ())
+        okk = (len(got) == want and len(gone) == want_drop
+               and LONG not in got and LONG not in gone)
         print(f"  {'задняя часть: ' + name:30} {'совпадает' if okk else 'РАСХОЖДЕНИЕ'}")
         if not okk:
-            print(f"      ждали {want}, вышло {len(got)}")
+            print(f"      ждали asis {want}, выброшенных {want_drop}; "
+                  f"вышло {len(got)} и {len(gone)}")
         bad += not okk
 
     for name, bs, want in CASES:
