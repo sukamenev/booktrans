@@ -2549,6 +2549,36 @@ def _mark_back(blocks, drop_sections=None):
     drop_set = {s.lower().strip() for s in (drop_sections or [])}
     words = [len(b["text"].split()) for b in blocks]
     total = sum(words) or 1
+
+    # Линейный проход для drop_set: _sections() дробит «Name Index» на пустую
+    # секцию + подсекции «A», «B», «C» — content туда не попадает. Проходим
+    # напрямую: нашли заголовок из drop_set → помечаем всё до следующего
+    # заголовка ТОГО ЖЕ или БОЛЕЕ ВЫСОКОГО уровня не из drop_set.
+    if drop_set:
+        seen_words = 0
+        in_drop = False
+        drop_level = None
+        for i, b in enumerate(blocks):
+            seen_words += words[i]
+            if seen_words < total * BACK_TAIL:
+                continue
+            head_plain = strip_tags(b["text"]).strip() if b["kind"] == "title" else ""
+            if b["kind"] == "title":
+                if head_plain.lower() in drop_set:
+                    in_drop = True
+                    drop_level = b.get("level") or 1
+                    b["asis"] = True
+                    b["drop"] = True
+                    continue
+                # Заголовок того же или более высокого уровня — закрывает раздел
+                lvl = b.get("level") or 1
+                if in_drop and lvl <= drop_level:
+                    in_drop = False
+                    drop_level = None
+            if in_drop:
+                b["asis"] = True
+                b["drop"] = True
+
     seen, n, back = 0, 0, False
     for at, idx in _sections(blocks):
         head = blocks[at]["text"] if at >= 0 else ""
@@ -2558,7 +2588,9 @@ def _mark_back(blocks, drop_sections=None):
         if start < total * BACK_TAIL:
             back = False
             continue
-        if not (BACK_HEAD.match(head_plain) or back):
+        # drop_set содержит точные заголовки от LLM — они всегда проходят,
+        # даже если BACK_HEAD их не ловит («Name Index», «Subject Index»).
+        if not (BACK_HEAD.match(head_plain) or head_plain.lower() in drop_set or back):
             back = False
             continue
         # Раздел из одного заголовка («Notes» отдельной страницей) сам ничего
