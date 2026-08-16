@@ -48,7 +48,7 @@ What each part does:
 
 | | |
 |---|---|
-| `moby-dick.epub` | the book. No output name is given, so it names itself: "Мелвилл Герман. Моби Дик.fb2" |
+| `moby-dick.epub` | the book. No output name is given, so it names itself: "Мелвилл Герман. Моби Дик" — and comes out as both fb2 and epub |
 | `-p instructions.md` | your instructions to the translator: what to call the characters, which terms to fix, what to leave alone |
 | `-pt "leave the names in Latin"` | the same, but as a string — a typo in a filename must not silently become an instruction |
 | `--to ru` | target language |
@@ -111,12 +111,14 @@ read the "Security" and "Disclaimer" sections.
 ## Output formats
 
 The extension of `-o` decides. Without `-o` the book names itself after its
-author and title and comes out fb2.
+author and title and comes out **as both fb2 and epub**: the language of a book
+says nothing about what it will be read on, and the second build costs no
+attention and not a single request to a model.
 
 | | |
 |---|---|
-| `.fb2` | the default: headings, footnotes, images, links, publication data |
-| `.epub` | a chapter per file, cover, table of contents |
+| `.fb2` | headings, footnotes, images, links, publication data, series |
+| `.epub` | a chapter per file, a cover page, table of contents |
 | `.html` | one self-contained file — images and styles inside it, nothing beside it |
 | `.txt` | bare text, footnotes at the end |
 | `.tex` | LaTeX source to typeset yourself — see "LaTeX output" |

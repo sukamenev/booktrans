@@ -783,12 +783,23 @@ def main():
         n += 1
         log("")
         log(head("step_build", n))
-        dest = args.out or f"{build.out_name(meta, base)}.fb2"
-        # Затереть исходник переводом — потеря невосполнимая, а совпасть
-        # имена могут легко: fb2 на входе, fb2 на выходе.
-        if os.path.abspath(dest) == os.path.abspath(args.book):
-            sys.exit(T("would_overwrite", dest))
-        build.build_book(work, meta, blocks, cover, dest, log, args.partial, images)
+        # Без `-o` собираем оба ходовых формата. Язык книги не говорит, чем
+        # её будут читать: fb2 понимают русскоязычные читалки, epub — все
+        # прочие и все телефоны, а стоит вторая сборка секунд и ни одного
+        # запроса к модели. Выбирать за читателя тут не из чего.
+        if args.out:
+            dests = [args.out]
+        else:
+            dests = [f"{build.out_name(meta, base)}.{e}" for e in ("fb2", "epub")]
+        for dest in dests:
+            # Затереть исходник переводом — потеря невосполнимая, а совпасть
+            # имена могут легко: fb2 на входе, fb2 на выходе.
+            if os.path.abspath(dest) == os.path.abspath(args.book):
+                sys.exit(T("would_overwrite", dest))
+            # Свой набор картинок каждому: сборка дописывает в него
+            # отрисованные формулы, и второму формату досталось бы чужое.
+            build.build_book(work, meta, blocks, cover, dest, log, args.partial,
+                             dict(images))
         log("")
 
     if "qa" in steps:
