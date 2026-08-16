@@ -56,7 +56,7 @@ def log(msg="", end="\n"):
 # написал человек title_ru вместо title_target — и книга вышла бы с
 # заглавием оригинала, а почему, разбирайся сам.
 META_KEYS = {"title", "author", "title_target", "author_target", "series",
-             "series_no", "year", "publisher", "isbn", "lang", "uid"}
+             "series_no", "year", "publisher", "isbn", "lang", "uid", "genre"}
 
 
 def read_prompt(path, log=None, text=None):
