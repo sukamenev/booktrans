@@ -131,6 +131,8 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
             out += ["", "", _plain(text).upper(), ""]
         elif kind == "subtitle":
             out += [_plain(text), ""]
+        elif kind == "gap":
+            out.append("")
         elif kind == "break":
             out += ["", "* * *", ""]
         elif kind == "verse":
@@ -165,6 +167,7 @@ h1{font-size:1.6em;margin:2.5em 0 .3em;font-weight:normal;letter-spacing:.05em}
 h2{font-size:1em;color:#666;font-weight:normal;margin:.2em 0 1.5em;font-style:italic}
 p{margin:0 0 .9em;text-align:justify;hyphens:auto}
 p.v{margin:0 0 .1em 2em;text-align:left;font-style:italic;text-indent:-1em}
+p.gap{margin:0;height:.9em}
 pre{font:.85em/1.4 'DejaVu Sans Mono',Consolas,monospace;background:#f4f4f0;
 border-left:3px solid #ddd;padding:.6em .8em;margin:1.2em 0;overflow-x:auto;
 white-space:pre-wrap;word-wrap:break-word}
@@ -208,6 +211,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             o.append(f"<h{level}{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h{level}>")
         elif kind == "subtitle":
             o.append(f"<h2{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h2>")
+        elif kind == "gap":
+            o.append('<p class="gap"></p>')
         elif kind == "break":
             o.append("<hr>")
         elif kind == "image" and text in images:
@@ -315,6 +320,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
                 o.append(f"<h{level}{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h{level}>")
             elif kind == "subtitle":
                 o.append(f"<h2{_at(bid, targets)}>{_inline(text, HTML_INLINE)}</h2>")
+            elif kind == "gap":
+                o.append('<p class="gap"></p>')
             elif kind == "break":
                 o.append("<hr/>")
             elif kind == "image" and text in images:
@@ -732,6 +739,8 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                 else: o.append(r"\subsubsection[%s]{%s}" % (clean_t, t))
         elif kind == "subtitle":
             o.append(r"\subsection*{%s}" % _tex(text, notes_dict=notes_dict))
+        elif kind == "gap":
+            o.append(r"\medskip")
         elif kind == "break":
             o.append(r"\begin{center}* * *\end{center}")
         elif kind == "image" and text in images and _tex_pic(text):
@@ -1011,6 +1020,11 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
     w("<section>")
     w(f"<title><p>{esc(head)}</p></title>")
     for line in body:
+        # Пустая строка — отбивка между смысловыми кусками раздела: сплошной
+        # стеной абзацев его читать нельзя.
+        if not line:
+            w("<empty-line/>")
+            continue
         # Через общий разворот разметки, как и всё прочее: раздел собран не из
         # блоков книги, но и выделение, и ссылки в нём должны выйти такими же.
         w(f"<p>{_inline(line, FB2_INLINE)}</p>")

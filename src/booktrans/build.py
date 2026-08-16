@@ -21,6 +21,11 @@ DETAILS_SOURCES = ("Цитаты приведены по опубликован�
                    "важно:")
 
 
+# Отбивка между смысловыми кусками служебного раздела. Пустая строка: писать
+# в неё нечего, а каждый сборщик знает, чем её у себя изобразить.
+ABOUT_GAP = ""
+
+
 def _date(ts, code="ru"):
     return lang.fmt_date(ts, code)
 
@@ -282,15 +287,27 @@ def about_lines(work, st, code):
     # Чем и когда переведено — в начале книги, до оговорок: читатель решает
     # по этому, стоит ли читать дальше. Подробная разбивка по главам осталась
     # в «Деталях перевода» в конце — здесь она заняла бы полстраницы номеров.
-    body = [st["about_made"].format(pipeline=who),
-            st.get("about_community", ""),
-            _models_line(work, "tr", "tr", st, st["details_translate"]),
-            _models_line(work, "ed", "blocks", st, st["details_edit"])]
-    if span:
-        body.append(st["about_date"].format(date=span))
-    body += [st["about_quality"], st["about_caveat"],
-             st.get("about_notes", ""), st.get("about_disclaimer", "")]
-    body = [x for x in body if x]
+    #
+    # Раздел идёт четырьмя смысловыми кусками, между ними отбивка: девять
+    # абзацев подряд читалка fb2 рисует сплошной стеной, и найти в ней нужную
+    # строку нельзя. Пустая строка в списке и означает эту отбивку.
+    groups = [
+        [st["about_made"].format(pipeline=who)],
+        [st.get("about_community", "")],
+        [_models_line(work, "tr", "tr", st, st["details_translate"]),
+         _models_line(work, "ed", "blocks", st, st["details_edit"]),
+         st["about_date"].format(date=span) if span else ""],
+        [st["about_quality"], st["about_caveat"],
+         st.get("about_notes", ""), st.get("about_disclaimer", "")],
+    ]
+    body = []
+    for g in groups:
+        g = [x for x in g if x]
+        if not g:
+            continue
+        if body:
+            body.append(ABOUT_GAP)
+        body += g
     return st["about_title"], body
 
 
@@ -508,7 +525,8 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
             if meta.get("year"): meta_items.append(("p", meta["year"], "_meta_year", None, None, None))
         
         items = meta_items + [("title", head, "_about", None, None, 1)]
-        items += [("p", t, f"_about{i}", None, None, None) for i, t in enumerate(body)]
+        items += [("gap" if t == ABOUT_GAP else "p", t, f"_about{i}", None, None, None)
+                  for i, t in enumerate(body)]
         # У картинки в тексте лежит имя файла, а не проза, и перевода у неё
         # нет. Возьми мы `tr`, вышла бы пустая строка — картинки паковались в
         # книгу, но в тексте на них не оставалось ни одной ссылки.
