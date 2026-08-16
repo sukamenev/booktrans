@@ -738,7 +738,7 @@ def main():
                           to=args.to)
         d, s, halted = pipeline.translate(
             work, chunks, agent_for("translator"), sysprompt(),
-            task("translate", model=agent_for("translator").model or agent_for("translator").kind.capitalize()),
+            task("translate"),
             args.retries, log, only_chunks, fallback=backup_for("translator"),
             to=args.to)
         # Листинги в перевод не идут, но комментарии в них — проза, и
