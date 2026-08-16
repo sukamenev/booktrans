@@ -925,9 +925,20 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             bl = x.get("blocks") or []
             at = x.get("stopped_at") or len(bl)
             fp = x.get("src") or {}
+            # Считаем по `src`, а не по списку `blocks`. Имя файла — номер
+            # куска, а нарезка между прогонами меняется, и файл с тем же
+            # номером перезаписывается под другие блоки. Карты `src` и `edits`
+            # при этом сливаются со старыми, список `blocks` — заменяется. По
+            # нему выходило, что работа, сделанная при прежней нарезке, не
+            # сделана: на живой книге так теряло запись 201 блоков, и каждый
+            # запуск переделывал горстку кусков — а новая запись стирала
+            # предыдущую, и конца этому не было.
             # Правка сделана по переводу; перевели заново — править надо снова.
-            ready.update(i for i in bl[:at]
-                         if fp.get(i) in (None, fingerprint(raw.get(i, ""))))
+            if fp:
+                got = {i for i, f in fp.items() if f == fingerprint(raw.get(i, ""))}
+                ready |= got - set(bl[at:])
+            else:
+                ready.update(bl[:at])        # файлы прежних выпусков
             for i in bl[at:]:
                 stuck[i] = x.get("model") or ""
 
@@ -1113,9 +1124,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             if not halt[0]:
                 _cool([mine] + _backups(fallback), refused, log)
             return
+        # Отпечатки — только по блокам, до которых правка дошла: по ним и
+        # считается сделанное. Хвост оборванного куска в `src` не пишем,
+        # иначе он сойдёт за отредактированный.
+        covered = ids[:stopped] if stopped else ids
         out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
                "notes": notes, "blocks": ids,
-               "src": {k: fingerprint(v) for k, v in draft.items()},
+               "src": {k: fingerprint(draft[k]) for k in covered},
                "edits": {k: {"old": draft[k], "new": v} for k, v in res.items()}}
         if stopped:
             # Помечаем в файле: предупреждение в выводе живёт до конца

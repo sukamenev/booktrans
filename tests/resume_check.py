@@ -175,7 +175,38 @@ def main():
        tr["s17.b0224"] == "свежий", tr["s17.b0224"])
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 16   с расхождениями: {bad}")
+    # То же имя файла, но у правки: список `blocks` при перезаписи не
+    # сливается, в отличие от карт `src` и `edits`. Готовность считалась по
+    # нему — и работа, сделанная при прежней нарезке, выглядела несделанной.
+    # Каждый запуск переделывал горстку кусков, а новая запись стирала
+    # предыдущую, и конца этому не было: на живой книге так потеряли запись
+    # о 201 блоке.
+    d = tempfile.mkdtemp()
+    os.makedirs(d + "/tr")
+    os.makedirs(d + "/ed")
+    os.makedirs(d + "/prompts")      # её делает cli; иначе не увидим расхождения
+    was = [{"id": "s01.b0001", "kind": "p", "text": "Первый абзац."},
+           {"id": "s01.b0002", "kind": "p", "text": "Второй абзац."}]
+    now = [{"id": "s09.b0001", "kind": "p", "text": "Девятый абзац."}]
+    P._save(d + "/tr/0001.json",
+            {"index": 1, "tr": {b["id"]: "перевод" for b in was + now}})
+
+    def edited(bs):
+        P._save(d + "/ed/0001.json",
+                {"index": 1, "model": "стенд", "cost_usd": 0, "notes": "",
+                 "blocks": [b["id"] for b in bs], "edits": {},
+                 "src": {b["id"]: P.fingerprint("перевод") for b in bs}})
+
+    edited(was)                      # прогон вчерашней нарезки
+    edited(now)                      # нарезка сдвинулась, файл переписан
+    a = Stub()
+    P.edit(d, [{"index": 1, "label": "", "words": 2, "blocks": was}],
+           a, "", "", 1, lambda m="", end="\n": None)
+    ok("правка по прежней нарезке не забывается", a.calls == 0,
+       f"редактора звали {a.calls} раз")
+    shutil.rmtree(d)
+
+    print(f"\nслучаев: 17   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
