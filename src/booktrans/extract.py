@@ -1003,7 +1003,6 @@ def _fb2(path, encoding=None, ask=None):
         out.append(blk)
     _prune_links(out)
 
-    import base64
     images, cover_bytes = {}, None
     for b in root.findall(FB + "binary"):
         if (b.get("content-type") or "").startswith("image/"):
@@ -1743,7 +1742,6 @@ def _pdf_visual(path, agent, marks=None):
     final_md_path = pdf_path.with_suffix('.md')
     final_md_path.write_text("\n\n---\n\n".join(t for _, t in all_text), encoding="utf-8")
     
-    import re
     import io
     from PIL import Image
 
@@ -2735,7 +2733,6 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
         return
 
     from pathlib import Path
-    import subprocess
     pdf_path = Path(path)
     work_dir = pdf_path.with_suffix('.work') / 'pdf_pages'
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -2815,15 +2812,12 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
                     text = text.strip()
                     
                     # Check for truncation
-                    from .tune import OCR_TRUNC_MIN, OCR_TRUNC_RATIO
-                    import re
                     clean_raw = re.sub(r'\s+', ' ', raw_text).strip()
                     clean_txt = re.sub(r'\s+', ' ', text).strip()
                     if len(clean_raw) > OCR_TRUNC_MIN and len(clean_txt) < len(clean_raw) * OCR_TRUNC_RATIO:
                         # Double check with pdftotext since pdfium sometimes extracts hidden text from other pages
                         is_truncated = True
                         try:
-                            import subprocess
                             r_chk = subprocess.run(["pdftotext", "-f", str(page_num), "-l", str(page_num), "-nopgbrk", str(pdf_path), "-"], 
                                                capture_output=True, text=True, check=True)
                             real_raw = re.sub(r'\s+', ' ', r_chk.stdout).strip()
@@ -2839,7 +2833,6 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
                             break  # breaks the while loop, moves to the next agent
                     
                     # Crop images based on coordinates
-                    import re
                     def replace_img(match):
                         caption = match.group(1)
                         coords_str = match.group(2)

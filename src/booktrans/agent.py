@@ -251,7 +251,6 @@ class ClaudeAgent(Agent):
 
     def default_model(self):
         if "claude" not in Agent._default_cache:
-            import subprocess, json
             try:
                 r = subprocess.run(["claude", "-p", "hi"], capture_output=True, text=True, timeout=15)
                 env = json.loads(r.stdout)
@@ -393,7 +392,6 @@ class AgyAgent(Agent):
 
     def default_model(self):
         if "agy" not in Agent._default_cache:
-            import subprocess, json
             try:
                 r = subprocess.run(["agy", "--sandbox", "--output-format", "json"], input="hi", capture_output=True, text=True, timeout=15)
                 env = json.loads(r.stdout)
@@ -443,7 +441,6 @@ class CodexAgent(Agent):
 
     def default_model(self):
         if "codex" not in Agent._default_cache:
-            import subprocess, re
             try:
                 r = subprocess.run(["codex", "exec", "--skip-git-repo-check", "-c", 'web_search="disabled"', "--sandbox", "read-only"], input="hi", capture_output=True, text=True, timeout=15)
                 m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)

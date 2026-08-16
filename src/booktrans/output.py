@@ -831,7 +831,7 @@ def write_pdf(path, meta, items, notes, images, note_prefix, st=None,
 import xml.etree.ElementTree as ET
 
 def _render_math_to_images(items, images):
-    import re, subprocess, tempfile, os, hashlib
+    import subprocess, tempfile, hashlib
     math_re = re.compile(r'\$\$(.*?)\$\$|\$([^\$]+?)\$')
     formulas = set()
     for item in items:

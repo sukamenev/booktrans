@@ -470,7 +470,6 @@ def main():
             ocr_agents = chain_for("ocrmodel")
             if not ocr_agents:
                 raise ValueError("No OCR agent available for ocr step.")
-            from . import extract
             log("")
             log(head("step_ocr"))
             log("")
@@ -552,7 +551,6 @@ def main():
         
         pipeline.note_source(work, reader={".pdf": pdf_reader}.get(ext, ""))
         log("  " + T("reading", args.book))
-        from . import extract
         try:
             meta, blocks, cover, images = extract.read_book(
                 args.book, styles_map, args.encoding, ask_model, marks, agent=ocr_agent)
@@ -592,8 +590,7 @@ def main():
     # Если разведка нашла разделы-указатели — помечаем их drop: true.
     # _mark_back идемпотентна: asis-блоки остаются asis, добавляется только drop.
     if meta.get("drop_sections"):
-        from . import extract as _extract
-        _extract._mark_back(blocks, drop_sections=meta["drop_sections"])
+        extract._mark_back(blocks, drop_sections=meta["drop_sections"])
     meta.update(user_meta)
     meta.pop("_cleaned", None)
     # Язык перевода — свойство запуска, а не книги: по нему сборщик берёт
