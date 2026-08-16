@@ -63,7 +63,7 @@ str.untitled: Book
 str.translator: machine translation
 str.about_notes: The footnotes and explanations are machine-made as well. They may contain inaccuracies and occasionally outright errors: dates, names and source references are worth checking yourself.
 str.about_disclaimer: This translation is provided as is, without warranty of any kind. Neither the author of the pipeline nor whoever ran it accepts liability for any consequences of using this text, including decisions taken on the basis of a meaning conveyed inaccurately.
-str.about_community: Join our Telegram community: https://t.me/BookTransPL. In the group, you can request the translation of a specific book you need and get technical support.
+str.about_community: The project's Telegram community: https://t.me/BookTransPL. There you can request a translation of a book you need and get technical support.
 str.source_caveat: The translator is named from the machine's memory and has not been checked against the edition.
 str.details_sources: Quotations are given from published translations. The translators are named from the machine's memory and none was checked against an edition — verify if it matters:
 str.details_title: Translation details

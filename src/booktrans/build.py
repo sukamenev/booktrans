@@ -9,7 +9,7 @@ from xml.sax.saxutils import escape
 
 from . import lang, output
 from .pipeline import _blockmap as pipe_blockmap
-from .pipeline import all_notes, all_translations, strip
+from .pipeline import all_notes, all_translations, chunk_files, strip
 from .tune import CAPTION
 
 # Оговорка у цитаты, приведённой по чужому переводу. Умолчание на случай,
@@ -161,6 +161,40 @@ def _pass_models(work, sub, key, chapter):
     return out, total
 
 
+def _pass_share(work, sub, key):
+    """Сети прохода долями сделанного, от большей к меньшей.
+
+    Считаем по блокам, а не по файлам кусков: один блок лежит в двух файлах,
+    когда нарезка сдвинулась, и работа досталась той модели, что записала
+    его последней. Порядок записи и берём — по нему же собирается книга.
+    """
+    who = {}
+    for _, p in chunk_files(os.path.join(work, sub)):
+        x = json.load(open(p, encoding="utf-8"))
+        model = x.get("model") or "?"
+        for i in x.get(key) or []:
+            who[i] = model
+    n = Counter(who.values())
+    total = sum(n.values())
+    return [(m, c / total) for m, c in n.most_common()] if total else []
+
+
+def _models_line(work, sub, key, st, label):
+    """Строка «Перевод: сеть (вся книга)» или с долями, если сетей несколько.
+
+    Долю округляем не ниже процента: модель, взявшая один кусок из трёхсот,
+    сделала мало, но сделала, и «0 %» об этом сказало бы неправду.
+    """
+    share = _pass_share(work, sub, key)
+    if not share:
+        return ""
+    if len(share) == 1:
+        names = f"{share[0][0]} ({st['details_all']})"
+    else:
+        names = ", ".join(f"{m} ({max(1, round(f * 100))} %)" for m, f in share)
+    return label.format(models=names)
+
+
 def _pass_line(work, sub, key, chapter, st, label):
     """Строка вида «Перевод: opus — главы 1–15; gemini — глава 16 (частично)»."""
     by, total = _pass_models(work, sub, key, chapter)
@@ -245,12 +279,17 @@ def about_lines(work, st, code):
         ver = st.get("about_version", "версия {version} от {date}").format(
             version=num, date=when)
     who = f"<b>{PIPELINE}</b> ({ver}, {PIPELINE_URL})"
-    body = [st["about_made"].format(pipeline=who)]
+    # Чем и когда переведено — в начале книги, до оговорок: читатель решает
+    # по этому, стоит ли читать дальше. Подробная разбивка по главам осталась
+    # в «Деталях перевода» в конце — здесь она заняла бы полстраницы номеров.
+    body = [st["about_made"].format(pipeline=who),
+            st.get("about_community", ""),
+            _models_line(work, "tr", "tr", st, st["details_translate"]),
+            _models_line(work, "ed", "blocks", st, st["details_edit"])]
     if span:
         body.append(st["about_date"].format(date=span))
     body += [st["about_quality"], st["about_caveat"],
-             st.get("about_notes", ""), st.get("about_disclaimer", ""),
-             st.get("about_community", "")]
+             st.get("about_notes", ""), st.get("about_disclaimer", "")]
     body = [x for x in body if x]
     return st["about_title"], body
 

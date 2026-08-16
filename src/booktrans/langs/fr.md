@@ -44,7 +44,7 @@ str.untitled: Livre
 str.translator: traduction automatique
 str.about_notes: Les notes et les explications sont elles aussi l'œuvre de la machine. Elles peuvent comporter des imprécisions et parfois de véritables erreurs : dates, noms et références aux sources méritent d'être vérifiés par vous-même.
 str.about_disclaimer: Cette traduction est fournie telle quelle, sans garantie d'aucune sorte. Ni l'auteur de la chaîne de traitement ni celui qui l'a exécutée ne répondent des conséquences de l'usage de ce texte, y compris des décisions prises sur la foi d'un sens rendu de façon inexacte.
-str.about_community: Rejoignez notre communauté Telegram : https://t.me/BookTransPL. Dans le groupe, vous pouvez demander la traduction d'un livre spécifique et obtenir un support technique.
+str.about_community: Communauté Telegram du projet : https://t.me/BookTransPL. Vous pouvez y demander la traduction d'un livre de votre choix et obtenir un support technique.
 str.source_caveat: L'attribution de la traduction vient de la mémoire de la machine et n'a pas été vérifiée sur l'édition.
 str.details_sources: Les citations suivent des traductions publiées. Les attributions viennent de la mémoire de la machine et aucune n'a été vérifiée sur l'édition — vérifiez si cela compte :
 str.details_title: Détails de la traduction

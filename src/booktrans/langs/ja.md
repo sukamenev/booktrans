@@ -41,7 +41,7 @@ str.untitled: 書籍
 str.translator: 機械翻訳
 str.about_notes: 注や解説も機械が作成したものです。不正確な記述や、まれに明白な誤りが含まれることがあります。日付・人名・出典はご自身でお確かめください。
 str.about_disclaimer: 本翻訳は現状のまま提供され、いかなる保証もありません。パイプラインの作成者も、それを実行した者も、本文の利用によって生じたいかなる結果についても責任を負いません。不正確に伝えられた内容に基づく判断についても同様です。
-str.about_community: Telegramコミュニティに参加してください: https://t.me/BookTransPL。グループでは、特定の翻訳をリクエストしたり、技術サポートを受けることができます。
+str.about_community: プロジェクトのTelegramコミュニティ：https://t.me/BookTransPL。ここで必要な書籍の翻訳をリクエストし、技術サポートを受けることができます。
 str.source_caveat: 訳者の帰属は機械の記憶によるもので、原典との照合は行っていません。
 str.details_sources: 引用は既刊の翻訳によります。訳者の帰属は機械の記憶によるもので、原典との照合は行っていません。必要なら確認してください：
 str.details_title: 翻訳の詳細
