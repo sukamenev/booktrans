@@ -67,6 +67,12 @@ def main():
     ok("mimetype первым и не сжат",
        names[0] == "mimetype" and z.getinfo("mimetype").compress_type == 0
        and z.read("mimetype") == b"application/epub+zip", names[:1])
+    # А всё прочее, наоборот, жмётся: разметка книги ужимается вчетверо, и
+    # без этого epub нёс лишние сотни килобайт на ровном месте.
+    ok("остальное сжато",
+       all(i.compress_type == zipfile.ZIP_DEFLATED
+           for i in z.infolist() if i.filename != "mimetype"),
+       [i.filename for i in z.infolist() if i.compress_type == 0])
     ok("архив цел", z.testzip() is None, z.testzip())
 
     broken = []

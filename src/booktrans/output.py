@@ -428,7 +428,10 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
            + seq + "</metadata><manifest>" + "".join(man) +
            '</manifest><spine>' + "".join(spine) + "</spine></package>")
 
-    with zipfile.ZipFile(path, "w") as z:
+    # Epub — это zip, и текст в нём надо жать: без сжатия книга весила на
+    # три четверти своей разметки больше, чем нужно. Картинки уже сжаты
+    # своим форматом, им это ничего не даёт, но и не портит.
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         # mimetype обязан идти первым и без сжатия — этого требует стандарт
         z.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip",
                    compress_type=zipfile.ZIP_STORED)
