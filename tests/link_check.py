@@ -125,7 +125,27 @@ def main():
     ok("ссылки сосчитаны", "1 из 3" in txt, txt[-200:])
     shutil.rmtree(d, ignore_errors=True)
 
-    print(f"\nслучаев: 12   с расхождениями: {bad}")
+    # Голый адрес в тексте — тоже ссылка. Раздел «О переводе» состоит из них
+    # целиком, и читатель видел там не ссылки, а серую строку с http.
+    from booktrans import output as _O
+    for name, src, want in (
+            ("голый адрес становится ссылкой",
+             "пишите: https://t.me/BookTransPL. Спасибо",
+             '<a l:href="https://t.me/BookTransPL">https://t.me/BookTransPL</a>. Спасибо'),
+            ("точка и скобка в адрес не уходят",
+             "(см. https://example.org/a).",
+             '<a l:href="https://example.org/a">https://example.org/a</a>).'),
+            ("запрос доезжает целиком",
+             "http://example.com/a?b=1&c=2 дальше",
+             '<a l:href="http://example.com/a?b=1&amp;c=2">'),
+            ("готовая ссылка не оборачивается второй раз",
+             "[текст](https://example.com/x) и всё",
+             '<a l:href="https://example.com/x">текст</a> и всё'),
+    ):
+        got = _O._inline(src, _O.FB2_INLINE)
+        ok(name, want in got, got[:120])
+
+    print(f"\nслучаев: 16   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

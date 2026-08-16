@@ -25,6 +25,23 @@ def _mime(name):
     return "image/png" if name.lower().endswith(".png") else "image/jpeg"
 
 
+# Голый адрес в тексте. `&` к этому месту уже превращён в `&amp;`, оттого в
+# наборе точка с запятой: без неё адрес с запросом обрывался бы на середине.
+# Кончаться адрес обязан буквой, цифрой или косой чертой — иначе в него уйдёт
+# точка или скобка, стоящая после него в предложении.
+BARE_URL = re.compile(r"(https?://[a-zA-Z0-9./\-?=_&;#%~+]+[a-zA-Z0-9/])")
+
+
+def _autolink(s, tag):
+    """Сделать ссылками голые адреса. Внутрь готовых тегов не заходим: адрес
+    в `href` уже ссылка, и обернуть его второй раз значит сломать разметку."""
+    out = []
+    for part in re.split(r"(<[^>]+>)", s):
+        out.append(part if part.startswith("<")
+                   else BARE_URL.sub(rf'<{tag}="\1">\1</a>', part))
+    return "".join(out)
+
+
 def _inline(s, table, links=None):
     """Экранирует текст, разворачивая разрешённую разметку и ссылки."""
     s = escape(s)
@@ -46,7 +63,7 @@ def _inline(s, table, links=None):
         s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<image l:href="#\1"/>', s)
     else:
         s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<img src="\1" alt="math"/>', s)
-    return s
+    return _autolink(s, tag)
 
 
 def _plain(s):
@@ -995,7 +1012,9 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
     w("<section>")
     w(f"<title><p>{esc(head)}</p></title>")
     for i, line in enumerate(body):
-        line = esc(line)
+        # Мимо `_inline` этот раздел идёт потому, что собран не из блоков
+        # книги, — но адреса в нём тоже должны быть ссылками, а не текстом.
+        line = _autolink(esc(line), "a l:href")
         if i == 0:
             line = line.replace(PIPELINE, f"<strong>{PIPELINE}</strong>", 1)
         w(f"<p>{line}</p>")
