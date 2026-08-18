@@ -438,7 +438,6 @@ def main():
 
     agent = agent_for()
     ocr_agent = agent_for("ocrmodel") or agent
-    os.makedirs(pipeline.lpath(work, "prompts", args.to), exist_ok=True)
 
     def ask_model(prompt):
         """Спросить модель — этим разрешаются споры о кодировке файла.

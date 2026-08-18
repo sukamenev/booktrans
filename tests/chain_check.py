@@ -293,7 +293,6 @@ def main():
     dead = Says("мёртвая", boom=AgentError("claude вернул 1: high traffic"))
     dead.kind = "стенд"
     d = tempfile.mkdtemp()
-    os.makedirs(f"{d}/prompts", exist_ok=True)
     many = [{"index": i, "label": "", "words": 3, "blocks": BLOCKS}
             for i in range(1, 6)]
     done, _, halted = P.translate(d, many, dead, "", "", 1, hush)
@@ -319,7 +318,6 @@ def main():
     slept.clear()
     P.time.sleep = slept.append
     d = tempfile.mkdtemp()
-    os.makedirs(f"{d}/prompts", exist_ok=True)
     P.translate(d, many, mute, "", "", 1, hush)
     P.time.sleep = real_sleep
     shutil.rmtree(d, ignore_errors=True)
@@ -349,8 +347,10 @@ def main():
     for name, run in RUNS.items():
         first = Says("первая", boom=AgentError("agy вернул 1: high traffic"))
         second = Says("вторая", answer=ANSWERS[name])
+        # Папка пустая, как у новой книги: заводить свои папки — дело
+        # самих проходов. Пока её заводила проверка, было не видно, что
+        # разбор стилей падает на первом же запуске.
         d = tempfile.mkdtemp()
-        os.makedirs(f"{d}/prompts", exist_ok=True)   # это делает cli
         try:
             run(d, first, second)
             done = second.calls > 0 and bool(LANDED[name](d))

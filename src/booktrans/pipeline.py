@@ -754,7 +754,6 @@ def _regrow(agent, system, task, blocks, res, retries, log, fallback=None):
 def translate(work, chunks, agent, system, task, retries, log, only=None,
               fallback=None, to=""):
     os.makedirs(lpath(work, "tr", to), exist_ok=True)
-    os.makedirs(lpath(work, "prompts", to), exist_ok=True)
     sp = lpath(work, "state.json", to)
     state = json.load(open(sp, encoding="utf-8")) if os.path.exists(sp) else {"sum": {}, "terms": {}}
     # готовность считаем по блокам, а не по именам файлов: если нарезка
@@ -793,7 +792,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         here = " ".join(b["text"] for b in translatable(c["blocks"]))
         prompt = translate_prompt(c, nxt, summary, tail,
                                   accumulated_terms(state, idx, here), task)
-        open(f'{lpath(work, "prompts", to)}/{idx:04d}.txt', "w",
+        open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.txt'), "w",
              encoding="utf-8").write(prompt)
 
         expected = [b["id"] for b in translatable(c["blocks"])]
@@ -1079,7 +1078,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 lang.prompt("translate_hint_terms")[0] + "\n\n" + "\n".join(terms))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
-        open(f'{lpath(work, "prompts", to)}/{idx:04d}.edit.txt', "w",
+        open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.edit.txt'), "w",
              encoding="utf-8").write(prompt)
 
         def _stopped(res, ids):
@@ -1296,7 +1295,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             parts.append(hint_already + "\n\n" + "\n".join(sorted(set(already))))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
-        open(f'{lpath(work, "prompts", to)}/{idx:04d}.notes.txt', "w",
+        open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.notes.txt'), "w",
              encoding="utf-8").write(prompt)
 
         def parse_notes(out):
@@ -2305,7 +2304,11 @@ def detect_structure(work, styles, agent, task, retries, log, fallback=None):
         listing.append(f'{r["tag"]}|{r["cls"]}  ×{r["count"]}  → {ex}')
     styles_prompt, _ = lang.prompt("structure_styles")
     prompt = task + "\n\n---\n\n" + styles_prompt + "\n\n" + "\n".join(listing)
-    open(f"{work}/prompts/structure.txt", "w", encoding="utf-8").write(prompt)
+    # Запрос ложится к своему результату, в общую часть папки: стили книги
+    # языка перевода не знают. Папку заводит эта же запись — общего
+    # `prompts/` до неё нет ни у кого.
+    open(mkparent(f"{work}/prompts/structure.txt"), "w",
+         encoding="utf-8").write(prompt)
 
     log("  " + T("struct_styles", len(styles)), end="")
 
