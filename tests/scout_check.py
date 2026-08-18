@@ -79,10 +79,11 @@ def hush(m="", end="\n"):
 
 
 def main():
-    bad = 0
+    bad = cases = 0
 
     def ok(name, cond, got=""):
-        nonlocal bad
+        nonlocal bad, cases
+        cases += 1
         print(f"  {name:50} {'совпадает' if cond else 'РАСХОЖДЕНИЕ'}"
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
@@ -152,9 +153,33 @@ def main():
     ok("нашлось, но без перечня — всё равно находка",
        P.injected("INJECTED: 1\n\nдальше") == ["1"])
 
+    # Ответ вместо справочника. Через agy думающая модель сложила работу в
+    # свой файл и вернула записку о нём — тысяча знаков вместо двадцати пяти
+    # тысяч. Разведка принимала любой текст, а справочник уходит в каждый
+    # запрос на перевод: книга переводилась бы без имён и терминов.
+    good = "## ИМЕНА\n\nTolstoy = Толстой\n\n## ТЕРМИНЫ\n\nfovea = ямка\n"
+    ok("настоящий справочник проходит", P._parse_scout(good)[0] == good.strip())
+    for name, text in (
+            ("записка о файле", "Справочник готов: [часть_2.md](file:///нет/такого.md)."),
+            ("служебный вывод", '<invoke name="Read">\n</invoke>\nFile does not exist.'),
+            ("одно приветствие", "Готово! Всё сделано.")):
+        try:
+            P._parse_scout(text)
+            got = "приняли"
+        except ValueError:
+            got = ""
+        ok(f"{name} отвергнут", not got, got)
+
+    # Работа при этом сделана и оплачена, а путь назван — забираем файл.
+    f = f"{d}/справочник часть 2.md"
+    open(f, "w", encoding="utf-8").write(good)
+    said = f"Справочник готов: [файл](file://{f.replace(' ', '%20')})."
+    ok("названный файл подбирается", P._parse_scout(said)[0] == good.strip(),
+       P._parse_scout(said)[0][:40] if os.path.exists(f) else "нет файла")
+
     import shutil
     shutil.rmtree(d, ignore_errors=True)
-    print(f"\nслучаев: 15   с расхождениями: {bad}")
+    print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

@@ -8,6 +8,7 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 
 from . import agent as agent_mod
 from .agent import AgentError, Fatal, RateLimited
@@ -22,7 +23,8 @@ from . import lang
 from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
-                   RETRY_PAUSE, SCOUT_BUDGET, SCOUT_ROUNDS, SCOUT_WORDS,
+                   RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS, SCOUT_ROUNDS,
+                   SCOUT_WORDS,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
                    VERSE_GROUP, HEAD_CHUNK)
@@ -433,6 +435,42 @@ def _parse_digest(out):
     if len(out) < DIGEST_MIN:
         raise ValueError(f"конспект короче {DIGEST_MIN} знаков: {out[:80]!r}")
     return out, ""
+
+
+FILE_URL = re.compile(r"file://(\S+?)(?=[)\]\s]|$)")
+
+
+def _parse_scout(out):
+    """Справочник ли это.
+
+    Через agy думающая модель на большом куске делала работу, складывала её
+    в свой файл и отвечала запиской «справочник готов: [файл](file://…)» —
+    тысяча знаков вместо двадцати пяти тысяч. Разведка принимала любой текст
+    и писала эту записку в справочник, а он уходит в каждый запрос на
+    перевод: полкниги переводилось бы без имён и терминов.
+
+    Работа при этом сделана и оплачена, а путь назван — если файл на месте,
+    забираем его. Нет — ошибка, и кусок уходит следующей модели.
+    """
+    out = out.strip()
+    m = TOOLCALL.search(out)
+    if m:
+        raise ValueError(f"не справочник, а служебный вывод агента: {m.group()!r}")
+    if _heads(out) >= SCOUT_HEADS:
+        return out, ""
+    for u in FILE_URL.findall(out):
+        p = urllib.parse.unquote(u)
+        if os.path.isfile(p):
+            got = open(p, encoding="utf-8", errors="replace").read().strip()
+            if _heads(got) >= SCOUT_HEADS:
+                return got, ""
+    raise ValueError(f"не справочник, а записка о нём: {out[:120]!r}")
+
+
+def _heads(s):
+    """Сколько в тексте разделов «## …». Заголовки задаёт промпт, и они одни
+    и те же на любом целевом языке."""
+    return len(re.findall(r"(?m)^#{1,4}\s*\S", s))
 
 
 def condense(state, upto, agent, retries, log, fallback=None):
@@ -1929,7 +1967,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,
-                                        lambda o: (o, ""), log)
+                                        _parse_scout, log)
         findings.append(res)
         json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
                   ensure_ascii=False)
@@ -1941,7 +1979,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         merge_prompt, _ = lang.prompt("scout_merge")
         merge = merge_prompt.format(budget=SCOUT_BUDGET) + "\n\n---\n\n" + "\n\n---\n\n".join(findings)
         (merged, _), meta, dt = _chain_run(who, system, merge, retries,
-                                           lambda o: (o, ""), log)
+                                           _parse_scout, log)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
     else:
