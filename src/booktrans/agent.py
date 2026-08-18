@@ -407,7 +407,11 @@ class AgyAgent(Agent):
 
     def run(self, system, user, image=None):
         payload = f"{system}\n\n---\n\n{user}" if system else user
-        cmd = ["agy", "--sandbox", "--output-format", "json"]
+        # Свой срок у agy — пять минут, и думающая модель на большом куске в
+        # него не укладывалась: ответ обрывался на полуслове, а выглядело как
+        # отказ. Срок должен быть один, наш.
+        cmd = ["agy", "--sandbox", "--output-format", "json",
+               "--print-timeout", f"{self.timeout}s"]
         if self.model:
             cmd += ["--model", self.model]
         if self.effort:
