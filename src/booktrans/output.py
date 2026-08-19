@@ -1,4 +1,4 @@
-"""Запись готовой книги: fb2, epub, html, txt.
+"""Запись готовой книги: fb2, epub, html, md, txt.
 
 На вход всем — единый набор: метаданные, блоки с уже подставленным переводом,
 сноски и картинки. Формат выбирается по расширению выходного файла.
@@ -157,6 +157,165 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
             body = _md_inline(body)
             out += [f"{i}. {body}", ""]
     open(path, "w", encoding="utf-8").write("\n".join(out).strip() + "\n")
+
+
+# ---------------------------------------------------------------- markdown
+
+MD_MARK = {"i": "*", "em": "*", "b": "**", "strong": "**",
+           "s": "~~", "del": "~~", "strike": "~~", "code": "`"}
+# Знаки, которые в markdown значат разметку. Экранируются только вне тегов:
+# внутри `<sup>` они наши собственные, а не авторские.
+MD_ESC = re.compile(r"([\\`*_\[\]])")
+# Начало строки markdown читает особо. Экранируем то, что меняет строй
+# книги: решётку (заголовок), угол (цитата), черту (таблица). Знак списка —
+# наоборот, оставляем: из markdown он пришёл списком и списком уйдёт, а
+# своего вида блока для списков у конвейера нет.
+MD_HEAD = re.compile(r"^(\s*)([#>|])")
+# Куски, которые уже разметка и экранированию не подлежат: наш тег, формула,
+# готовая markdown-ссылка.
+MD_KEEP = re.compile(r"(<code>.*?</code>|<[^>]+>|\$\$.*?\$\$|\$[^$\n]+\$"
+                     r"|\[[^\]\n]+\]\((?:https?://|#)[^)\s]+\))", re.S)
+
+
+def _md_keep(c):
+    """Оставить ли кусок нетронутым. Доллар сам по себе ничего не значит: в
+    книгах он чаще деньги, чем формула, — «с $5 до $10» набрано так же.
+
+    Мера тут не `is_math`: та решает про целый блок и потому считает
+    кириллицу признаком прозы, а внутри формулы она законна — `\\text{ лет}`.
+    Внутри долларов спрашиваем только про знак TeX.
+    """
+    if not c or not MD_KEEP.fullmatch(c):
+        return False
+    return (not c.startswith("$") or c.startswith("$$")
+            or bool(MATH_SIGN.search(c.strip("$"))))
+
+
+def _md(s, links=None):
+    """Разметка блока в markdown. Теги — знаками, ссылки — скобками.
+
+    `sub` и `sup` остаются тегами: своего письма у markdown для них нет, а
+    html внутри понимают все читалки и pandoc.
+
+    Формулы уходят как есть. `$…$` и `$$…$$` — общий для markdown способ:
+    так их читают pandoc, GitHub, Obsidian и Jupyter; у отдельных площадок
+    своё письмо (Хабр), но это уже перевод одного вида в другой, разовой
+    заменой. Экранировать внутри формулы нельзя ни в коем случае:
+    `$P_{\\mathrm{doom}}$` от этого превращается в кашу.
+    """
+    s = "".join(c if _md_keep(c) else MD_ESC.sub(r"\\\1", c)
+                for c in MD_KEEP.split(s))
+    for src, mark in MD_MARK.items():
+        s = s.replace(f"<{src}>", mark).replace(f"</{src}>", mark)
+    for i, url in enumerate(links or (), 1):
+        s = re.sub(rf"<a{i}>(.*?)</a{i}>", lambda m: f"[{m.group(1)}]({url})",
+                   s, flags=re.S)
+    return re.sub(r"</?a\d+>", "", s)
+
+
+def _md_par(s):
+    """Абзац, который markdown не примет за заголовок или список."""
+    return MD_HEAD.sub(r"\1\\\2", s)
+
+
+def _md_table(text, spans=None):
+    """Таблица столбиками. Слияния ячеек markdown не знает вовсе, поэтому
+    строка со слиянием выходит короче прочих — текст цел, ширина не сходится.
+    Кому важна вёрстка таблиц, тому epub или fb2."""
+    rows = [[_md(c).replace("|", "\\|") for c in _cells(r)]
+            for r in text.splitlines()]
+    if not rows:
+        return ""
+    wide = max(len(r) for r in rows)
+    out = ["| " + " | ".join(r + [""] * (wide - len(r))) + " |" for r in rows]
+    out.insert(1, "|" + " --- |" * wide)
+    return "\n".join(out)
+
+
+def write_md(path, meta, items, notes, images, note_prefix, st=None, cover=None,
+             log=None, lang=None, **kw):
+    """Markdown: книга одним файлом, картинки папкой рядом.
+
+    Вшить их, как в html, нельзя: `data:` markdown показывают немногие, а
+    файл на несколько мегабайт перестаёт быть тем, ради чего markdown и
+    берут, — текстом, который правят руками и кладут в git.
+    """
+    st = st or {}
+    targets = _targets(items)
+    title = meta.get("title_target") or meta.get("title") or st.get("untitled", "Книга")
+    author = meta.get("author_target") or meta.get("author") or ""
+    where = os.path.splitext(path)[0] + ".images"
+    kept = {}
+
+    def keep(name, data):
+        """Картинку — в папку рядом, вернуть путь для ссылки."""
+        if name not in kept:
+            os.makedirs(where, exist_ok=True)
+            open(os.path.join(where, name), "wb").write(data)
+            kept[name] = f"{os.path.basename(where)}/{name}"
+        return kept[name]
+
+    o = []
+    if cover:
+        o.append(f"![]({keep('cover.' + _cover_mime(cover)[1], cover)})")
+    # Титульный лист обычно уже лежит в блоках — сборщик книги кладёт его
+    # первым. Свой заголовок печатаем, только если его там нет, иначе
+    # заглавие и автор выходят дважды подряд.
+    if not any(b == "_meta_title" for _, _, b, *_ in items):
+        o.append(f"# {_md(title)}")
+        if author:
+            o.append(f"*{_md(author)}*")
+
+    nums = {b: i for i, b in enumerate(notes, 1)}
+    verse = []
+
+    def flush():
+        # Стихи идут строка за строкой, и разрыв между ними держится на двух
+        # пробелах в конце: иначе markdown склеит строфу в абзац.
+        if verse:
+            o.append("  \n".join(verse))
+            verse.clear()
+
+    for kind, text, bid, links, *sp in items:
+        if kind != "verse":
+            flush()
+        at = f'<a id="{bid}"></a>' if bid in targets else ""
+        if kind == "title":
+            level = min(sp[1] if len(sp) > 1 and sp[1] is not None else 1, 6)
+            o.append(at + "#" * level + " " + _md(text))
+        elif kind == "subtitle":
+            o.append(at + "## " + _md(text))
+        elif kind == "break":
+            o.append("* * *")
+        elif kind == "image" and text in images:
+            o.append(f"![]({keep(text, images[text])})")
+        elif kind == "image" and re.match(r"https?://|//", text):
+            o.append(f"![]({text})")
+        elif kind == "table":
+            o.append(_md_table(text, sp[0] if sp else None))
+        elif kind == "verse":
+            verse.append(_md_par(_md(text)))
+        elif kind == "code":
+            fence = "```" if "```" not in text else "~~~~"
+            o.append(f"{fence}\n{text}\n{fence}")
+        elif kind == "p":
+            mark = f"[^{nums[bid]}]" if bid in nums else ""
+            o.append(at + _md_par(_md(text, links)) + mark)
+    flush()
+
+    if notes:
+        o.append("## " + _md(st.get("notes_title", "Примечания")))
+        for i, (bid, txt) in enumerate(notes.items(), 1):
+            body = txt["text"] if isinstance(txt, dict) else txt
+            src_only = isinstance(txt, dict) and txt.get("source_only")
+            if not src_only and not body.startswith(note_prefix):
+                body = note_prefix + body
+            o.append(f"[^{i}]: " + _md(_md_inline(body)))
+
+    open(path, "w", encoding="utf-8").write("\n\n".join(o).strip() + "\n")
+    if log and lang and kept:
+        log("  " + lang.T("images_n", len(kept),
+                          sum(1 for k, *_ in items if k == "image")))
 
 
 # ---------------------------------------------------------------- html
@@ -1258,5 +1417,6 @@ def write_fb2_zip(dest, *a, **kw):
 
 
 WRITERS = {".tex": write_tex, ".pdf": write_pdf, ".txt": write_txt,
+           ".md": write_md, ".markdown": write_md,
            ".html": write_html, ".htm": write_html, ".epub": write_epub,
            ".fb2": write_fb2, ".fb2.zip": write_fb2_zip}

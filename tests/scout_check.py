@@ -40,6 +40,16 @@ PLAIN = "## ОБРАЩЕНИЯ\n\n" + "\n".join(prose(60)) + "\n"
 BOOK = MIXED + "\n" + PLAIN
 
 
+def _part(user):
+    """Справочник из запроса: он лежит между заданием и конвертом."""
+    return user.split("---\n\n", 1)[1].split("\n\n---\n\n")[0]
+
+
+def _box(text, want):
+    """Ответ в конверте, как его теперь требует промпт."""
+    return f"[[[SHRINK {want}]]]\n{text}\n[[[/SHRINK {want}]]]"
+
+
 class Obedient:
     """Модель, которая делает ровно то, о чём просят: режет прозу до
     названного размера и не трогает ни одной строки таблицы."""
@@ -49,14 +59,14 @@ class Obedient:
 
     def run(self, system, user):
         want = int(re.search(r"надо около (\d+)", user).group(1))
-        part = user.split("---\n\n", 1)[1]
+        part = _part(user)
         rows = [l for l in part.splitlines() if l.startswith("|")]
         rest = [l for l in part.splitlines() if not l.startswith("|")]
         out = list(rest)
         # Выбрасываем прозу с конца, пока не уложились.
         while len("\n".join(out + rows)) > want and len(out) > 2:
             out.pop()
-        return "\n".join(out[:2] + rows + out[2:]) + "\n", \
+        return _box("\n".join(out[:2] + rows + out[2:]) + "\n", want), \
             {"model": self.model, "cost_usd": 0}
 
 
@@ -67,11 +77,12 @@ class Greedy(Obedient):
     model = "жадная"
 
     def run(self, system, user):
-        part = user.split("---\n\n", 1)[1]
+        want = int(re.search(r"надо около (\d+)", user).group(1))
+        part = _part(user)
         head = part.splitlines()[:2]
-        return "\n".join(head + [l for l in part.splitlines()
-                                 if not l.startswith("|")][:5]) + "\n", \
-            {"model": self.model, "cost_usd": 0}
+        return _box("\n".join(head + [l for l in part.splitlines()
+                                      if not l.startswith("|")][:5]) + "\n",
+                    want), {"model": self.model, "cost_usd": 0}
 
 
 def hush(m="", end="\n"):
@@ -157,12 +168,26 @@ def main():
     # свой файл и вернула записку о нём — тысяча знаков вместо двадцати пяти
     # тысяч. Разведка принимала любой текст, а справочник уходит в каждый
     # запрос на перевод: книга переводилась бы без имён и терминов.
-    good = "## ИМЕНА\n\nTolstoy = Толстой\n\n## ТЕРМИНЫ\n\nfovea = ямка\n"
-    ok("настоящий справочник проходит", P._parse_scout(good)[0] == good.strip())
+    body = "## ИМЕНА\n\nTolstoy = Толстой\n\n## ТЕРМИНЫ\n\nfovea = ямка"
+    ok("работа из конверта берётся",
+       P._parse_scout(f"[[[SCOUT 3]]]\n{body}\n[[[/SCOUT 3]]]")[0] == body)
+    ok("болтовня снаружи отброшена",
+       P._parse_scout(f"Сейчас соберу.\n[[[SCOUT 3]]]\n{body}\n[[[/SCOUT 3]]]\n"
+                      "Готово, проверьте.")[0] == body)
+
+    # Номер в маркере подставляет модель, а в промпте на его месте буква N.
+    # Оттого промпт, вернувшийся эхом, за ответ не сойдёт — а такое бывало:
+    # один прогон вернул справочник, а перед ним весь системный промпт.
+    envelope, _ = __import__("booktrans", fromlist=["lang"]).lang.prompt("envelope")
+    ok("образец маркера в промпте есть", "[[[{name} N]]]" in envelope, envelope[:60])
     for name, text in (
-            ("записка о файле", "Справочник готов: [часть_2.md](file:///нет/такого.md)."),
+            ("эхо промпта", envelope.format(name="SCOUT", what="номер части")),
+            ("записка о файле", "Справочник готов: [ч2.md](file:///нет/такого.md)."),
             ("служебный вывод", '<invoke name="Read">\n</invoke>\nFile does not exist.'),
-            ("одно приветствие", "Готово! Всё сделано.")):
+            ("одно приветствие", "Готово! Всё сделано."),
+            ("обрыв", f"[[[SCOUT 3]]]\n{body}"),
+            ("маркеры с разными числами",
+             f"[[[SCOUT 3]]]\n{body}\n[[[/SCOUT 2]]]")):
         try:
             P._parse_scout(text)
             got = "приняли"
@@ -170,11 +195,18 @@ def main():
             got = ""
         ok(f"{name} отвергнут", not got, got)
 
+    # Какое число подставлено, не сверяется: живая модель на первой части
+    # написала «4», и повтор всё исправил, но стоил целого запроса. От эха
+    # бережёт сам факт подстановки цифр.
+    ok("число не то, но подставлено — принимаем",
+       P._parse_scout(f"[[[SCOUT 4]]]\n{body}\n[[[/SCOUT 4]]]")[0] == body)
+
     # Работа при этом сделана и оплачена, а путь назван — забираем файл.
+    # Маркеров в нём нет и быть не может, поэтому мера тут другая: разделы.
     f = f"{d}/справочник часть 2.md"
-    open(f, "w", encoding="utf-8").write(good)
+    open(f, "w", encoding="utf-8").write(body)
     said = f"Справочник готов: [файл](file://{f.replace(' ', '%20')})."
-    ok("названный файл подбирается", P._parse_scout(said)[0] == good.strip(),
+    ok("названный файл подбирается", P._parse_scout(said)[0] == body,
        P._parse_scout(said)[0][:40] if os.path.exists(f) else "нет файла")
 
     import shutil

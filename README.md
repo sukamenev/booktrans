@@ -2,8 +2,8 @@
 
 *[Русская версия](README.ru.md)*
 
-**Translate a whole book in one run.** Takes epub, fb2, html, pdf or txt;
-produces a finished book as epub, fb2, html, txt, LaTeX or pdf.
+**Translate a whole book in one run.** Takes epub, fb2, html, pdf, md or txt;
+produces a finished book as epub, fb2, html, md, txt, LaTeX or pdf.
 
 ## Translating a book
 
@@ -84,7 +84,7 @@ translation, adds footnotes and assembles the file.
 
 ## What it does
 
-- **reads** epub, fb2, html, pdf, txt; **writes** epub, fb2, html, txt, tex, pdf;
+- **reads** epub, fb2, html, pdf, md, txt; **writes** epub, fb2, html, md, txt, tex, pdf;
 - **works out the markup with the model** rather than by fixed rules: every
   publisher lays books out differently;
 - **scouts the book before translating** — narrator voices, names, terms,
@@ -125,6 +125,7 @@ attention and not a single request to a model.
 | `.fb2.zip` | the same, zipped: half the size, and nearly every reader opens it |
 | `.epub` | a chapter per file, a cover page, table of contents |
 | `.html` | one self-contained file — images and styles inside it, nothing beside it |
+| `.md` | markdown: `$…$` formulas, `[^1]` footnotes, images in a folder beside it |
 | `.txt` | bare text, footnotes at the end |
 | `.tex` | LaTeX source to typeset yourself — see "LaTeX output" |
 | `.pdf` | the same source, built by `lualatex` right away |

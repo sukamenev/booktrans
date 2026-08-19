@@ -412,6 +412,44 @@ def accumulated_terms(state, upto, text=None):
     return out
 
 
+def boxed(prompt, name, what):
+    """Требование обернуть работу маркерами — в конец запроса.
+
+    Проходы со свободным ответом — разведка, сведение, конспект — принимали
+    любой текст: сверять там нечего, ответ просто проза. Ошибались они молча
+    и одинаково: вместо работы приходила записка о файле, отчёт о сделанном,
+    вызов инструмента, а однажды — весь системный промпт целиком.
+
+    Конверт разбирает все эти случаи разом: работа лежит между маркерами,
+    остальное отброшено, ответа без маркеров нет вовсе.
+    """
+    tpl, _ = lang.prompt("envelope")
+    return prompt + "\n\n---\n\n" + tpl.format(name=name, what=what)
+
+
+def unbox(out, name):
+    """Работа из конверта.
+
+    Число в маркере подставляет модель, а в промпте на его месте буква `N`.
+    Оттого промпт, вернувшийся эхом, за ответ не сойдёт: цифр в нём нет.
+    Заодно видно и обрыв — начало пришло, конца нет.
+
+    Какое именно число подставлено, не сверяется. Живая модель на первой
+    части написала «4», и повтор всё исправил, но стоил целого запроса —
+    полторы минуты и двадцать центов, а на большом куске впятеро дороже.
+    От эха бережёт сам факт подстановки, а не совпадение; закрывающий маркер
+    обязан нести то же число, что открывающий.
+    """
+    o = rf"\[\[\[\s*{name}\s+(\d+)\s*\]\]\]"
+    m = re.search(o + r"(.*?)" + rf"\[\[\[\s*/\s*{name}\s+\1\s*\]\]\]",
+                  out, re.S | re.I)
+    if m:
+        return m.group(2).strip()
+    if re.search(o, out, re.I):
+        raise ValueError(f"ответ оборван: маркера конца {name} нет")
+    raise ValueError(f"ответ без маркеров {name}: {out.strip()[:120]!r}")
+
+
 # Служебный вывод агента: попытка позвать инструмент, размышление вслух,
 # ответ оболочки. В конспект такое попадать не должно ни при каких условиях.
 TOOLCALL = re.compile(
@@ -428,7 +466,7 @@ def _parse_digest(out):
     семьдесят-третьего куска. Конвейер принял их молча: конспект нигде не
     сверяется, он просто текст. Заметил редактор, и то потому, что читал.
     """
-    out = out.strip()
+    out = unbox(out, "DIGEST")
     m = TOOLCALL.search(out)
     if m:
         raise ValueError(f"не конспект, а служебный вывод агента: {m.group()!r}")
@@ -451,25 +489,26 @@ def _parse_scout(out):
 
     Работа при этом сделана и оплачена, а путь назван — если файл на месте,
     забираем его. Нет — ошибка, и кусок уходит следующей модели.
+
+    Служебный вывод отдельно тут не ищется, как в конспекте: за маркерами он
+    и так остаётся снаружи, а книга про инъекции приводит такие строки
+    примером на каждой странице.
     """
-    out = out.strip()
-    m = TOOLCALL.search(out)
-    if m:
-        raise ValueError(f"не справочник, а служебный вывод агента: {m.group()!r}")
-    if _heads(out) >= SCOUT_HEADS:
-        return out, ""
-    for u in FILE_URL.findall(out):
-        p = urllib.parse.unquote(u)
-        if os.path.isfile(p):
-            got = open(p, encoding="utf-8", errors="replace").read().strip()
-            if _heads(got) >= SCOUT_HEADS:
-                return got, ""
-    raise ValueError(f"не справочник, а записка о нём: {out[:120]!r}")
+    try:
+        return unbox(out, "SCOUT"), ""
+    except ValueError:
+        for u in FILE_URL.findall(out):
+            p = urllib.parse.unquote(u)
+            if os.path.isfile(p):
+                got = open(p, encoding="utf-8", errors="replace").read().strip()
+                if _heads(got) >= SCOUT_HEADS:
+                    return got, ""
+        raise
 
 
 def _heads(s):
-    """Сколько в тексте разделов «## …». Заголовки задаёт промпт, и они одни
-    и те же на любом целевом языке."""
+    """Сколько в тексте разделов «## …». Мера для файла, который модель
+    написала вместо ответа: маркеров в нём нет и быть не может."""
     return len(re.findall(r"(?m)^#{1,4}\s*\S", s))
 
 
@@ -490,11 +529,15 @@ def condense(state, upto, agent, retries, log, fallback=None):
         return (digest + "\n\n" + "\n\n".join(fresh)).strip()
 
     prompt_tpl, _ = lang.prompt("digest")
-    prompt = prompt_tpl.format(budget=DIGEST_BUDGET) + "\n\n## Конспект\n\n" + (digest or "(пока пусто)") + "\n\n## Что было дальше\n\n" + "\n\n".join(fresh)
+    prompt = boxed(prompt_tpl.format(budget=DIGEST_BUDGET, upto=upto)
+                   + "\n\n## Конспект\n\n" + (digest or "(пока пусто)")
+                   + "\n\n## Что было дальше\n\n" + "\n\n".join(fresh),
+                   "DIGEST", "номер куска, названный выше")
     log("  " + T("digest_go"), end="")
     try:
         (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
-                                        retries, _parse_digest, log)
+                                        retries,
+                                        _parse_digest, log)
     except (Refused, RuntimeError, Fatal) as e:
         # Прежний конспект целее негодного нового: он уходит в каждый запрос
         # на перевод и ошибётся не однажды, а на всём остатке книги.
@@ -1963,7 +2006,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint_meta, _ = lang.prompt("scout_hint_meta")
                 hint += "\n\n" + hint_meta
 
-        prompt = (f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}\n\n{text}")
+        prompt = boxed(f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}"
+                       f"\n\n{text}", "SCOUT", "номер этой части")
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,
@@ -1977,7 +2021,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if len(findings) > 1:
         log("  " + T("scout_merge"), end="")
         merge_prompt, _ = lang.prompt("scout_merge")
-        merge = merge_prompt.format(budget=SCOUT_BUDGET) + "\n\n---\n\n" + "\n\n---\n\n".join(findings)
+        merge = boxed(merge_prompt.format(budget=SCOUT_BUDGET,
+                                          parts=len(findings))
+                      + "\n\n---\n\n" + "\n\n---\n\n".join(findings),
+                      "SCOUT", "число сведённых разборов, названное выше")
         (merged, _), meta, dt = _chain_run(who, system, merge, retries,
                                            _parse_scout, log)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
@@ -2141,14 +2188,17 @@ def _shrink(part, want, who, system, retries, log):
     сжатие, а выброшенный справочник.
     """
     ask_prompt, _ = lang.prompt("scout_condense")
-    ask = ask_prompt.format(len_part=len(part), want=want) + "\n\n---\n\n" + part
+    ask = boxed(ask_prompt.format(len_part=len(part), want=want)
+                + "\n\n---\n\n" + part,
+                "SHRINK", "нужный размер в знаках, названный выше")
     (short, _), meta, _dt = _chain_run(who, system, ask, retries,
-                                       lambda o: (o, ""), log)
+                                       lambda o: (unbox(o, "SHRINK"), ""),
+                                       log)
 
-    # Всё, что модель приписала перед разделом, отрезаем по его заголовку.
-    # Замерено: один прогон вернул справочник, а перед ним — весь системный
-    # промпт целиком, девять тысяч знаков. Ни на длину, ни на число строк это
-    # не влияет, и обе проверки ниже такое пропускают.
+    # Приписанное перед разделом отрезаем по его заголовку. Замерено: один
+    # прогон вернул справочник, а перед ним — весь системный промпт целиком,
+    # девять тысяч знаков. Снаружи конверта такое теперь и так отброшено, а
+    # эта строка снимает то, что модель припишет внутри него.
     head = next((l for l in part.splitlines() if l.startswith("#")), "")
     if head and head in short:
         short = short[short.index(head):]

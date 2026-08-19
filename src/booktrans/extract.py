@@ -2167,6 +2167,148 @@ def _txt(path, encoding=None, ask=None, marks=None):
                           os.path.splitext(os.path.basename(path))[0], marks)
 
 
+# ---------------------------------------------------------------- markdown
+
+MD_TITLE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
+MD_FENCE = re.compile(r"^\s*(```|~~~)")
+MD_IMAGE = re.compile(r"^!\[([^\]]*)\]\(([^)\s]+)")
+MD_RULE = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
+MD_LINK = re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)")
+# Разметка внутри строки. Порядок значим: двойная звёздочка разбирается
+# раньше одинарной, иначе от неё останется половина.
+MD_SPANS = ((r"\*\*\*(.+?)\*\*\*", r"<b><i>\1</i></b>"),
+            (r"___(.+?)___", r"<b><i>\1</i></b>"),
+            (r"\*\*(.+?)\*\*", r"<b>\1</b>"),
+            (r"__(.+?)__", r"<b>\1</b>"),
+            (r"~~(.+?)~~", r"<s>\1</s>"),
+            (r"(?<![\w*])\*([^*\n]+)\*(?!\w)", r"<i>\1</i>"),
+            (r"(?<![\w_])_([^_\n]+)_(?!\w)", r"<i>\1</i>"),
+            (r"`([^`\n]+)`", r"<code>\1</code>"))
+
+
+def _md_spans(s, links):
+    """Строка markdown в наш вид: знаки — тегами, ссылки — номерами.
+
+    Формулы не трогаем: `$x_1$` иначе разбирается как курсив и рассыпается.
+    """
+    keep = re.split(r"(\$\$.*?\$\$|\$[^$\n]+\$|`[^`\n]+`)", s, flags=re.S)
+    for i, part in enumerate(keep):
+        if part.startswith("$"):
+            continue
+        if part.startswith("`"):
+            keep[i] = f"<code>{part.strip('`')}</code>"
+            continue
+        part = part.replace("\\*", "\0z").replace("\\_", "\0u")
+        for pat, dst in MD_SPANS:
+            part = re.sub(pat, dst, part)
+
+        def _link(m):
+            links.append(m.group(2))
+            return f"<a{len(links)}>{m.group(1)}</a{len(links)}>"
+
+        part = MD_LINK.sub(_link, part)
+        keep[i] = part.replace("\0z", "*").replace("\0u", "_")
+    return "".join(keep)
+
+
+def _markdown(path, encoding=None, ask=None):
+    """Чтение markdown по его собственной разметке.
+
+    Прежде `.md` читался как голый текст, и вся разметка ехала в книгу
+    буквально: заголовок выходил строкой «## Вступление», выделение —
+    звёздочками посреди фразы. Ради заголовков при этом спрашивали модель —
+    проход разметки, минуты и деньги, — хотя в файле они названы прямо.
+    """
+    with open(path, "rb") as f:
+        txt = _decode(f.read(), encoding, ask)
+    lines = txt.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+    blocks, sec, n, i = [], 1, 0, 0
+    meta_title = os.path.splitext(os.path.basename(path))[0]
+
+    def add(kind, text, **extra):
+        nonlocal sec, n
+        # Первый раздел не начинаем заново: книга, открывающаяся заголовком,
+        # иначе получила бы номера со второго.
+        if kind == "title" and blocks:
+            sec += 1
+            n = 0
+        n += 1
+        blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": kind,
+                       "text": text, **extra})
+
+    while i < len(lines):
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
+        m = MD_FENCE.match(line)
+        if m:                                   # листинг: внутри ничего не разбираем
+            fence, body = m.group(1), []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith(fence):
+                body.append(lines[i])
+                i += 1
+            add("code", "\n".join(body))
+            i += 1
+            continue
+        m = MD_TITLE.match(line)
+        if m:
+            add("title", _md_spans(m.group(2), []), level=len(m.group(1)))
+            i += 1
+            continue
+        if MD_RULE.match(line):
+            add("break", "")
+            i += 1
+            continue
+        m = MD_IMAGE.match(line.strip())
+        if m:
+            add("image", m.group(2))
+            i += 1
+            continue
+        if line.lstrip().startswith("|") and line.count("|") > 1:
+            rows = []
+            while i < len(lines) and lines[i].lstrip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                # Строка из дефисов — не данные, а подчёркивание шапки.
+                if not all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+                    rows.append(" | ".join(_md_spans(c, []) for c in cells))
+                i += 1
+            if rows:
+                add("table", "\n".join(rows))
+            continue
+        # Абзац: строки до пустой. Маркер списка и цитаты оставляем в тексте —
+        # своего вида блока для них у конвейера нет, а знак в начале строки
+        # markdown потом прочтёт обратно.
+        body = []
+        while i < len(lines) and lines[i].strip() \
+                and not MD_TITLE.match(lines[i]) and not MD_FENCE.match(lines[i]) \
+                and not lines[i].lstrip().startswith("|"):
+            body.append(lines[i].strip())
+            i += 1
+        links = []
+        text = _md_spans(" ".join(body), links)
+        add("p", text, **({"links": links} if links else {}))
+
+    if blocks and blocks[0]["kind"] == "title":
+        meta_title = re.sub(r"<[^>]+>", "", blocks[0]["text"])
+    return {"title": meta_title, "dropped": 0, "dropped_words": 0}, blocks, None, {}
+
+
+def is_markdown(path):
+    """Настоящая ли это разметка. Файл с расширением `.md` бывает и голым
+    текстом — тогда читать его надо как текст и заголовки спрашивать у
+    модели. Признак — заголовок с решёткой: он в markdown обязателен и ни в
+    одном простом тексте случайно не встречается по разу на десяток абзацев.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(200000).decode("utf-8", "ignore")
+    except OSError:
+        return False
+    return bool(re.search(r"(?m)^#{1,6}\s+\S", head))
+
+
 # Доля строк с отступом, при которой отступ считается признаком начала
 # абзаца. В pdf он и есть разметка: pdftotext -layout сохраняет втяжку первой
 # строки, а пустых строк там нет вовсе — только разрывы страниц. В простом
@@ -2766,6 +2908,8 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agen
         return _pdf(path, marks)
     if ext in (".html", ".htm"):
         return _html(path, styles, encoding, ask)
+    if ext == ".md" and is_markdown(path):
+        return _markdown(path, encoding, ask)
     if ext in (".txt", ".md"):
         return _txt(path, encoding, ask, marks)
     raise SystemExit(
