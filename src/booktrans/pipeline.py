@@ -1925,7 +1925,7 @@ def scout_meta(work, to=""):
         # Ключ один: title_target. Кода языка тут быть не должно — «tr»
         # читается и как «translated», и как турецкий, а при переводе на
         # турецкий это стало бы прямой путаницей.
-        if key not in allowed | {"title_target", "author_target"}:
+        if key not in allowed | {"title_target", "author_target", "series_target"}:
             continue
         if key == "genre":
             # Сверяем со словарём: выдуманный код хуже умолчания, потому что

@@ -2942,6 +2942,81 @@ def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agen
         f"не умею читать {ext}; поддерживаются epub, fb2, html, pdf, txt")
 
 
+def _page_lines(pdf_path, page_num):
+    """Строки текстового слоя страницы: рамки в пунктах и ширина полосы.
+
+    Берутся у `pdftotext -bbox-layout`. Нет текстового слоя или нет самого
+    pdftotext — вернётся пусто, и рамка картинки останется как есть.
+    """
+    try:
+        r = subprocess.run(["pdftotext", "-bbox-layout", "-f", str(page_num),
+                            "-l", str(page_num), str(pdf_path), "-"],
+                           capture_output=True, text=True, timeout=60)
+    except Exception:
+        return [], 0.0
+    w = re.search(r'<page width="([\d.]+)"', r.stdout)
+    lines = [tuple(float(x) for x in m.groups()) for m in re.finditer(
+        r'<line xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)"',
+        r.stdout)]
+    return lines, float(w.group(1)) if w else 0.0
+
+
+def _trim_to_picture(box, lines, scale):
+    """Отрезать от рамки картинки чужой текст.
+
+    Рамку называет модель, а не код, и на вёрстке в две колонки она
+    захватывает соседнюю: на живой книге в картинку попала колонка прозы, и
+    та же проза стояла рядом текстом — читатель видел её дважды. Просить
+    модель резать теснее бесполезно, промпт требует этого тремя фразами;
+    а у страницы есть текстовый слой, и по нему видно, где строки.
+
+    Режем только строки, которые рамку пересекают, но целиком в неё не
+    входят: подпись под рисунком и надписи внутри схемы так и остаются, а
+    строка книги, обрезанная посреди слова, уходит. Отрезаем ту сторону, что
+    оставляет больше картинки.
+    """
+    if not lines or scale <= 0:
+        return box
+    left, top, right, bottom = box
+    area0 = (right - left) * (bottom - top)
+    for _ in range(4):
+        cross = []
+        for x0, y0, x1, y1 in lines:
+            a, b, c, d = x0 * scale, y0 * scale, x1 * scale, y1 * scale
+            if c <= left or a >= right or d <= top or b >= bottom:
+                continue                       # строка мимо рамки
+            if left <= a and c <= right and top <= b and d <= bottom:
+                continue                       # строка внутри — не наша забота
+            cross.append((a, b, c, d))
+        if not cross:
+            break
+        # Сторону выбираем по всем пересекающим строкам разом. По одной
+        # нельзя: у колонки текста сбоку дешевле всего срезать верх до первой
+        # её строки, и так, строка за строкой, съедается сама картинка, а
+        # колонка остаётся.
+        picks = [(min(a for a, _, _, _ in cross), bottom, "r"),
+                 (max(c for _, _, c, _ in cross), bottom, "l"),
+                 (min(b for _, b, _, _ in cross), right, "b"),
+                 (max(d for _, _, _, d in cross), right, "t")]
+        best, area = None, 0
+        for val, _, side in picks:
+            w = (val - left) if side == "r" else (right - val) if side == "l" \
+                else (right - left)
+            h = (val - top) if side == "b" else (bottom - val) if side == "t" \
+                else (bottom - top)
+            if w > 0 and h > 0 and w * h > area:
+                best, area = (val, side), w * h
+        if not best or area < area0 * 0.25:
+            return box          # срезано слишком много — рамке верим как есть
+        val, side = best
+        left, top, right, bottom = (
+            (left, top, val, bottom) if side == "r" else
+            (val, top, right, bottom) if side == "l" else
+            (left, top, right, val) if side == "b" else
+            (left, val, right, bottom))
+    return (left, top, right, bottom)
+
+
 def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
     if not isinstance(agents, list):
         agents = [agents]
@@ -3067,6 +3142,11 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
                             c_bottom = min(H, int(ymax * H / 1000.0) + pad_h)
                             
                             if c_right > c_left and c_bottom > c_top:
+                                lines, pw = _page_lines(pdf_path, page_num)
+                                c_left, c_top, c_right, c_bottom = [
+                                    int(v) for v in _trim_to_picture(
+                                        (c_left, c_top, c_right, c_bottom),
+                                        lines, W / pw if pw else 0)]
                                 cropped = pil_image.crop((c_left, c_top, c_right, c_bottom))
                                 img_filename = f"img_p{page_num:04d}_{c_top}_{c_left}.png"
                                 cropped.save(images_dir / img_filename, format="PNG")

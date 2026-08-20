@@ -550,6 +550,14 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
             # данные оригинала, по ним книгу ищут.
             who = meta.get("author_target") or meta.get("author")
             if who: meta_items.append(("p", who, "_meta_author", None, None, None))
+            # Цикл на титуле нужен затем же, зачем он на бумажном: без него
+            # читатель не знает, которую из трёх книг держит, а у файлов
+            # цикла заглавия сходятся.
+            ser = meta.get("series_target") or meta.get("series")
+            if ser:
+                no = str(meta.get("series_no") or "").strip()
+                meta_items.append(("p", f"{ser}, {no}" if no else ser,
+                                   "_meta_series", None, None, None))
             if meta.get("edition"): meta_items.append(("p", meta["edition"], "_meta_edition", None, None, None))
             if meta.get("publisher"): meta_items.append(("p", meta["publisher"], "_meta_pub", None, None, None))
             if meta.get("year"): meta_items.append(("p", meta["year"], "_meta_year", None, None, None))
