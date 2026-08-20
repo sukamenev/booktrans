@@ -213,20 +213,36 @@ def main():
     # целевом языке — «PUBLICATION DATA», — и по списку из четырёх названий
     # он не находился: книга выходила под именем файла, без автора и с
     # непереведённым словом в заглавии.
-    for name, head in (("по-русски", "## ВЫХОДНЫЕ ДАННЫЕ"),
-                       ("по-английски", "## PUBLICATION DATA"),
-                       ("по-испански", "## DATOS DE PUBLICACIÓN")):
+    # Ключ латиницей — то, на что разбор опирается теперь; прочие случаи
+    # оставлены ради справочников прежних выпусков.
+    for name, head in (("с ключом", "## META — Выходные данные"),
+                       ("ключ по-японски", "## META — 奥付"),
+                       ("прежний, по-русски", "## ВЫХОДНЫЕ ДАННЫЕ"),
+                       ("прежний, по-английски", "## PUBLICATION DATA"),
+                       ("прежний, по-испански", "## DATOS DE PUBLICACIÓN")):
         os.makedirs(f"{d}/xx", exist_ok=True)
         open(f"{d}/xx/scout.md", "w", encoding="utf-8").write(
             f"{head}\n\ntitle = Несуществующий\n"
             "title_target = The Nonexistent One\n"
             "author = Виктория Викторовна Зименкова\n"
             "author_target = Viktoria Viktorovna Zimenkova\n"
-            "genre = sf_fantasy\n\n## ИМЕНА\n\nПётр = Пётр\n")
+            "genre = sf_fantasy\n\n## NAMES — Имена\n\nПётр = Пётр\n")
         got = P.scout_meta(d, "xx")
         ok(f"выходные данные найдены, заголовок {name}",
            got.get("author_target") == "Viktoria Viktorovna Zimenkova"
            and got.get("genre") == "sf_fantasy", got)
+
+    # Двоящиеся термины ищутся в таблицах имён и терминов, и раздел прежде
+    # узнавался по названию: на японском или испанском справочнике не
+    # находилось ничего — тоже молча. Ключ снимает и это.
+    pair = ("| Оригинал | Русский |\n|---|---|\n"
+            "| grand illusion | великая иллюзия / большой обман |\n")
+    ok("двоящийся термин виден под ключом",
+       [t for t, _ in P._forked(f"## TERMS — 用語\n\n{pair}", "ru")]
+       == ["grand illusion"],
+       P._forked(f"## TERMS — 用語\n\n{pair}", "ru"))
+    ok("вне таблиц имён и терминов не ищем",
+       P._forked(f"## CHARACTERS — Персонажи\n\n{pair}", "ru") == [])
 
     import shutil
     shutil.rmtree(d, ignore_errors=True)
