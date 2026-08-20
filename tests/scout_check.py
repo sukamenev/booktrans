@@ -209,6 +209,25 @@ def main():
     ok("названный файл подбирается", P._parse_scout(said)[0] == body,
        P._parse_scout(said)[0][:40] if os.path.exists(f) else "нет файла")
 
+    # Выходные данные из справочника. Заголовок раздела модель пишет на
+    # целевом языке — «PUBLICATION DATA», — и по списку из четырёх названий
+    # он не находился: книга выходила под именем файла, без автора и с
+    # непереведённым словом в заглавии.
+    for name, head in (("по-русски", "## ВЫХОДНЫЕ ДАННЫЕ"),
+                       ("по-английски", "## PUBLICATION DATA"),
+                       ("по-испански", "## DATOS DE PUBLICACIÓN")):
+        os.makedirs(f"{d}/xx", exist_ok=True)
+        open(f"{d}/xx/scout.md", "w", encoding="utf-8").write(
+            f"{head}\n\ntitle = Несуществующий\n"
+            "title_target = The Nonexistent One\n"
+            "author = Виктория Викторовна Зименкова\n"
+            "author_target = Viktoria Viktorovna Zimenkova\n"
+            "genre = sf_fantasy\n\n## ИМЕНА\n\nПётр = Пётр\n")
+        got = P.scout_meta(d, "xx")
+        ok(f"выходные данные найдены, заголовок {name}",
+           got.get("author_target") == "Viktoria Viktorovna Zimenkova"
+           and got.get("genre") == "sf_fantasy", got)
+
     import shutil
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")

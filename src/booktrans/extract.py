@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 
 
 from .tune import (BACK_DIGITS, BACK_LEN, BACK_MIN, BACK_TAIL, CAPTION_MAX,
-                   COL_LINES, COL_PAGES, COVER_AREA,
+                   COL_LINES, COL_PAGES, COVER_AREA, COVER_WORDS,
                    HEAD_GAP, HEAD_LETTERS, HEAD_MAX,
                    HEAD_NEAR,
                    NOTE_GAP, NOTE_RUN, OCR_TRUNC_MIN, OCR_TRUNC_RATIO,
@@ -1746,6 +1746,34 @@ def _pdf(path, marks=None):
     return meta, blocks, cover, images
 
 
+def _visual_cover(work_dir, all_text, blocks, images):
+    """Обложка при зрячем чтении pdf: первая страница целиком.
+
+    Берём отрисовку страницы, а не вложенный в неё растр: на обложке кроме
+    рисунка стоят заглавие и имя автора, и в отдельной картинке их нет. У
+    зрячего чтения обложки не было вовсе, и книга открывалась титулом с
+    именем файла вместо заглавия.
+
+    Примета — короткий текст: на обложке имя, заглавие и подзаголовок, а не
+    проза. Правило площади, которым обходится обычное чтение pdf, тут не
+    годится: там страница без единого знака, а здесь знаки как раз есть.
+    """
+    first = dict(all_text).get(1, "")
+    if not re.search(r"!\[.*?\]\(images/", first):
+        return None
+    words = re.sub(r"!\[.*?\]\([^)]*\)|[#*_>|`\-]", " ", first).split()
+    if len(words) > COVER_WORDS:
+        return None
+    png = work_dir / "page_0001.png"
+    if not png.exists():
+        return None
+    # Рисунок обложки виден на ней самой, и второй раз в книге он не нужен.
+    for b in [x for x in blocks if x.get("_page") == 1 and x["kind"] == "image"]:
+        images.pop(b["text"], None)
+        blocks.remove(b)
+    return png.read_bytes()
+
+
 def _pdf_visual(path, agent, marks=None):
     try:
         import pypdfium2 as pdfium
@@ -1923,9 +1951,7 @@ def _pdf_visual(path, agent, marks=None):
     # so dropping them here preserves the IDs of all subsequent blocks.
     blocks = [b for b in blocks if b.get("_page") not in pure_toc_pages]
 
-    cover = None
-
-    return meta, blocks, cover, images
+    return meta, blocks, _visual_cover(work_dir, all_text, blocks, images), images
 
 
 # Кодировки, в которых реально встречаются книги. Юникод первым, дальше

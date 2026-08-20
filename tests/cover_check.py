@@ -19,7 +19,8 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
-from booktrans import build as B, output as O               # noqa: E402
+from booktrans import build as B
+from booktrans import extract as E, output as O               # noqa: E402
 
 PIXEL = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAE"
@@ -71,7 +72,49 @@ def main():
         O.WRITERS.clear()
         O.WRITERS.update(was)
 
-    print(f"\nслучаев: {len(was)}   с расхождениями: {bad}")
+    # Зрячее чтение pdf обложки не давало вовсе: `cover = None` в конце
+    # разбора. Книга открывалась титулом с именем файла, а рисунок с первой
+    # страницы шёл в текст обычной картинкой.
+    d = tempfile.mkdtemp()
+    pages = os.path.join(d, "pdf_pages")
+    os.makedirs(pages)
+    open(os.path.join(pages, "page_0001.png"), "wb").write(PIXEL)
+    cover_page = ("Виктория Зименкова\n\n![image](images/рис.png)\n\n"
+                  "# Несуществующий\n## или\n# шесть секунд\n")
+    from pathlib import Path
+
+    def look(text, name="рис.png"):
+        blocks = [{"id": "s01.b0001", "kind": "p", "text": "Автор", "_page": 1},
+                  {"id": "s01.img0001", "kind": "image", "text": name, "_page": 1}]
+        images = {name: PIXEL}
+        got = E._visual_cover(Path(pages), [(1, text)], blocks, images)
+        return got, blocks, images
+
+    got, blocks, images = look(cover_page)
+    ok("обложка взята отрисовкой страницы", got == PIXEL, got)
+    ok("рисунок обложки не задвоен в тексте",
+       not images and not [b for b in blocks if b["kind"] == "image"],
+       (list(images), len(blocks)))
+    # Страница с прозой — не обложка, сколько бы картинок на ней ни стояло.
+    proza = "![image](images/рис.png)\n\n" + "слово " * 60
+    ok("страница прозы за обложку не сходит", look(proza)[0] is None)
+    # И страница без картинки тоже: голый титул обложкой не бывает.
+    ok("титул без картинки не обложка",
+       look("Виктория Зименкова\n\n# Несуществующий")[0] is None)
+    shutil.rmtree(d, ignore_errors=True)
+
+    # Имя выходного файла: «Фамилия Имя. Заглавие». Отчество ломало правило —
+    # фамилией считалось всё, кроме первого слова, и выходило
+    # «Викторовна Зименкова Виктория».
+    for who, want in (("Viktoria Viktorovna Zimenkova", "Zimenkova Viktoria Viktorovna"),
+                      ("Виктория Викторовна Зименкова", "Зименкова Виктория Викторовна"),
+                      ("Габриэль Гарсиа Маркес", "Гарсиа Маркес Габриэль"),
+                      ("Sue Burke", "Burke Sue"),
+                      ("Slobodan Milosevic", "Milosevic Slobodan")):
+        got = B.out_name({"title": "Книга", "author": who}, "x").split(". ")[0]
+        ok(f"имя файла: {who[:28]}", got == want, got)
+
+    print(f"\nслучаев: {len(was) + 9}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
