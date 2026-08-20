@@ -616,8 +616,14 @@ def _compound(t, n):
 
     Число только впереди: «COVID-19» и «MP-3» — обозначения, там цифра
     обязана уцелеть.
+
+    Дефис необязателен: «3D» и «2D» пишутся слитно, а по-русски это
+    «трёхмерный» и «двумерный». На книге о восприятии таких мест вышло
+    пятнадцать — больше половины всего раздела. Прописная буква одна: у
+    «5km» цифру терять нельзя, это мера.
     """
-    return bool(re.search(rf"(?<![\w-]){re.escape(n)}-[^\W\d_]", t))
+    return bool(re.search(rf"(?<![\w-]){re.escape(n)}-[^\W\d_]", t)
+                or re.search(rf"(?<![\w-]){re.escape(n)}[A-ZА-ЯЁ](?![\w])", t))
 
 
 # «part 1», «chapter 2» — отсылка внутрь самой книги, и по-русски она пишется
@@ -637,6 +643,7 @@ def _spelled(s, n):
 # Пересчёт меняет само число: «165 pounds» → «75 кг». Для проверки это выглядит
 # сразу двумя бедами — цифра пропала и цифра появилась, — и оба раза напрасно.
 IMPERIAL = (r"(?:pounds?|lbs?|ounces?|oz|inch(?:es)?|feet|foot|ft|yards?|miles?|"
+            r"mph|mpg|psi|"
             r"gallons?|pints?|quarts?|acres?|fahrenheit|°\s?F)\b")
 METRIC = (r"(?:кг|килограмм|г|грамм|см|сантиметр|мм|миллиметр|м|метр|км|километр|"
           r"л|литр|мл|гектар|градус|°\s?C|цельси|kg|cm|mm|km|ml|[gml])\w*\b")
@@ -972,8 +979,10 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
             bad = [x for x in bad if not _ocr_digit(s, x)]
         word |= {i for x in bad if _compound(s, x)}
         bad = [x for x in bad if not _compound(s, x)]
-        spelled |= {i for x in bad if _spelled(s, x)}
-        bad = [x for x in bad if not _spelled(s, x)]
+        spelled |= {i for x in bad if _spelled(s, x)
+                    or lang.spelled_out(tr[i], x, to)}
+        bad = [x for x in bad if not (_spelled(s, x)
+                                      or lang.spelled_out(tr[i], x, to))]
         si |= {i for x in bad if _measure(s, tr[i], x)}
         bad = [x for x in bad if not _measure(s, tr[i], x)]
         sup |= {i for x in bad if _power(tr[i], x)}
