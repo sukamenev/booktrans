@@ -241,5 +241,7 @@
  "qa2_spelled": "numbers the language spells out (\"in part one\", \"the eighties\") do not count: {0} blocks",
  "h_like": "a book of the same cycle translated earlier: its names and terms go to the reconnaissance. Repeat the key; the order is the order of publication",
  "like_none": "no reference found: {}",
- "like_cut": "cycle names cut to the {1} character limit: {0}"
+ "like_cut": "cycle names cut to the {1} character limit: {0}",
+ "reanchored": "block numbering shifted: translation re-anchored, blocks: {}",
+ "like_used": "cycle names: {} books, {} chars"
 }

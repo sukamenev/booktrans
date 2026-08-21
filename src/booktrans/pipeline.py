@@ -1952,6 +1952,65 @@ def scout_meta(work, to=""):
     return out
 
 
+def _id_key(i):
+    """Порядковый ключ номера блока: s10.b0002 → (10, 2)."""
+    m = re.match(r"s(\d+)\.[a-z]*?(\d+)", i)
+    return (int(m.group(1)), int(m.group(2))) if m else (9999, 0)
+
+
+def reanchor(work, blocks, to, log):
+    """Перепривязать сделанный перевод, если нумерация блоков сдвинулась.
+
+    Номера позиционные, и одна перечитанная страница сдвигает их у всей
+    книги: на живой книге лишний заголовок объявил непереведёнными 477
+    блоков из 527, хотя перевод лежал рядом — под прежними номерами. Текст
+    при этом тот же, и отпечатки оригинала в `tr/*.json` это доказывают:
+    сопоставляем старую и новую последовательности отпечатков и переписываем
+    ключи. Платить заново остаётся только за то, что правда изменилось.
+    """
+    raw = [b for b in blocks if b["kind"] in ("p", "verse", "note", "table")]
+    cur = {b["id"]: fingerprint(b["text"]) for b in raw}
+    stored = {}
+    for _, p_ in chunk_files(lpath(work, "tr", to)):
+        d = json.load(open(p_, encoding="utf-8"))
+        stored.update(d.get("src") or {})
+    moved = {i for i, f in stored.items() if cur.get(i) != f}
+    if not moved:
+        return 0
+    old_ids = sorted(stored, key=_id_key)
+    new_ids = [b["id"] for b in raw]
+    sm = difflib.SequenceMatcher(None, [stored[i] for i in old_ids],
+                                 [cur[i] for i in new_ids], autojunk=False)
+    remap = {}
+    for a, b, n in sm.get_matching_blocks():
+        for k in range(n):
+            if old_ids[a + k] != new_ids[b + k]:
+                remap[old_ids[a + k]] = new_ids[b + k]
+    if not remap:
+        return 0
+
+    def rename(d):
+        return {remap.get(k, k): v for k, v in d.items()}
+
+    for sub, keys in (("tr", ("tr", "src")), ("ed", ("src", "edits")),
+                      ("nt", ())):
+        for _, p_ in chunk_files(lpath(work, sub, to)):
+            d = json.load(open(p_, encoding="utf-8"))
+            for k in keys:
+                if isinstance(d.get(k), dict):
+                    d[k] = rename(d[k])
+            if isinstance(d.get("blocks"), list):
+                d["blocks"] = [remap.get(i, i) for i in d["blocks"]]
+            for key in ("notes", "footnotes"):
+                if isinstance(d.get(key), list):
+                    for n_ in d[key]:
+                        if isinstance(n_, dict) and n_.get("block") in remap:
+                            n_["block"] = remap[n_["block"]]
+            _save(p_, d, keep=False, stamp=False)
+    log("  " + T("reanchored", len(remap)))
+    return len(remap)
+
+
 def cycle_names(paths, to, log=None):
     """Имена и термины соседних книг цикла — в порядке их выхода.
 
@@ -1998,12 +2057,22 @@ def cycle_names(paths, to, log=None):
                         or {}).get("title_target") or ""
             except Exception:
                 pass
-        name = name or scout_meta(d, "").get("title_target") \
+        sm = scout_meta(d, "")
+        name = name or sm.get("title_target") \
             or os.path.basename(str(p)).replace(".work", "")
-        out.append(f"### {i}. {name}\n\n{keep}")
+        # Автор и заглавие живут в META и в имена-термины не входят, а
+        # разойтись им проще всего: на третьей книге цикла автор вышел
+        # «Victoria» против «Viktoria» в двух первых.
+        head = "".join(f"{k} = {sm[k]}\n" for k in
+                       ("title_target", "author_target", "series_target")
+                       if sm.get(k))
+        out.append(f"### {i}. {name}\n\n{head}\n{keep}")
         if total >= CYCLE_BUDGET:
             break
-    return "\n\n".join(out)
+    got = "\n\n".join(out)
+    if got and log:
+        log("  " + T("like_used", len(out), len(got)))
+    return got
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',

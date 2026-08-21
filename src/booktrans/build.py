@@ -1018,6 +1018,10 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         new = sorted(_nums(tr[i]) - (a | _nums(s, group=False)))
         word |= {i for x in new if _compound(tr[i], x)}
         new = [x for x in new if not _compound(tr[i], x)]
+        # Оригинал пишет число словом, перевод — цифрой: «двенадцати лет» →
+        # «12 years». Это выбор записи, а не взявшееся ниоткуда сведение.
+        spelled |= {i for x in new if lang.spelled_out(s, x, src_lang)}
+        new = [x for x in new if not lang.spelled_out(s, x, src_lang)]
         si |= {i for x in new if _measure(s, tr[i], x, back=True)}
         new = [x for x in new if not _measure(s, tr[i], x, back=True)]
         if new:

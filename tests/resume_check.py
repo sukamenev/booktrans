@@ -206,7 +206,42 @@ def main():
        f"редактора звали {a.calls} раз")
     shutil.rmtree(d)
 
-    print(f"\nслучаев: 17   с расхождениями: {bad}")
+    # Нумерация блоков позиционная, и перечитанная страница сдвигает её у
+    # всей книги: на живой книге лишний заголовок объявил непереведёнными
+    # 477 блоков из 527, хотя перевод лежал рядом под прежними номерами.
+    # Перепривязка находит его по отпечаткам оригинала.
+    d = tempfile.mkdtemp()
+    texts = [f"Абзац номер {i}, вполне отличимый от прочих." for i in range(6)]
+    old_ids = [f"s02.b{i:04d}" for i in range(1, 7)]
+    new_ids = [f"s03.b{i:04d}" for i in range(1, 7)]     # сдвиг: раздел вклинился
+    os.makedirs(f"{d}/ru/tr")
+    json.dump({"index": 1, "tr": {i: f"перевод {n}" for n, i in enumerate(old_ids)},
+               "src": {i: P.fingerprint(t) for i, t in zip(old_ids, texts)},
+               "footnotes": [{"block": old_ids[2], "kind": "term",
+                              "term": "т", "text": "пояснение"}]},
+              open(f"{d}/ru/tr/0001.json", "w", encoding="utf-8"), ensure_ascii=False)
+    bset = ([{"id": "s01.b0001", "kind": "title", "text": "Новая глава"}]
+              + [{"id": i, "kind": "p", "text": t} for i, t in zip(new_ids, texts)])
+    said = []
+    n = P.reanchor(d, bset, "ru", said.append)
+    got = json.load(open(f"{d}/ru/tr/0001.json", encoding="utf-8"))
+    ok("перепривязка нашла все блоки", n == 6, n)
+    ok("ключи переписаны на новые номера",
+       sorted(got["tr"]) == new_ids and sorted(got["src"]) == new_ids,
+       sorted(got["tr"])[:3])
+    ok("сноска следует за блоком", got["footnotes"][0]["block"] == new_ids[2],
+       got["footnotes"][0]["block"])
+    ok("о перепривязке сказано вслух", any("6" in x for x in said), said)
+    # Повторный запуск — сдвига больше нет, файлы не трогаются.
+    ok("повторной перепривязки нет", P.reanchor(d, bset, "ru", said.append) == 0)
+    # Текст правда изменился — блок остаётся неперепривязанным и уйдёт
+    # в перевод заново: чужой перевод хуже повторного захода.
+    bset[4]["text"] = "Совсем другой текст, которого раньше не было."
+    ok("изменённый блок не подхватывается",
+       P.reanchor(d, bset, "ru", said.append) == 0)
+    shutil.rmtree(d, ignore_errors=True)
+
+    print(f"\nслучаев: 23   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
