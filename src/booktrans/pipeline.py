@@ -23,7 +23,8 @@ from . import lang
 from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
-                   RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS, SCOUT_ROUNDS,
+                   CYCLE_BUDGET, RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
+                   SCOUT_ROUNDS,
                    SCOUT_WORDS,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
@@ -1951,6 +1952,60 @@ def scout_meta(work, to=""):
     return out
 
 
+def cycle_names(paths, to, log=None):
+    """Имена и термины соседних книг цикла — в порядке их выхода.
+
+    Берутся только разделы `NAMES` и `TERMS`: у справочника целиком тридцать
+    тысяч знаков, а имён и терминов — три-семь, и в разведку должно уехать
+    второе. Ключ в заголовке раздела латинский, поэтому разделы находятся
+    на любом целевом языке.
+
+    Порядок значим и передаётся номерами: имя, принятое в вышедшей раньше
+    книге, менять нельзя — читатель встретил его там.
+    """
+    out, total = [], 0
+    for i, p in enumerate(paths, 1):
+        path = p
+        if os.path.isdir(p):
+            path = lpath(p, "scout.md", to)
+        elif not p.endswith(".md"):
+            path = lpath(os.path.splitext(p)[0] + ".work", "scout.md", to)
+        if not os.path.isfile(path):
+            if log:
+                log("  " + T("like_none", p))
+            continue
+        txt = open(path, encoding="utf-8").read()
+        parts = re.split(r"(?m)^(#{1,4}\s.*)$", txt)
+        keep = "".join(parts[i_] + parts[i_ + 1] for i_ in range(1, len(parts), 2)
+                       if re.match(r"#{1,4}\s*(?:NAMES|TERMS|ИМЕНА|ТЕРМИН)",
+                                   parts[i_], re.I))
+        keep = keep.strip()
+        if not keep:
+            continue
+        if total + len(keep) > CYCLE_BUDGET:
+            keep = keep[:max(0, CYCLE_BUDGET - total)]
+            if log:
+                log("  " + T("like_cut", os.path.basename(p), CYCLE_BUDGET))
+        total += len(keep)
+        # Заглавие для ярлыка: сперва указания заказчика — они сильнее
+        # разведки и там стоит верное имя, если её пришлось поправить.
+        d = os.path.dirname(path) or "."
+        said = os.path.join(d, "prompt_meta.json")
+        name = ""
+        if os.path.isfile(said):
+            try:
+                name = (json.load(open(said, encoding="utf-8")).get("meta")
+                        or {}).get("title_target") or ""
+            except Exception:
+                pass
+        name = name or scout_meta(d, "").get("title_target") \
+            or os.path.basename(str(p)).replace(".work", "")
+        out.append(f"### {i}. {name}\n\n{keep}")
+        if total >= CYCLE_BUDGET:
+            break
+    return "\n\n".join(out)
+
+
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
           hints=None, fallback=None):
     """Крупноблочный проход ДО перевода.
@@ -1985,6 +2040,11 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if cur:
         parts.append(cur)
 
+    cycle = ""
+    if (hints or {}).get("cycle"):
+        tpl, _ = lang.prompt("scout_cycle")
+        cycle = "\n\n---\n\n" + tpl + "\n" + hints["cycle"]
+
     half = lpath(work, "scout.part.json", to)
     if os.path.exists(half):
         findings = json.load(open(half, encoding="utf-8"))
@@ -2016,8 +2076,11 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint_meta, _ = lang.prompt("scout_hint_meta")
                 hint += "\n\n" + hint_meta
 
-        prompt = boxed(f"{task}{hint}\n\n---\n\n## Часть {i} из {len(parts)}"
-                       f"\n\n{text}", "SCOUT", "номер этой части")
+        # Имена цикла идут в каждый кусок, а не только в первый: имена
+        # встречаются по всей книге, и согласовать их надо всюду.
+        prompt = boxed(f"{task}{hint}{cycle}\n\n---\n\n"
+                       f"## Часть {i} из {len(parts)}\n\n{text}",
+                       "SCOUT", "номер этой части")
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,

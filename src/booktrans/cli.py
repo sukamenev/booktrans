@@ -303,6 +303,7 @@ def main():
     ap.add_argument("--model", default=os.environ.get("BT_MODEL"), help=T("h_model"))
     ap.add_argument("--effort", choices=("low", "medium", "high"), help="Effort level (low, medium, high)")
     ap.add_argument("--scout", help=T("h_scout"))
+    ap.add_argument("--like", action="append", help=T("h_like"))
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
     ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
@@ -705,7 +706,11 @@ def main():
         log(head("step_scout", n))
         hints = {
             "filename": os.path.basename(args.book),
-            "meta": meta
+            "meta": meta,
+            # Имена соседних книг цикла — только в разведку. Указания
+            # ключом `-pt` уезжают в каждый запрос перевода, а согласование
+            # имён нужно осмыслить один раз: дальше оно живёт в справочнике.
+            "cycle": pipeline.cycle_names(args.like or [], args.to, log),
         }
         ref = pipeline.scout(work, blocks, agent_for("scout"), sysprompt(),
                              task("scout"), args.retries, log, args.to,

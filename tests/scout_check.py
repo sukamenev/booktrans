@@ -244,6 +244,34 @@ def main():
     ok("вне таблиц имён и терминов не ищем",
        P._forked(f"## CHARACTERS — Персонажи\n\n{pair}", "ru") == [])
 
+    # Имена соседних книг цикла (`--like`). В разведку уходят только имена и
+    # термины: справочник целиком — тридцать тысяч знаков, а эти два раздела
+    # — три-семь. Порядок значим: он же порядок выхода книг.
+    import shutil as _sh
+    for k, (title, who) in enumerate((("The First", "Пётр"), ("The Second", "Иван")), 1):
+        os.makedirs(f"{d}/cyc{k}/en", exist_ok=True)
+        open(f"{d}/cyc{k}/en/scout.md", "w", encoding="utf-8").write(
+            f"## META — Выходные данные\n\ntitle_target = {title}\n\n"
+            f"## CHARACTERS — Персонажи\n\nдлинная проза про персонажей\n\n"
+            f"## NAMES — Имена\n\n| {who} | {who} |\n\n"
+            f"## TERMS — Термины\n\n| меч | sword |\n")
+    got = P.cycle_names([f"{d}/cyc1", f"{d}/cyc2"], "en")
+    ok("книги идут в заданном порядке",
+       [l for l in got.splitlines() if l.startswith("### ")]
+       == ["### 1. The First", "### 2. The Second"],
+       [l for l in got.splitlines() if l.startswith("### ")])
+    ok("взяты только имена и термины",
+       "Пётр" in got and "меч" in got and "проза про персонажей" not in got,
+       got[:80])
+    ok("несуществующая книга пропускается",
+       P.cycle_names([f"{d}/нет-такой"], "en") == "")
+    # Предел бережёт запрос разведки: справочник цикла в него уходит целиком.
+    was, P.CYCLE_BUDGET = P.CYCLE_BUDGET, 120
+    small = P.cycle_names([f"{d}/cyc1", f"{d}/cyc2"], "en")
+    P.CYCLE_BUDGET = was
+    ok("предел соблюдается", len(small) < 400, len(small))
+    _sh.rmtree(f"{d}/cyc1", ignore_errors=True)
+
     import shutil
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")

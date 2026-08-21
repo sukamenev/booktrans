@@ -57,6 +57,7 @@ What each part does:
 | `-pt "leave the names in Latin"` | the same, but as a string — a typo in a filename must not silently become an instruction |
 | `--to ru` | target language |
 | `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, and `cmd` for a CLI of your own |
+| `--like Book.work` | a book of the same cycle translated earlier: its names and terms go to the reconnaissance so the cycle keeps one spelling. Repeat the key; the order is the order of publication |
 | `--jobs 5` | five threads for editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
 
 **`--agent` names a set of defaults**, not just a program: each agent carries
