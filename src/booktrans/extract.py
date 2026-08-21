@@ -2237,7 +2237,14 @@ def _md_spans(s, links):
             continue
         part = part.replace("\\*", "\0z").replace("\\_", "\0u")
         for pat, dst in MD_SPANS:
-            part = re.sub(pat, dst, part)
+            # Выделение — только вокруг слова. Ряд подчёркиваний (место под
+            # номер экземпляра, `Экземпляр №________`) разметкой не является,
+            # а разбирался как вложенные теги и рвал fb2: сборка падала на
+            # «mismatched tag».
+            # `\w` тут не годится: подчёркивание само по себе словесный знак,
+            # и ряд `________` проходил бы проверку.
+            part = re.sub(pat, lambda m: m.expand(dst)
+                          if re.search(r"[^\W_]", m.group(1)) else m.group(0), part)
 
         def _link(m):
             links.append(m.group(2))

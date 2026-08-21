@@ -63,7 +63,41 @@ def _inline(s, table, links=None):
         s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<image l:href="#\1"/>', s)
     else:
         s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<img src="\1" alt="math"/>', s)
-    return _autolink(s, tag)
+    return _balance(_autolink(s, tag))
+
+
+def _balance(s):
+    """Свести теги в строке: закрыть незакрытое, выбросить лишние закрытия.
+
+    Разметку внутри абзаца ставит не только чтение, но и модель, и одна
+    непарная пара валила всю сборку: fb2 проверяется разбором, а на
+    «mismatched tag» прогон кончался `SystemExit` — книги не выходило вовсе
+    ни в одном формате. Правильнее свести теги и собрать книгу: потерянный
+    курсив виден глазом, отсутствующая книга — тем более.
+    """
+    if "<" not in s:
+        return s
+    out, stack = [], []
+    for part in re.split(r"(<[^>]*>)", s):
+        if not part.startswith("<"):
+            out.append(part)
+            continue
+        m = re.match(r"</\s*([\w:-]+)", part)
+        if m:                                   # закрывающий
+            name = m.group(1)
+            if name not in stack:
+                continue                        # закрытие без открытия — прочь
+            while stack[-1] != name:            # сперва закрыть вложенные
+                out.append(f"</{stack.pop()}>")
+            stack.pop()
+            out.append(part)
+            continue
+        m = re.match(r"<\s*([\w:-]+)", part)
+        if m and not part.rstrip().endswith("/>"):
+            stack.append(m.group(1))
+        out.append(part)
+    out += [f"</{t}>" for t in reversed(stack)]
+    return "".join(out)
 
 
 def _plain(s):
