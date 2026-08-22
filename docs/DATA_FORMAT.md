@@ -65,6 +65,7 @@
 | `scout.md` | разведка | `pipeline.scout` | справочник по книге; идёт в каждый запрос |
 | `scout.json` | разведка | `pipeline.scout` | какая модель его собрала |
 | `scout.part.json` | разведка | `pipeline.scout` | разборы частей, для продолжения |
+| `scout.no_shrink.json` | разведка | `pipeline._condense_scout` | модели, не осилившие сжатие справочника |
 | `state.json` | перевод | `pipeline.translate` | сводки и термины по кускам, сжатый конспект |
 | `headings.json` | перевод | `pipeline.headings` | заголовок оригинала → перевод |
 | `tr/NNNN.json` | перевод | `pipeline.translate` | черновик перевода куска |
