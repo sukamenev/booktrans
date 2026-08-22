@@ -272,6 +272,19 @@ def main():
     ok("предел соблюдается", len(small) < 400, len(small))
     _sh.rmtree(f"{d}/cyc1", ignore_errors=True)
 
+    # Сноска начинается с термина: по ссылке читалка показывает её одну,
+    # без абзаца вокруг. Начатую с термина не дублируем, склонение — по
+    # основе слова.
+    for it, want in (({"text": "a TV channel.", "term": "Vesti"},
+                      "Vesti — a TV channel."),
+                     ({"text": "Vesti is a TV channel.", "term": "Vesti"},
+                      "Vesti is a TV channel."),
+                     ({"text": "Эсхатологию поминают всуе.", "term": "эсхатология"},
+                      "Эсхатологию поминают всуе."),
+                     ({"text": "без термина.", "term": ""}, "без термина.")):
+        ok(f"термин впереди: {it['term'] or 'пусто'}", P._lead(it) == want,
+           P._lead(it))
+
     import shutil
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")

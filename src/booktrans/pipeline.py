@@ -1421,6 +1421,25 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     return done, skipped, total
 
 
+def _lead(it):
+    """Сноска начинается с термина: «Vesti — российский телеканал…».
+
+    По ссылке читалка показывает одну сноску, без абзаца вокруг, а список в
+    конце книги читают и подряд: без термина это ответы без вопросов. Текст,
+    который с термина и так начинается, не трогаем — по основе слова, чтобы
+    склонённое начало не считалось другим.
+    """
+    t = it["text"]
+    term = re.sub(r"<[^>]+>", "", str(it.get("term") or "")).strip().strip('"«»“”')
+    if not term or len(term) > 60:
+        return t
+    w = term.split()[0]
+    stem = w[:-2] if len(w) >= 6 else w[:-1] if len(w) >= 4 else w
+    if re.search(re.escape(stem), t[:len(term) + 32], re.I):
+        return t
+    return f"{term} — {t}"
+
+
 def all_notes(work, order, to=""):
     """Все сноски в порядке следования по книге, по одной на блок."""
     got, seen = {}, set()
@@ -1445,7 +1464,7 @@ def all_notes(work, order, to=""):
         # примечание, а библиография», но у книги, где авторских сносок нет
         # вовсе, читатель принимал такую сноску за авторскую. Авторские сюда
         # не попадают: они приходят блоками из самой книги.
-        merged[bid] = {"text": " ".join(i["text"] for i in got[bid]),
+        merged[bid] = {"text": " ".join(_lead(i) for i in got[bid]),
                        # Термины — для точной привязки знака сноски: он
                        # ставится в тексте сразу после объясняемого слова.
                        "terms": [i["term"] for i in got[bid] if i.get("term")],
