@@ -2044,7 +2044,7 @@ def cycle_names(paths, to, log=None):
     Порядок значим и передаётся номерами: имя, принятое в вышедшей раньше
     книге, менять нельзя — читатель встретил его там.
     """
-    out, total = [], 0
+    out, total, seen_terms = [], 0, set()
     for i, p in enumerate(paths, 1):
         path = p
         if os.path.isdir(p):
@@ -2061,6 +2061,22 @@ def cycle_names(paths, to, log=None):
                        if re.match(r"#{1,4}\s*(?:NAMES|TERMS|ИМЕНА|ТЕРМИН)",
                                    parts[i_], re.I))
         keep = keep.strip()
+        if not keep:
+            continue
+        # Сквозное имя есть в справочнике каждой книги, и девять копий
+        # «Poole = Пул» съедали бюджет, вытесняя редкие имена. Повтор
+        # выбрасываем; остаётся запись самой ранней книги — по правилу
+        # старшинства она и главная.
+        out_lines = []
+        for line in keep.splitlines():
+            m = re.match(r"\s*\|?\s*([^|=]+?)\s*[|=]", line)
+            k = re.sub(r"[\s*_`]+", " ", m.group(1)).strip().lower() if m else ""
+            if k and not re.fullmatch(r"[-: ]+", k):
+                if k in seen_terms:
+                    continue
+                seen_terms.add(k)
+            out_lines.append(line)
+        keep = "\n".join(out_lines).strip()
         if not keep:
             continue
         if total + len(keep) > CYCLE_BUDGET:
