@@ -1774,6 +1774,31 @@ def _visual_cover(work_dir, all_text, blocks, images):
     return png.read_bytes()
 
 
+def _verse_lines(p):
+    """Строки эпиграфа из блока зрячего чтения, если это он.
+
+    Модель отдаёт эпиграф markdown-цитатой (`> строка  `) либо многострочным
+    курсивом с жёсткими переносами (`*строка,␣␣`). Разбор ни того ни другого
+    не знал: знаки `>` уезжали в текст и в перевод, а стихи склеивались в
+    прозу. Такой блок — стихи, строка за строкой.
+    """
+    lines = [l.rstrip("\r") for l in p.split("\n")]
+    body = [l for l in lines if l.strip()]
+    if not body:
+        return None
+    quoted = all(l.lstrip().startswith(">") for l in body)
+    hard = sum(1 for l in lines[:-1] if l.endswith("  "))
+    if not quoted and hard < 2:
+        return None
+    out = [re.sub(r"^\s*>\s?", "", l).strip() for l in body]
+    out = [l for l in out if l]
+    # Курсив, обнимающий весь эпиграф разом: звёздочки стоят только на краях.
+    if out and out[0].startswith("*") and out[-1].endswith("*") \
+            and "".join(out).count("*") == 2:
+        out[0], out[-1] = out[0][1:], out[-1][:-1]
+    return [l for l in (x.strip() for x in out) if l] or None
+
+
 def _pdf_visual(path, agent, marks=None):
     try:
         import pypdfium2 as pdfium
@@ -1870,6 +1895,14 @@ def _pdf_visual(path, agent, marks=None):
                     blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": post_text, "_page": page_num})
                 continue
                 
+            verse = _verse_lines(p)
+            if verse:
+                for vl in verse:
+                    n += 1
+                    blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "verse",
+                                   "text": vl, "_page": page_num})
+                continue
+
             m = re.match(r"^(#{1,6})\s+(.*)", p)
             if m:
                 sec += 1
@@ -1893,7 +1926,7 @@ def _pdf_visual(path, agent, marks=None):
 
     # Нормализация Markdown после визуального извлечения
     for b in blocks:
-        if "text" not in b or b["kind"] not in ("p", "title", "table"):
+        if "text" not in b or b["kind"] not in ("p", "title", "table", "verse"):
             continue
             
         # Сноски-определения: [^1]: текст

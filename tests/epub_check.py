@@ -29,6 +29,11 @@ PIXEL = base64.b64decode(
     "hQGAhKmMIQAAAABJRU5ErkJggg==")
 OTHER = PIXEL + b"\x00"          # другая картинка, не обложка
 
+# Сноска с разметкой: курсив названий ставит и переводчик тегами, и модель
+# звёздочками. `escape` отдавал читателю буквальное «<i>Vesti</i>».
+NOTES = {"s01.b0002": {"text": "Прим.: <i>Vesti</i> is a *Russian* channel.",
+                       "terms": ["дальше"], "source_only": False}}
+
 ITEMS = [
     ("title", "Глава первая", "s01.b0001", None, None),
     ("p", "Текст первой главы, <a1>дальше</a1>.", "s01.b0002",
@@ -45,7 +50,7 @@ def build():
     d = tempfile.mkdtemp()
     p = os.path.join(d, "book.epub")
     O.write_epub(p, {"title": "Книга", "author": "Автор", "target_lang": "ru"},
-                 ITEMS, {}, {"photo.png": OTHER, "cover.png": PIXEL},
+                 ITEMS, NOTES, {"photo.png": OTHER, "cover.png": PIXEL},
                  "Прим.:", {}, cover=PIXEL)
     return d, p
 
@@ -140,6 +145,30 @@ def main():
     ok("epub говорит, сколько картинок вложил",
        any("1" in x and "2" in x for x in said), said)
 
+    nx = z.read("OEBPS/notes.xhtml").decode()
+    ok("разметка сноски развёрнута, а не экранирована",
+       "<i>Vesti</i>" in nx and "<i>Russian</i>" in nx and "&lt;i&gt;" not in nx,
+       nx[nx.find("Vesti") - 30:nx.find("Vesti") + 40])
+
+    # Точная привязка: сборка вставила метку после термина, и знак сноски
+    # стоит у объясняемого слова, а не в конце абзаца.
+    import booktrans.output as _o
+    anch = _o.anchor_note("Текст первой главы, <a1>дальше</a1>.", "s01.b0002",
+                          ["дальше"])
+    d2 = tempfile.mkdtemp()
+    p2 = os.path.join(d2, "a.epub")
+    O.write_epub(p2, {"title": "Книга", "target_lang": "ru"},
+                 [("title", "Глава", "s01.b0001", None, None, 1),
+                  ("p", anch, "s01.b0002", None, None, None)],
+                 dict(NOTES), {}, "Прим.:", {})
+    zz = zipfile.ZipFile(p2)
+    ch = "".join(zz.read(n).decode() for n in zz.namelist() if "ch" in n)
+    at = re.search(r"дальше<sup>", ch)
+    ok("знак сноски стоит у термина", bool(at) and "дальше.<sup" not in ch,
+       re.findall(r".{14}<sup>.{28}", ch))
+    ok("метка не протекла в книгу", "\ue000" not in ch and "\ue001" not in ch)
+    shutil.rmtree(d2, ignore_errors=True)
+
     ok("внутренняя ссылка несёт имя файла",
        bool(re.search(r'href="ch\d+\.xhtml#s02\.b0001"', x)),
        re.findall(r'href="[^"]*#[^"]*"', x))
@@ -152,7 +181,7 @@ def main():
     d = tempfile.mkdtemp()
     h = os.path.join(d, "book.html")
     O.write_html(h, {"title": "Книга", "author": "Автор", "target_lang": "ru"},
-                 ITEMS, {}, {"photo.png": OTHER}, "Прим.:", {}, cover=PIXEL)
+                 ITEMS, NOTES, {"photo.png": OTHER}, "Прим.:", {}, cover=PIXEL)
     t = open(h, encoding="utf-8").read()
     # Файл самодостаточный: картинки уходят в data:, и обложка тоже — иначе
     # при пересылке одним файлом от неё ничего не осталось бы.
@@ -160,6 +189,9 @@ def main():
     ok("картинка вшита, а не ссылкой",
        t.count("data:image/png;base64,") == 2, re.findall(r'src="([^"]{0,24})', t))
     ok("пропавшую не выдумали", "нет-такой.png" not in t)
+    ok("разметка сноски в html развёрнута",
+       "<i>Vesti</i>" in t and "&lt;i&gt;" not in t,
+       t[t.find("Vesti") - 30:t.find("Vesti") + 30])
     ok("внутренняя ссылка в html без имени файла",
        'href="#s02.b0001"' in t and 'id="s02.b0001"' in t,
        re.findall(r'href="#[^"]*"', t))

@@ -572,6 +572,11 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
                    b["text"] if b["kind"] == "image" else tr.get(b["id"], ""),
                    b["id"], b.get("links"), b.get("spans"), b.get("level"))
                   for b in blocks if not b.get("drop")]
+        # Точная привязка сносок: метка встаёт в тексте сразу после термина,
+        # и знак сноски выходит у объясняемого слова, а не в конце абзаца.
+        items = [(k, output.anchor_note(t, bid, notes[bid].get("terms"))
+                  if k == "p" and isinstance(notes.get(bid), dict) else t,
+                  bid, *rest) for k, t, bid, *rest in items]
         dhead, dbody = details_lines(work, st, blocks, to)
         if dhead:
             items += [("title", dhead, "_details", None, None, 1)]

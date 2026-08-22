@@ -32,6 +32,58 @@ def _mime(name):
 BARE_URL = re.compile(r"(https?://[a-zA-Z0-9./\-?=_&;#%~+]+[a-zA-Z0-9/])")
 
 
+# Точная привязка сноски: невидимая метка, вставленная сборкой сразу после
+# термина. Каждый формат заменяет её своим знаком; блок без метки получает
+# знак в конце абзаца, как раньше. Символы — из личной области Юникода:
+# их не трогают ни экранирование, ни разбор разметки.
+NOTE_AT = "\ue000{}\ue001"
+NOTE_TOK = re.compile("\ue000[^\ue001]*\ue001")
+
+
+def anchor_note(text, bid, terms):
+    """Вставить метку сноски после первого из терминов, найденного в тексте.
+
+    Знак сноски стоял в конце абзаца, каким бы длинным тот ни был: читатель
+    видел номер за сотню слов от объясняемого оборота и гадал, к чему он.
+    Термин в переводе бывает склонён, поэтому каждому слову позволен хвост
+    до трёх букв. Не нашлось ни одного — вернуть текст как есть: знак в
+    конце абзаца честнее знака не у того слова.
+    """
+    for t in terms or ():
+        t = re.sub(r"<[^>]+>", "", str(t)).strip()
+        if not t:
+            continue
+        # Основа слова вместо целого: «зелёный змий» должен найтись в
+        # «зелёного змия». Совпадать обязаны все слова подряд, поэтому
+        # обрезка хвоста ложных находок почти не даёт.
+        stems = [w[:-2] if len(w) >= 6 else w[:-1] if len(w) >= 4 else w
+                 for w in t.split()]
+        pat = r"\s+".join(re.escape(w) + r"\w{0,4}" for w in stems)
+        best = None
+        for m in re.finditer(pat, text, re.I):
+            # внутрь тега не попадаем: метка после «Vesti» из <i>Vesti</i>
+            # должна встать за закрывающим тегом
+            if text.count("<", 0, m.start()) != text.count(">", 0, m.start()):
+                continue
+            best = m
+            break
+        if best:
+            at = best.end()
+            while re.match(r"</[^>]+>", text[at:]):
+                at = text.index(">", at) + 1
+            return text[:at] + NOTE_AT.format(bid) + text[at:]
+    return text
+
+
+def _anchored(rendered, bid, mark):
+    """Поставить знак по метке. Возвращает (текст, что осталось добавить в
+    конец): метка нашлась — хвост пустой."""
+    tok = NOTE_AT.format(bid)
+    if tok in rendered:
+        return rendered.replace(tok, mark), ""
+    return NOTE_TOK.sub("", rendered), mark
+
+
 def _autolink(s, tag):
     """Сделать ссылками голые адреса. Внутрь готовых тегов не заходим: адрес
     в `href` уже ссылка, и обернуть его второй раз значит сломать разметку."""
@@ -179,7 +231,8 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
             out.append("[" + st.get("illustration", "иллюстрация: {alt}").format(alt=text) + "]")
         else:
             mark = f" [{nums[bid]}]" if bid in nums else ""
-            out.append(_plain(text) + mark)
+            body, mark = _anchored(_plain(text), bid, mark)
+            out.append(body + mark)
             out.append("")
     if notes:
         out += ["", "", st.get("notes_title", "Примечания").upper(), ""]
@@ -188,8 +241,8 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
-            body = _md_inline(body)
-            out += [f"{i}. {body}", ""]
+            # Разметку разворачиваем и снимаем: в голом тексте тегам не место.
+            out += [f"{i}. {_plain(_md_inline(body))}", ""]
     open(path, "w", encoding="utf-8").write("\n".join(out).strip() + "\n")
 
 
@@ -334,7 +387,8 @@ def write_md(path, meta, items, notes, images, note_prefix, st=None, cover=None,
             o.append(f"{fence}\n{text}\n{fence}")
         elif kind == "p":
             mark = f"[^{nums[bid]}]" if bid in nums else ""
-            o.append(at + _md_par(_md(text, links)) + mark)
+            body, mark = _anchored(_md_par(_md(text, links)), bid, mark)
+            o.append(at + body + mark)
     flush()
 
     if notes:
@@ -422,8 +476,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         elif kind == "p":
             mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">[{nums[bid]}]</a></sup>'
                     if bid in nums else "")
-            o.append(f"<p{_at(bid, targets)}>"
-                     f"{_inline(text, HTML_INLINE, links)}{mark}</p>")
+            body, mark = _anchored(_inline(text, HTML_INLINE, links), bid, mark)
+            o.append(f"<p{_at(bid, targets)}>{body}{mark}</p>")
     if notes:
         o.append('<div class="notes"><h2>' + escape(st.get("notes_title", "Примечания")) + '</h2><ol>')
         for i, (bid, txt) in enumerate(notes.items(), 1):
@@ -431,8 +485,10 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
-            body = _md_inline(body)
-            o.append(f'<li id="n{i}">{escape(body)} <a href="#r{i}">↑</a></li>')
+            # Сноска несёт разметку — курсив названий ставит и переводчик, и
+            # модель звёздочками. `escape` отдавал читателю буквальное «<i>».
+            body = _inline(_md_inline(body), HTML_INLINE)
+            o.append(f'<li id="n{i}">{body} <a href="#r{i}">↑</a></li>')
         o.append("</ol></div>")
     o.append("</body></html>")
     open(path, "w", encoding="utf-8").write("\n".join(o))
@@ -528,8 +584,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             elif kind == "p":
                 mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">[{nums[bid]}]</a></sup>'
                         if bid in nums else "")
-                o.append(f"<p{_at(bid, targets)}>"
-                         f"{_inline(text, HTML_INLINE, links)}{mark}</p>")
+                body, mark = _anchored(_inline(text, HTML_INLINE, links), bid, mark)
+                o.append(f"<p{_at(bid, targets)}>{body}{mark}</p>")
         files[f"ch{i:03d}.xhtml"] = xhtml("".join(o), titles[i - 1])
 
     if notes:
@@ -539,9 +595,13 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
-            body = _md_inline(body)
-            o.append(f'<li id="n{i}">{escape(body)}</li>')
-        o.append("</ol></div>")
+            body = _inline(_md_inline(body), HTML_INLINE)
+            o.append(f'<li id="n{i}">{body}</li>')
+        # Хвост от html-сборщика: там список обёрнут в <div class="notes">, а
+        # здесь обёртки нет, и закрытие оставалось сиротой. Читалки прощали,
+        # разбор xml — нет; проверка не видела, потому что собирала книгу без
+        # единой сноски.
+        o.append("</ol>")
         files["notes.xhtml"] = xhtml("".join(o), st.get("notes_title", "Примечания"))
 
     nav = ['<?xml version="1.0" encoding="utf-8"?>',
@@ -990,6 +1050,9 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
             p_tex = _tex(text, links, notes_dict=notes_dict)
             if bid.startswith("_about") or bid.startswith("_details"):
                 p_tex = r"\noindent " + p_tex
+            # В LaTeX сноска и есть её знак: по метке она встаёт прямо за
+            # объясняемым словом.
+            p_tex, note = _anchored(p_tex, bid, note)
             o.append(p_tex + note + "\n")
     if in_abstract:
         o.append(r"\end{quotation}")
@@ -1366,7 +1429,8 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
             if b["id"] in nid:
                 num = next(n for k, n, _, _ in note_seq if k == nid[b["id"]])
                 a = f'<a l:href="#{nid[b["id"]]}" type="note">[{num}]</a>'
-            w(f"<p{aid(b)}>{esc(text, b.get('links'), notes_map)}{a}</p>")
+            body, a = _anchored(esc(text, b.get('links'), notes_map), b["id"], a)
+            w(f"<p{aid(b)}>{body}{a}</p>")
     close_poem()
     if open_sec:
         w("</section>")
@@ -1398,7 +1462,7 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
             if not from_source and not body.startswith(pref):
                 body = pref + body
             w(f'<section id="{anchor}"><title><p>{num}</p></title>'
-              f'<p>{esc(body)}</p></section>')
+              f'<p>{_inline(_md_inline(body), FB2_INLINE)}</p></section>')
         w("</body>")
 
     def binary(name, raw):
