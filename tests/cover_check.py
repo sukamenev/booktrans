@@ -164,7 +164,25 @@ def main():
         got = B.out_name({"title": "Книга", "author": who}, "x").split(". ")[0]
         ok(f"имя файла: {who[:28]}", got == want, got)
 
-    print(f"\nслучаев: {len(was) + 14}   с расхождениями: {bad}")
+    # Ключ --name-series: цикл и номер в имени, книги цикла выстраиваются
+    # по порядку чтения. Хвост «.0» у номера из calibre отрезается.
+    m = {"title": "Плот", "author_target": "Стивен Бакстер",
+         "series": "Xeelee Sequence", "series_target": "Ксили",
+         "series_no": "1"}
+    ok("имя с циклом", B.out_name(m, "x", True) == "Бакстер Стивен. Ксили 1. Плот",
+       B.out_name(m, "x", True))
+    ok("без ключа цикл не лезет в имя",
+       B.out_name(m, "x") == "Бакстер Стивен. Плот", B.out_name(m, "x"))
+    m2 = dict(m, series_no="3.0"); m2.pop("series_target")
+    ok("номер calibre без хвоста .0",
+       B.out_name(m2, "x", True) == "Бакстер Стивен. Xeelee Sequence 3. Плот",
+       B.out_name(m2, "x", True))
+    m3 = {"title": "Плот", "author_target": "Стивен Бакстер"}
+    ok("цикла нет — имя обычное",
+       B.out_name(m3, "x", True) == "Бакстер Стивен. Плот",
+       B.out_name(m3, "x", True))
+
+    print(f"\nслучаев: {len(was) + 18}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

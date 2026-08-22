@@ -322,7 +322,7 @@ PATRONYMIC = re.compile(r"(?:ович|евич|ьич|ична|инична|ов
                         r"ovich|evich|ovna|evna|ichna)$", re.I)
 
 
-def out_name(meta, fallback):
+def out_name(meta, fallback, with_series=False):
     """Имя выходного файла: «Фамилия Имя. Заглавие».
 
     Так книги называют в библиотеках, и в файловом списке они выстраиваются
@@ -341,6 +341,13 @@ def out_name(meta, fallback):
     if not title:
         code = meta.get("target_lang") or "tr"
         return f"{fallback}_{code}"
+    # По ключу --name-series в имя входит цикл с номером: книги одного цикла
+    # тогда выстраиваются по порядку чтения, а не по алфавиту заглавий.
+    if with_series:
+        ser = meta.get("series_target") or meta.get("series")
+        no = re.sub(r"\.0$", "", str(meta.get("series_no") or "").strip())
+        if ser:
+            title = f"{ser} {no}. {title}" if no else f"{ser}. {title}"
     au = (meta.get("author_target") or meta.get("author") or "").split()
     if len(au) == 3 and PATRONYMIC.search(au[1]):
         who = f"{au[2]} {au[0]} {au[1]}"

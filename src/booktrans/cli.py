@@ -304,6 +304,7 @@ def main():
     ap.add_argument("--effort", choices=("low", "medium", "high"), help="Effort level (low, medium, high)")
     ap.add_argument("--scout", help=T("h_scout"))
     ap.add_argument("--like", action="append", help=T("h_like"))
+    ap.add_argument("--name-series", action="store_true", help=T("h_name_series"))
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
     ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
@@ -811,7 +812,7 @@ def main():
         if args.out:
             dests = [args.out]
         else:
-            dests = [f"{build.out_name(meta, base)}.{e}"
+            dests = [f"{build.out_name(meta, base, args.name_series)}.{e}"
                      for e in ("fb2.zip", "epub")]
         for dest in dests:
             # Затереть исходник переводом — потеря невосполнимая, а совпасть

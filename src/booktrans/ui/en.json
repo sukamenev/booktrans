@@ -243,5 +243,6 @@
  "like_none": "no reference found: {}",
  "like_cut": "cycle names cut to the {1} character limit: {0}",
  "reanchored": "block numbering shifted: translation re-anchored, blocks: {}",
- "like_used": "cycle names: {} books, {} chars"
+ "like_used": "cycle names: {} books, {} chars",
+ "h_name_series": "include the cycle and book number in the output file name: “Author. Cycle 2. Title”"
 }
