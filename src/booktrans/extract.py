@@ -1786,6 +1786,11 @@ def _verse_lines(p):
     body = [l for l in lines if l.strip()]
     if not body:
         return None
+    # Строка разметки стихом не бывает: заголовки титула тоже приходят с
+    # жёсткими переносами, и без этого «# Несуществующий» становился
+    # стихотворной строкой с решёткой в тексте.
+    if any(re.match(r"\s*(#{1,6}\s|!\[|\|)", l) for l in body):
+        return None
     quoted = all(l.lstrip().startswith(">") for l in body)
     hard = sum(1 for l in lines[:-1] if l.endswith("  "))
     if not quoted and hard < 2:
