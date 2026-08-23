@@ -197,6 +197,62 @@ def main():
        re.findall(r'href="#[^"]*"', t))
     shutil.rmtree(d)
 
+    # --- чтение: страница без текста и выбор обложки.
+    # Обложка часто стоит на странице, где ничего, кроме <img>, и без явной
+    # пометки в описи. Прежде такая страница выбрасывалась целиком («страница
+    # без текста»), картинка пропадала, а обложкой становилась первая
+    # попавшаяся картинка манифеста — на живой книге это был логотип
+    # издательства.
+    from booktrans import extract as E
+    d = tempfile.mkdtemp()
+    src = os.path.join(d, "к.epub")
+    with zipfile.ZipFile(src, "w") as zz:
+        zz.writestr("mimetype", "application/epub+zip")
+        zz.writestr("META-INF/container.xml",
+                    '<?xml version="1.0"?><container version="1.0" '
+                    'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                    '<rootfiles><rootfile full-path="content.opf" '
+                    'media-type="application/oebps-package+xml"/></rootfiles></container>')
+        zz.writestr("content.opf",
+                    '<?xml version="1.0"?><package version="2.0" '
+                    'xmlns="http://www.idpf.org/2007/opf" unique-identifier="u">'
+                    '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+                    '<dc:title>К</dc:title><dc:identifier id="u">x</dc:identifier></metadata>'
+                    '<manifest>'
+                    '<item id="l" href="logo.png" media-type="image/png"/>'
+                    '<item id="c" href="art.png" media-type="image/png"/>'
+                    '<item id="p1" href="p1.xhtml" media-type="application/xhtml+xml"/>'
+                    '<item id="p2" href="p2.xhtml" media-type="application/xhtml+xml"/>'
+                    '<item id="p3" href="p3.xhtml" media-type="application/xhtml+xml"/>'
+                    '<item id="p4" href="p4.xhtml" media-type="application/xhtml+xml"/>'
+                    '</manifest><spine><itemref idref="p1"/><itemref idref="p2"/>'
+                    '<itemref idref="p4"/>'
+                    '<itemref idref="p3"/></spine></package>')
+        X = '<html xmlns="http://www.w3.org/1999/xhtml"><body>%s</body></html>'
+        zz.writestr("p1.xhtml", X % '<img src="art.png" alt=""/>')
+        zz.writestr("p2.xhtml", X % '<p>Глава и её текст, вполне длинный.</p>')
+        zz.writestr("p3.xhtml", X % '<img src="logo.png" alt=""/>')
+        # оглавление без слова «Contents»: короткие блоки-ссылки в другие файлы
+        zz.writestr("p4.xhtml", X % "".join(
+            f'<p><a href="p2.xhtml#c{i}">Chapter {i}</a></p>' for i in range(1, 9)))
+        zz.writestr("art.png", OTHER)
+        zz.writestr("logo.png", PIXEL)
+    meta, blocks, cover, images = E.read_book(src, styles=None)
+    ok("обложка — картинка первой бестекстовой страницы", cover == OTHER,
+       len(cover or b""))
+    ok("обложка не задвоена блоком",
+       "art.png" not in [b["text"] for b in blocks if b["kind"] == "image"])
+    ok("вклейка без текста уцелела блоком",
+       "logo.png" in [b["text"] for b in blocks if b["kind"] == "image"],
+       [b["text"] for b in blocks if b["kind"] == "image"])
+    # Страница «Chapter 1…Chapter 8» из одних ссылок — оглавление, а не
+    # главы: прежде она уходила в перевод заголовками без содержания.
+    ok("оглавление без слова Contents выброшено",
+       not [b for b in blocks if "Chapter" in b.get("text", "")]
+       and meta["_cleaned"]["junk_pages"] == 1,
+       (meta["_cleaned"], [b["text"][:16] for b in blocks]))
+    shutil.rmtree(d, ignore_errors=True)
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 

@@ -794,11 +794,10 @@ def _epub(path, styles=None, encoding=None, ask=None):
         if "cover" in (it.get("properties") or "") or re.search(r"cover.*\.(jpe?g|png)$", href, re.I):
             cover = _zpath(base, href)
             break
-    if cover is None:
-        for it in manifest.values():
-            if (it.get("media-type") or "").startswith("image/"):
-                cover = _zpath(base, it.get("href"))
-                break
+    # Нет явной пометки — обложку ещё может дать первая страница без текста
+    # (ниже), и лишь после неё берётся первая попавшаяся картинка манифеста:
+    # на живой книге эта последняя очередь выдала логотип издательства.
+    first_cover = None
 
     blocks = []
     images = {}
@@ -840,10 +839,36 @@ def _epub(path, styles=None, encoding=None, ask=None):
             at.setdefault(i, []).append(a)
         plain = " ".join(_bare(x[1]) for x in got if x[0] in ("p", "title")).strip()
         if not plain:
-            continue                          # страница без текста
+            # Страница без текста — не мусор, а вклейка или обложка: прежде
+            # она выбрасывалась целиком, и картинка пропадала из книги.
+            # Первая такая страница с единственной картинкой — обложка,
+            # если явной нет; остальные оставляют картинки блоками.
+            pics = [x for x in got if x[0] == "image"]
+            if pics and sec == 1 and len(pics) == 1 and cover is None:
+                first_cover = pics[0][1]
+                continue
+            skip = os.path.basename(cover or "")
+            for kind, text, *rest in pics:
+                if text == skip:
+                    continue                 # обложка в теле второй раз не нужна
+                n += 1
+                blocks.append({"id": f"s{sec:02d}.b{n:04d}",
+                               "kind": "image", "text": text})
+            continue
         if JUNK_PAGE.match(plain) and len(plain.split()) < 120:
             stats["junk_pages"] += 1
             continue                          # оглавление, реклама, навигация
+        # Оглавление не всегда подписано словом «Contents»: бывает страница
+        # сразу из «Chapter 1… Chapter 16». Примета — почти все блоки
+        # короткие и ведут в другие файлы книги. На живой книге такие
+        # «главы без содержания» уходили в перевод заголовками.
+        texty = [x for x in got if x[0] in ("p", "title")]
+        linked = [x for x in texty
+                  if any(not l.startswith("#") for l in (x[2] or ()))]
+        if (len(texty) >= 5 and len(linked) >= len(texty) * 0.8
+                and all(len(_bare(x[1])) <= 60 for x in texty)):
+            stats["junk_pages"] += 1
+            continue
         for i, (kind, text, lnk, note_id, *sp) in enumerate(got):
             n += 1
             blk = {"id": f"s{sec:02d}.b{n:04d}", "kind": kind, "text": text}
@@ -863,6 +888,16 @@ def _epub(path, styles=None, encoding=None, ask=None):
             cover_bytes = zf.read(cover)
         except KeyError:
             pass
+    if cover_bytes is None and first_cover:
+        cover_bytes = images.pop(first_cover, None)
+    if cover_bytes is None:
+        for it in manifest.values():
+            if (it.get("media-type") or "").startswith("image/"):
+                try:
+                    cover_bytes = zf.read(_zpath(base, it.get("href")))
+                except KeyError:
+                    continue
+                break
     _link_inside(blocks)
     _prune_links(blocks)
     if lost and not blocks:
