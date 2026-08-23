@@ -13,6 +13,7 @@
 
     python3 tests/scout_check.py
 """
+import json
 import os
 import re
 import sys
@@ -142,6 +143,36 @@ def main():
     got = P._condense_scout(BOOK, [Greedy()], "", 1, hush, f"{d}/g.md")
     ok("выпотрошенный справочник отвергнут", got == BOOK,
        f"стало {len(got)} знаков вместо {len(BOOK)}")
+
+    # Дожали не до конца — при неизменном справочнике ту же модель не
+    # переспрашиваем: на живой книге второй прогон затевал то же сжатие
+    # заново, с тем же исходом и за те же деньги.
+    class Halfway(Obedient):
+        """Уступает, но до предела не дожимает."""
+        model = "упрямая"
+        def run(self, system, user):
+            import re as _re
+            want = int(_re.search(r"надо около (\d+)", user).group(1))
+            part = _part(user)
+            out = part[:max(want + 3000, len(part) * 2 // 3)]
+            return _box(out, want), {"model": self.model, "cost_usd": 0}
+    hw = Halfway()
+    first = P._condense_scout(BOOK, [hw], "", 1, hush, f"{d}/hw.md")
+    cache = json.load(open(f"{d}/hw.no_shrink.json", encoding="utf-8"))
+    ok("дожато не до конца — размер записан",
+       len(first) > P.SCOUT_BUDGET and cache.get("упрямая") == len(first),
+       cache)
+    # повторный заход с тем же текстом — запросов быть не должно
+    class Counter(Halfway):
+        model = "упрямая"
+        def __init__(self): self.calls = 0
+        def run(self, system, user):
+            self.calls += 1
+            return Halfway.run(self, system, user)
+    c = Counter()
+    again = P._condense_scout(first, [c], "", 1, hush, f"{d}/hw.md")
+    ok("повторного сжатия тем же не было", c.calls == 0 and again == first,
+       c.calls)
 
     # Уже короткий справочник не трогаем вовсе: запрос стоит денег.
     small = "## ИМЕНА\n\n" + "\n".join(table(3)) + "\n"

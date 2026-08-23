@@ -2316,14 +2316,21 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     no_shrink_path = os.path.join(
         os.path.dirname(root),
         f"{head}.no_shrink" + (f"_{suffix}" if suffix else "") + ".json")
-    failed_models = []
+    # Кэш «дожать не вышло» хранит и достигнутый размер: модель, остановившаяся
+    # на 32 602 знаках, при следующем прогоне видела те же 32 602 и честно
+    # начинала заново — с тем же исходом и за те же деньги. Пока справочник не
+    # изменился (размер тот же), ту же модель не переспрашиваем; правка руками
+    # или новая разведка меняют размер — и попытка снова разрешена.
+    failed_models = {}
     if os.path.exists(no_shrink_path):
         try:
-            failed_models = json.load(open(no_shrink_path, encoding="utf-8"))
+            got = json.load(open(no_shrink_path, encoding="utf-8"))
+            failed_models = got if isinstance(got, dict) else {m: None for m in got}
         except Exception:
             pass
     primary_model = getattr(who[0], "model", "?")
-    if primary_model in failed_models:
+    reached = failed_models.get(primary_model, -1)
+    if primary_model in failed_models and reached in (None, len(merged)):
         log("  " + T("scout_big", out_path))
         return merged
         
@@ -2348,11 +2355,16 @@ def _condense_scout(merged, who, system, retries, log, out_path):
         log("  " + T("scout_condense_no", len(_rows(merged)), len(_rows(merged))))
         log("  " + T("scout_big", out_path))
         if model != "?":
-            if model not in failed_models:
-                failed_models.append(model)
+            failed_models[model] = len(merged)
             json.dump(failed_models, open(mkparent(no_shrink_path), "w",
                                           encoding="utf-8"), ensure_ascii=False)
         return merged
+    # Продвинулись, но до предела не дожали — это тоже «не вышло»: без записи
+    # следующий прогон начинал то же сжатие заново.
+    if len(now) > SCOUT_BUDGET and model != "?":
+        failed_models[model] = len(now)
+        json.dump(failed_models, open(mkparent(no_shrink_path), "w",
+                                      encoding="utf-8"), ensure_ascii=False)
     open(mkparent(out_path), "w", encoding="utf-8").write(now)
     log("  " + T("scout_condense_ok", len(merged), len(now),
                  len(_rows(merged)), len(_rows(now))))
