@@ -25,7 +25,7 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
                    CYCLE_BUDGET, RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
-                   SCOUT_WORDS,
+                   SCOUT_WORDS, STUB_MIN, STUB_SHARE,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
                    VERSE_GROUP, HEAD_CHUNK)
@@ -926,6 +926,12 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 try:
                     got = _run(fb, system, prompt, retries,
                                lambda o: _parse_translate(o, expected, srcs), log)
+                    # У перевода свой обход цепочки, мимо _chain_run, и
+                    # пометка «после отказа» здесь терялась: кусок, спасённый
+                    # запасной моделью, редактура отдавала основному
+                    # редактору — под тот же отказ.
+                    if isinstance(e, Refused):
+                        got = (got[0], dict(got[1], after_refusal=True), got[2])
                     break
                 except (Refused, RuntimeError, Fatal) as e2:
                     last = getattr(e2, "first", last)
@@ -1011,8 +1017,8 @@ def _parse_translate(out, expected, src=None):
     # на порядок не бывает.
     if src:
         stubs = [i for i, t in res.items()
-                 if len(src.get(i, "")) >= 200
-                 and len(t) < len(src[i]) * 0.15]
+                 if len(src.get(i, "")) >= STUB_MIN
+                 and len(t) < len(src[i]) * STUB_SHARE]
         if stubs:
             first = min(stubs, key=lambda i: expected.index(i)
                         if i in expected else 10 ** 9)
