@@ -552,6 +552,30 @@ def condense(state, upto, agent, retries, log, fallback=None):
     return new
 
 
+def verse_canon(state, blocks):
+    """Канонические переводы стихотворных строк этого куска.
+
+    Стихи повторяются: рефрены, песни, поэма, которую герой начинает в одной
+    главе и дочитывает через сто страниц. Один и тот же оригинал обязан
+    переводиться одинаково, а переводчик работает кусками и прошлых решений
+    не видит. Реестр в `state.json` («verse»: отпечаток строки → перевод)
+    помнит принятое; сюда попадают ТОЛЬКО блоки вида verse — та же строка,
+    случайно встретившаяся в прозе, механику не трогает.
+    """
+    known = state.get("verse") or {}
+    return {b["id"]: known[fingerprint(b["text"])]
+            for b in blocks
+            if b["kind"] == "verse" and fingerprint(b["text"]) in known}
+
+
+def verse_learn(state, blocks, res):
+    """Пополнить реестр переводами стихотворных строк куска."""
+    known = state.setdefault("verse", {})
+    for b in blocks:
+        if b["kind"] == "verse" and b["id"] in res:
+            known.setdefault(fingerprint(b["text"]), res[b["id"]])
+
+
 def translate_prompt(chunk, nxt, summary, tail, terms, task):
     # стихи помечаем отдельно: иначе модель их не отличит и переведёт прозой,
     # а редактор потом «выправит» ритм окончательно
@@ -889,6 +913,12 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         here = " ".join(b["text"] for b in translatable(c["blocks"]))
         prompt = translate_prompt(c, nxt, summary, tail,
                                   accumulated_terms(state, idx, here), task)
+        canon = verse_canon(state, c["blocks"])
+        if canon:
+            prompt += ("\n\n---\n\n## Строки, уже переведённые ранее\n\n"
+                       "Эти стихотворные строки уже встречались и переведены. "
+                       "Используй перевод дословно:\n\n"
+                       + "\n\n".join(f"[[[P {k}]]]\n{v}" for k, v in canon.items()))
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.txt'), "w",
              encoding="utf-8").write(prompt)
 
@@ -958,6 +988,12 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                               res, retries, log, fallback)
         if n_grew:
             log("\n    " + T("regrown", n_grew))
+        # Канон сильнее ответа: повторённая строка подставляется из реестра,
+        # как бы модель её ни перевела, а новые строки пополняют реестр.
+        for k, v in canon.items():
+            if k in res:
+                res[k] = v
+        verse_learn(state, c["blocks"], res)
         summ, terms = _split_meta(extra)
         _save(out_path, {"index": idx, "model": meta["model"],
                          "cost_usd": meta["cost_usd"], "footnotes": found,
