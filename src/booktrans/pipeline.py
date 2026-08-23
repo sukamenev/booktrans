@@ -1004,6 +1004,19 @@ def _parse_translate(out, expected, src=None):
     found = parse_notes_blocks(out, ids)
     body = re.split(r"\[\[\[NOTE\s", out)[0]
     res, extra = parse_blocks(body, expected=expected, extra_tag="META")
+    # Обрубок вместо перевода: модель оборвалась ПОСРЕДИ блока — «Пациент»
+    # вместо сцены на две сотни знаков. Пропавшие и пустые блоки ловятся
+    # выше, а полупустой сходил за переведённый, и отпечаток записывал кусок
+    # готовым. Порог грубый нарочно: честный перевод короче того же абзаца
+    # на порядок не бывает.
+    if src:
+        stubs = [i for i, t in res.items()
+                 if len(src.get(i, "")) >= 200
+                 and len(t) < len(src[i]) * 0.15]
+        if stubs:
+            first = min(stubs, key=lambda i: expected.index(i)
+                        if i in expected else 10 ** 9)
+            raise Truncated(first, len(stubs), len(expected))
     twin = _twins(res, src or {}, expected)
     if twin:
         raise ValueError(f"один перевод на два блока: {twin[0]} и {twin[1]} "
