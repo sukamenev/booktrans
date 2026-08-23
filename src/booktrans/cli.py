@@ -389,6 +389,9 @@ def main():
         else:
             sys.exit(T("locked", work, old_pid))
     open(lock, "w").write(f"{os.getpid()} {' '.join(sys.argv[1:])}")
+    # Какая версия конвейера трогала папку — для архивов: спустя год по этому
+    # файлу видно, какие миграции внутренних форматов нужны.
+    pipeline.note_version(work)
     atexit.register(lambda: os.path.exists(lock) and os.unlink(lock))
     steps = [args.only] if args.only else [s for s in STEPS if s not in args.skip.split(",")]
     only_chunks = _chunks(args.chunks) if args.chunks else None

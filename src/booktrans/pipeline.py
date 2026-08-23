@@ -1849,6 +1849,70 @@ def ocr_check(work, path, agent, log):
     return made
 
 
+def _code_print():
+    """Отпечаток кода конвейера: sha256 по файлам пакета, 12 знаков.
+
+    Номер выпуска называет версию, но не доказывает её: рабочая копия между
+    тегами — это тоже какая-то версия. Отпечаток считается по содержимому
+    самих файлов — кода, промптов, правил языков, — и двум одинаковым
+    отпечаткам можно верить, что конвейер был одинаков.
+    """
+    h = hashlib.sha256()
+    base = os.path.dirname(os.path.abspath(__file__))
+    for root, dirs, files in os.walk(base):
+        dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+        for n in sorted(files):
+            if n.endswith((".py", ".md", ".json", ".conf")):
+                p = os.path.join(root, n)
+                h.update(os.path.relpath(p, base).encode())
+                h.update(open(p, "rb").read())
+    return h.hexdigest()[:12]
+
+
+def _release():
+    """Номер выпуска — как в `build.release_version`: индекс, потом pyproject.
+    В рабочей копии без установки индекса нет, и версия выходила «?»."""
+    try:
+        from importlib.metadata import version as _v
+        return _v("booktrans")
+    except Exception:                                 # noqa: BLE001
+        pass
+    p = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))), "pyproject.toml")
+    try:
+        m = re.search(r'^version\s*=\s*"([^"]+)"',
+                      open(p, encoding="utf-8").read(), re.M)
+        return m.group(1) if m else "?"
+    except OSError:
+        return "?"
+
+
+def note_version(work, stamp=None):
+    """Записать в рабочую папку, какая версия конвейера её трогала.
+
+    Папки переживают архивы и годы: перевод сделан одной версией, правка —
+    другой, пересборка — третьей. Когда архив вернётся, по этому файлу видно,
+    какими версиями что делалось и какие миграции внутренних форматов нужны.
+    Хранится каждая версия с датами первого и последнего касания; `first` и
+    `last` сверху — для беглого взгляда.
+    """
+    p = os.path.join(work, "versions.json")
+    try:
+        d = json.load(open(p, encoding="utf-8"))
+    except Exception:                                 # noqa: BLE001
+        d = {}
+    import datetime
+    key = stamp or f"{_release()} {_code_print()}"
+    today = datetime.date.today().isoformat()
+    seen = d.setdefault("seen", {})
+    rec = seen.setdefault(key, {"first": today})
+    rec["last"] = today
+    d.setdefault("first", {"pipeline": key, "date": today})
+    d["last"] = {"pipeline": key, "date": today}
+    json.dump(d, open(mkparent(p), "w", encoding="utf-8"),
+              ensure_ascii=False, indent=1)
+
+
 def note_source(work, **kw):
     """Чем читали и чем размечали книгу — для раздела в её конце."""
     p = f"{work}/source.json"
