@@ -615,6 +615,26 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         nav.append(f'<li><a href="notes.xhtml">{escape(st.get("notes_title", "Примечания"))}</a></li>')
     nav.append("</ol></nav></body></html>")
 
+    # То же оглавление по-старому, toc.ncx — для читалок, знающих только
+    # epub2: у них nav.xhtml не читается, и книга оставалась без оглавления.
+    ncx = ['<?xml version="1.0" encoding="utf-8"?>',
+           '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">',
+           f'<head><meta name="dtb:uid" content="{escape(uid)}"/></head>',
+           f'<docTitle><text>{escape(title)}</text></docTitle><navMap>']
+    _np = 0
+    for i, t in enumerate(titles, 1):
+        _np += 1
+        ncx.append(f'<navPoint id="np{_np}" playOrder="{_np}">'
+                   f'<navLabel><text>{escape(t)}</text></navLabel>'
+                   f'<content src="ch{i:03d}.xhtml"/></navPoint>')
+    if notes:
+        _np += 1
+        ncx.append(f'<navPoint id="np{_np}" playOrder="{_np}">'
+                   f'<navLabel><text>{escape(st.get("notes_title", "Примечания"))}</text></navLabel>'
+                   '<content src="notes.xhtml"/></navPoint>')
+    ncx.append("</navMap></ncx>")
+    files["toc.ncx"] = "".join(ncx)
+
     # Обложка нередко лежит и среди картинок книги: тогда второй копии под
     # именем cover.jpg не нужно — на одной живой книге она весила 2,3 МБ из
     # 5,4. Хватит пометки на той, что уже есть.
@@ -661,6 +681,10 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     man.append('<item id="css" href="style.css" media-type="text/css"/>')
     man.append('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" '
                'properties="nav"/>')
+    # Оглавление и по-старому, toc.ncx: nav.xhtml — механизм epub3, и
+    # читалка, знающая только epub2, оставалась вовсе без оглавления.
+    man.append('<item id="ncx" href="toc.ncx" '
+               'media-type="application/x-dtbncx+xml"/>')
 
     seq = ""
     if meta.get("series"):
@@ -686,7 +710,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
            # Второй понимают все, первый — не все, поэтому пишем оба.
            + (f'<meta name="cover" content="{cover_id}"/>' if cover_id else "")
            + seq + "</metadata><manifest>" + "".join(man) +
-           '</manifest><spine>' + "".join(spine) + "</spine></package>")
+           '</manifest><spine toc="ncx">' + "".join(spine) + "</spine></package>")
 
     # Epub — это zip, и текст в нём надо жать: без сжатия книга весила на
     # три четверти своей разметки больше, чем нужно. Картинки уже сжаты

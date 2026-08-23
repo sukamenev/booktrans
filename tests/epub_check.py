@@ -101,6 +101,17 @@ def main():
        all(x.get("idref") in ids for x in root.find(OPF + "spine")),
        [x.get("idref") for x in root.find(OPF + "spine")])
 
+    # Оглавление обоих поколений: nav.xhtml для epub3, toc.ncx для читалок,
+    # знающих только epub2, — без него они оставались без оглавления вовсе.
+    ok("toc.ncx лежит в архиве", "OEBPS/toc.ncx" in names,
+       [n for n in names if n.endswith(".ncx")])
+    ncx = z.read("OEBPS/toc.ncx").decode()
+    ok("ncx и nav ведут в одни файлы",
+       set(re.findall(r'src="([^"#]+)"', ncx))
+       == {l.split("#")[0] for l in re.findall(r'href="([^"]+)"',
+                                               z.read("OEBPS/nav.xhtml").decode())},
+       re.findall(r'src="([^"]+)"', ncx)[:4])
+
     nav = z.read("OEBPS/nav.xhtml").decode()
     links = [l.split("#")[0] for l in re.findall(r'href="([^"]+)"', nav)]
     ok("оглавление ведёт в свои файлы", all(l in man for l in links), links)
@@ -234,7 +245,8 @@ def main():
         zz.writestr("p3.xhtml", X % '<img src="logo.png" alt=""/>')
         # оглавление без слова «Contents»: короткие блоки-ссылки в другие файлы
         zz.writestr("p4.xhtml", X % "".join(
-            f'<p><a href="p2.xhtml#c{i}">Chapter {i}</a></p>' for i in range(1, 9)))
+            f'<p class="toc"><a href="p2.xhtml#c{i}">Chapter {i}</a></p>'
+            for i in range(1, 9)))
         zz.writestr("art.png", OTHER)
         zz.writestr("logo.png", PIXEL)
     meta, blocks, cover, images = E.read_book(src, styles=None)
@@ -245,6 +257,13 @@ def main():
     ok("вклейка без текста уцелела блоком",
        "logo.png" in [b["text"] for b in blocks if b["kind"] == "image"],
        [b["text"] for b in blocks if b["kind"] == "image"])
+    # Оглавление, чьи строки карта стилей сделала заголовками: ссылки на
+    # целые файлы разбор не хранит, примета — одни заголовки подряд.
+    meta2, blocks2, _, _ = E.read_book(src, styles={"p|toc": "title"})
+    ok("оглавление из одних заголовков выброшено",
+       not [b for b in blocks2 if "Chapter" in b.get("text", "")],
+       [b["text"][:14] for b in blocks2 if b["kind"] == "title"])
+
     # Страница «Chapter 1…Chapter 8» из одних ссылок — оглавление, а не
     # главы: прежде она уходила в перевод заголовками без содержания.
     ok("оглавление без слова Contents выброшено",

@@ -862,10 +862,16 @@ def _epub(path, styles=None, encoding=None, ask=None):
         # сразу из «Chapter 1… Chapter 16». Примета — почти все блоки
         # короткие и ведут в другие файлы книги. На живой книге такие
         # «главы без содержания» уходили в перевод заголовками.
-        texty = [x for x in got if x[0] in ("p", "title")]
+        texty = [x for x in got if x[0] in ("p", "title", "subtitle")]
         linked = [x for x in texty
                   if any(not l.startswith("#") for l in (x[2] or ()))]
-        if (len(texty) >= 5 and len(linked) >= len(texty) * 0.8
+        # Второй вид той же страницы: карта стилей превращает строки
+        # оглавления в заголовки, а ссылки на целые файлы разбор не хранит.
+        # Пять и больше коротких заголовков подряд без единого абзаца —
+        # оглавление, сколько бы ссылок ни уцелело.
+        heads_only = all(x[0] in ("title", "subtitle") for x in texty)
+        if (len(texty) >= 5
+                and (len(linked) >= len(texty) * 0.8 or heads_only)
                 and all(len(_bare(x[1])) <= 60 for x in texty)):
             stats["junk_pages"] += 1
             continue
