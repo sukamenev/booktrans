@@ -494,7 +494,7 @@ The second line shows the whole rule: **what you name by hand beats the
 profile, and the profile beats the agent's set.** Three levels, one rule — the
 keys of the profile are simply put at the front of the command line.
 
-Eleven ship with the package, in `profiles/`:
+Twelve ship with the package, in `profiles/`:
 
 | | |
 |---|---|
@@ -508,6 +508,7 @@ Eleven ship with the package, in `profiles/`:
 | `claude-agy` | the same, with Antigravity's models as the last link |
 | `claude-codex` | Claude with Codex models as the last link |
 | `claude-probe` | Sonnet — a probe run of the machinery, not for reading |
+| `good-claude-agy` | the fallback pair: Opus translates, Gemini edits — for when Sol is unavailable |
 | `codex` | Codex alone: Sol translates and edits |
 
 The paired ones (`agy-claude`, `claude-agy`) reach across providers: a
