@@ -1433,11 +1433,18 @@ def _lead(it):
     term = re.sub(r"<[^>]+>", "", str(it.get("term") or "")).strip().strip('"«»“”')
     if not term or len(term) > 60:
         return t
-    w = term.split()[0]
-    stem = w[:-2] if len(w) >= 6 else w[:-1] if len(w) >= 4 else w
-    if re.search(re.escape(stem), t[:len(term) + 32], re.I):
-        return t
-    return f"{term} — {t}"
+    # В TERM бывает несколько слов разом («микроже, же»): текст, начатый с
+    # любого из них, уже начат с термина — иначе вышло бы «же — Же — …».
+    for part in re.split(r"[,;/]", term):
+        w = (part.strip().split() or [""])[0]
+        if not w:
+            continue
+        stem = w[:-2] if len(w) >= 6 else w[:-1] if len(w) >= 4 else w
+        # Начало слова обязательно: «же» иначе находится внутри «тяжести».
+        if re.search(rf"\b{re.escape(stem)}", t[:len(term) + 32], re.I):
+            return t
+    lead = re.split(r"[,;/]", term)[0].strip() or term
+    return f"{lead} — {t}"
 
 
 def all_notes(work, order, to=""):
