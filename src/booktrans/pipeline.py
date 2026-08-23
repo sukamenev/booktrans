@@ -743,7 +743,7 @@ def _chain_run(who, system, prompt, retries, parse, log):
     реестр, и переспрашивать её на каждом куске значит платить запросом за
     уже известный ответ.
     """
-    waited, last = 0, None
+    waited, last, refused = 0, None, False
     while True:
         for k, a in enumerate(who):
             if agent_mod.limit_left(a):
@@ -752,8 +752,15 @@ def _chain_run(who, system, prompt, retries, parse, log):
                 log("")
                 log("    " + T("refused_retry", getattr(a, "model", "?")), end="")
             try:
-                return _run(a, system, prompt, retries, parse, log)
+                got, meta, dt = _run(a, system, prompt, retries, parse, log)
+                # Пометка «после отказа» уходит в файл куска: по ней редактура
+                # знает, что этот кусок нельзя отдавать основному редактору —
+                # он упрётся в то же содержание.
+                if refused:
+                    meta = dict(meta, after_refusal=True)
+                return got, meta, dt
             except (Refused, RuntimeError, Fatal) as e:
+                refused = refused or isinstance(e, Refused)
                 last = e
         pause = _hold(who, waited, log)
         if not pause:
@@ -940,6 +947,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         summ, terms = _split_meta(extra)
         _save(out_path, {"index": idx, "model": meta["model"],
                          "cost_usd": meta["cost_usd"], "footnotes": found,
+                         **({"after_refusal": True}
+                            if meta.get("after_refusal") else {}),
                          "tr": res,
                          "src": {b["id"]: fingerprint(b["text"])
                                  for b in translatable(c["blocks"])}})
@@ -1030,7 +1039,11 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         x = json.load(open(p_, encoding="utf-8"))
         for k, v in x["tr"].items():
             raw[k] = v
-            whose[k] = x.get("model") or ""
+            # Переводчик куска важен редактуре только когда перевод сделан
+            # запасным ПОСЛЕ ОТКАЗА основного: без пометки правило уводило
+            # редактуру к переводчику на всяком совпадении моделей — и в
+            # best-профилях гемини-куски получали самоправку гемини.
+            whose[k] = (x.get("model") or "") if x.get("after_refusal") else ""
 
     # Что уже отредактировано — тоже по блокам, а не по номерам файлов. Кусок,
     # на котором правка оборвалась, считаем сделанным только до места обрыва.

@@ -172,6 +172,26 @@ def main():
     except RuntimeError:      # `_run` отдаёт «исчерпаны попытки»
         ok("упала вся цепочка — ошибка наружу", True)
 
+    # Перевод после отказа несёт пометку: по ней редактура отдаёт кусок
+    # переводчику, а не основному редактору. Сбой поставщика — не отказ,
+    # пометки не ставит.
+    # Отказ рождается в самом конвейере: ответ дважды оборван на одном
+    # блоке. Стенд воспроизводит именно это, а не бросает Refused руками.
+    calls = [0]
+    def trunc_twice(o):
+        calls[0] += 1
+        if calls[0] <= 2:
+            raise P.Truncated("s01.b0001", 3, 5)
+        return o, ""
+    first, second = Says("первая"), Says("вторая")
+    _, meta, _ = P._chain_run([first, second], "", "п", 2, trunc_twice, log)
+    ok("после отказа стоит пометка",
+       meta.get("after_refusal") is True and meta["model"] == "вторая", meta)
+    first = Says("первая", boom=AgentError("502"))
+    second = Says("вторая")
+    _, meta, _ = P._chain_run([first, second], "", "п", 1, plain, log)
+    ok("после сбоя пометки нет", not meta.get("after_refusal"), meta)
+
     # Порядок значим: первая делает работу, остальные подхватывают.
     who = [Says("а", boom=AgentError("502")), Says("б", boom=AgentError("502")),
            Says("в")]
