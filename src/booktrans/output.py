@@ -77,6 +77,12 @@ def anchor_note(text, bid, terms):
             break
         if best:
             at = best.end()
+            # Доезжаем до конца слова: основа «микро» совпала, а хвост через
+            # дефис («микро-g») шаблон не берёт — знак вставал внутрь слова.
+            while at < len(text) and (text[at].isalnum() or (
+                    text[at] in "-‑" and at + 1 < len(text)
+                    and text[at + 1].isalnum())):
+                at += 1
             while re.match(r"</[^>]+>", text[at:]):
                 at = text.index(">", at) + 1
             return text[:at] + NOTE_AT.format(bid) + text[at:]
