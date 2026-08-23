@@ -494,14 +494,16 @@ The second line shows the whole rule: **what you name by hand beats the
 profile, and the profile beats the agent's set.** Three levels, one rule — the
 keys of the profile are simply put at the front of the command line.
 
-Nine ship with the package, in `profiles/`:
+Eleven ship with the package, in `profiles/`:
 
 | | |
 |---|---|
 | `agy` | Antigravity alone: Gemini Pro in front, its Opus behind |
 | `agy-claude` | the same, with Claude Code's own Opus as the last link |
 | `agy-probe` | Flash — a probe run of the machinery, not for reading |
+| `best-agy-claude` | Gemini translates, Opus edits |
 | `best-claude-codex` | Opus translates, Sol edits: a foreign editor catches the calques one's own lets through |
+| `best-codex-claude` | Sol translates, Opus edits |
 | `claude` | Claude Code alone: Opus translates and edits |
 | `claude-agy` | the same, with Antigravity's models as the last link |
 | `claude-codex` | Claude with Codex models as the last link |
