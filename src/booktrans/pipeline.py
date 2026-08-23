@@ -1050,6 +1050,26 @@ def _split_meta(extra):
 
 # ---------------------------------------------------------------- редактура
 
+def _swap_edit(res, draft):
+    """Правка-подмена: под меткой блока — переписанный СОСЕДНИЙ абзац.
+
+    На живой книге реплика героя была замещена вариацией предыдущей фразы:
+    читатель видел абзац дважды, чуть по-разному, а настоящий текст пропадал.
+    Правка, чей результат ближе к чужому черновику, чем к своему, — не правка.
+    """
+    for k, new in res.items():
+        if len(new) < TWIN_LEN:
+            continue
+        own = _near(new, draft.get(k, ""))
+        for j, d_ in draft.items():
+            # Порог мягче близнецового: главную работу делает разрыв
+            # «свой против чужого» — у честной правки own высок сам по себе.
+            if j != k and len(d_) >= TWIN_LEN \
+                    and _near(new, d_) > max(own + 0.3, 0.8):
+                return k, j
+    return None
+
+
 def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
          fallback=None, force=False, to=""):
     os.makedirs(lpath(work, "ed", to), exist_ok=True)
@@ -1220,7 +1240,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         ids = list(draft)          # ключи словаря и есть идентификаторы
 
         def parse(o):
-            return parse_blocks(o, allowed=set(draft), extra_tag="NOTES")
+            res, tail = parse_blocks(o, allowed=set(draft), extra_tag="NOTES")
+            swap = _swap_edit(res, draft)
+            if swap:
+                raise ValueError(
+                    f"правка {swap[0]} подменяет абзац {swap[1]}: результат "
+                    f"ближе к чужому черновику, чем к своему")
+            return res, tail
 
         # Заняты все — переждать. Прогон не встанет: три подряд «не взялись»
         # останавливают редактуру, а лимит — не отказ и пройдёт сам.
