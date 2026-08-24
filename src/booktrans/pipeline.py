@@ -1257,7 +1257,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             ep = f'{lpath(work, "ed", to)}/{idx - 1:04d}.json'
             if os.path.exists(ep):
                 for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
-                    if k in ptxt:
+                    if k in ptxt and ptxt[k] == e.get("old", ptxt[k]):
                         ptxt[k] = e["new"]
             tail = "\n\n".join([v for v in ptxt.values() if v.strip()][-TAIL_PARAS:])
         # Конспект сюжета, накопленный при переводе. Редактору он нужен не
@@ -1442,7 +1442,8 @@ def current(work, idx, to=""):
         ep = f'{lpath(work, sub, to)}/{idx:04d}.json'
         if os.path.exists(ep):
             for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
-                base[k] = e["new"]
+                if k in base and base[k] == e.get("old", base[k]):
+                    base[k] = e["new"]
     return base
 
 
@@ -1454,7 +1455,15 @@ def all_translations(work, to=""):
     for sub in ("ed", "vf"):
         for _, p_ in chunk_files(lpath(work, sub, to)):
             for k, e in json.load(open(p_, encoding="utf-8"))["edits"].items():
-                if k in tr:
+                # Пара «было и стало» делает правку самопроверяемой: если
+                # «было» не совпадает с текстом под рукой, правка — сирота
+                # от прежнего перевода (блок перевели заново, а карты edits
+                # при перезаписи сливаются) и ложиться поверх не должна.
+                # На живой книге такая сирота вернула в текст сцену,
+                # выброшенную вместе со старым переводом. Кусок при этом не
+                # считается отредактированным — следующий проход правки
+                # переделает его честно.
+                if k in tr and tr[k] == e.get("old", tr[k]):
                     tr[k] = e["new"]
                     edited += 1
     return tr, edited
