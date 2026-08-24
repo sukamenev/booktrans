@@ -138,7 +138,7 @@ def main():
     straight = {i: abc[n] * int(L * 0.95)
                 for n, (i, L) in enumerate(zip(sids, lens))}
     ok("ровный перевод не задет", P._shifted(straight, src, sids) is None)
-    ok("короткому окну заслон не судья",
+    ok("короткое окно приёмке не судья",
        P._shifted({i: straight[i] for i in sids[:3]}, src, sids[:3]) is None)
 
     print(f"\nслучаев: {len(TAILS) + 15}   с расхождениями: {bad}")
