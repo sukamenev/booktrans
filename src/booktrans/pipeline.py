@@ -1399,24 +1399,163 @@ def current(work, idx, to=""):
     if not os.path.exists(tp):
         return {}
     base = json.load(open(tp, encoding="utf-8"))["tr"]
-    ep = f'{lpath(work, "ed", to)}/{idx:04d}.json'
-    if os.path.exists(ep):
-        for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
-            base[k] = e["new"]
+    for sub in ("ed", "vf"):
+        ep = f'{lpath(work, sub, to)}/{idx:04d}.json'
+        if os.path.exists(ep):
+            for k, e in json.load(open(ep, encoding="utf-8"))["edits"].items():
+                base[k] = e["new"]
     return base
 
 
 def all_translations(work, to=""):
-    """Черновик с наложенной редактурой + счётчик правок."""
+    """Черновик с наложенной редактурой и сверкой + счётчик правок."""
     tr, edited = {}, 0
     for _, p_ in chunk_files(lpath(work, "tr", to)):
         tr.update(json.load(open(p_, encoding="utf-8"))["tr"])
-    for _, p_ in chunk_files(lpath(work, "ed", to)):
-        for k, e in json.load(open(p_, encoding="utf-8"))["edits"].items():
-            if k in tr:
-                tr[k] = e["new"]
-                edited += 1
+    for sub in ("ed", "vf"):
+        for _, p_ in chunk_files(lpath(work, sub, to)):
+            for k, e in json.load(open(p_, encoding="utf-8"))["edits"].items():
+                if k in tr:
+                    tr[k] = e["new"]
+                    edited += 1
     return tr, edited
+
+
+# ---------------------------------------------------------------- сверка
+
+# «Замечаний нет» редактор пишет на языке перевода, и списком отрицаний
+# всё не покрыть: до слов дело доходит только у коротких ответов.
+NO_NOTES = ("нет", "none", "keine", "aucune", "无", "なし", "-", "—")
+
+
+def has_notes(t):
+    t = (t or "").strip()
+    return bool(t) and len(t) > 12 and t.lower().rstrip(".") not in NO_NOTES
+
+
+def _parse_verify(out, want):
+    """Вердикты сверщика + сноски и исправления, каждое при своём вердикте."""
+    verdicts = {}
+    for m in re.finditer(r"\[\[\[VERDICT\s+(\S+?)\s+"
+                         r"(author|translation|dismiss|unsure)\]\]\]"
+                         r"\s*(.*?)(?=\[\[\[|\Z)", out, re.S):
+        bid, kind, why = m.groups()
+        if bid in want:
+            verdicts[bid] = (kind, " ".join(why.split()))
+    missing = [i for i in want if i not in verdicts]
+    if missing:
+        raise ValueError(f"нет вердикта по блокам {missing[:4]} ({len(missing)})")
+    notes = parse_notes_blocks(out, want)
+    fixes = {}
+    for m in re.finditer(r"\[\[\[P\s+(\S+?)\]\]\]\s*(.*?)(?=\[\[\[|\Z)", out, re.S):
+        if m.group(1) in want and m.group(2).strip():
+            fixes[m.group(1)] = m.group(2).strip()
+    noted = {n["block"] for n in notes}
+    bad = [i for i, (k, _) in verdicts.items() if k == "author" and i not in noted]
+    if bad:
+        raise ValueError(f"вердикт author без сноски: {bad[:4]}")
+    bad = [i for i, (k, _) in verdicts.items()
+           if k == "translation" and i not in fixes]
+    if bad:
+        raise ValueError(f"вердикт translation без исправления: {bad[:4]}")
+    # Сноска или правка вопреки вердикту — рассинхрон ответа, а не довесок.
+    notes = [n for n in notes if verdicts[n["block"]][0] == "author"]
+    fixes = {i: v for i, v in fixes.items() if verdicts[i][0] == "translation"}
+    return verdicts, notes, fixes
+
+
+def verify(work, chunks, agent, system, task, retries, log, only=None,
+           fallback=None, to=""):
+    """Сверка замечаний редактора с оригиналом.
+
+    Редактор работает без оригинала: спорное по существу место он не правит,
+    а выписывает замечанием. Сверщик — единственный, кто видит обе стороны.
+    Ошибся автор — истина уходит в сноску, а текст остаётся авторским;
+    ошибся перевод — блок исправляется; подозрение пустое — снимается.
+    Нерешённое остаётся человеку в review.md.
+
+    По умолчанию сверяет цепочка редактора: у переводчика здесь конфликт —
+    вердикт «ошибся перевод» выносится его собственной работе, и ему выгодно
+    винить автора. Редактор к спорным блокам непричастен: он их сознательно
+    не правил.
+    """
+    orig = {}
+    for c in chunks:
+        for b in c["blocks"]:
+            orig[b["id"]] = b["text"]
+    by_index = {c["index"]: c for c in chunks}
+    cur, _ = all_translations(work, to)
+    os.makedirs(lpath(work, "vf", to), exist_ok=True)
+    done = skipped = added = fixed = 0
+    n_all = len(chunks)
+    for n, ep in chunk_files(lpath(work, "ed", to)):
+        idx = int(n.split(".")[0])
+        if only and idx not in only:
+            continue
+        remark = (json.load(open(ep, encoding="utf-8")).get("notes") or "").strip()
+        if not has_notes(remark):
+            continue
+        # Адреса блоков — прямо из текста замечания: редактор помечает их
+        # идентификаторами. Замечание без адреса сверять не по чему — оно
+        # остаётся человеку, как и раньше.
+        ids = sorted((i for i in orig if i in remark and i in cur), key=_id_key)
+        if not ids:
+            continue
+        out_path = f'{lpath(work, "vf", to)}/{idx:04d}.json'
+        # Сверка сделана по замечанию и по тексту; изменилось любое — снова.
+        if os.path.exists(out_path) and not only:
+            old = json.load(open(out_path, encoding="utf-8"))
+            if old.get("remark") == fingerprint(remark) and all(
+                    old.get("src", {}).get(i) == fingerprint(cur[i]) for i in ids):
+                skipped += 1
+                continue
+        who = ((by_index.get(idx) or {}).get("label") or "—")[:24]
+        rows = [f"### {i}\n\nОригинал:\n\n{orig[i]}\n\nПеревод:\n\n{cur[i]}"
+                for i in ids]
+        prompt = "\n\n---\n\n".join(
+            [task, "## Замечания редактора\n\n" + remark,
+             "## Абзацы\n\n" + "\n\n".join(rows)])
+        open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.verify.txt'), "w",
+             encoding="utf-8").write(prompt)
+        log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
+        want = set(ids)
+        res = None
+        for m in [agent] + [f for f in _backups(fallback) if f is not agent]:
+            try:
+                res, meta, dt = _run(m, system, prompt, retries,
+                                     lambda o: _parse_verify(o, want), log)
+                break
+            except (Refused, RuntimeError, Fatal, ValueError) as e:
+                log("    " + T("chunk_failed", e))
+        if res is None:
+            continue
+        verdicts, notes, fixes = res
+        kinds = {"author": T("vf_author"), "translation": T("vf_fixed"),
+                 "dismiss": T("vf_dismissed"), "unsure": T("vf_unsure")}
+        lines = [f"{i}: {kinds[verdicts[i][0]]} {verdicts[i][1]}".strip()
+                 for i in ids]
+        out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
+               "remark": fingerprint(remark),
+               # Отпечаток — от текста ПОСЛЕ исправления: следующий запуск
+               # увидит его же и сочтёт сверенным. По досверочному сверка
+               # зацикливалась бы на каждом исправленном блоке.
+               "src": {i: fingerprint(fixes.get(i, cur[i])) for i in ids},
+               "notes": "\n".join(lines),
+               "footnotes": notes,
+               "edits": {i: {"old": cur[i], "new": v} for i, v in fixes.items()}}
+        _save(out_path, out)
+        # Дальше по книге сверка идёт уже по исправленному тексту.
+        cur.update(fixes)
+        done += 1
+        added += len(notes)
+        fixed += len(fixes)
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        counts = collections.Counter(k for k, _ in verdicts.values())
+        log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
+            + T("vf_done", counts["author"], counts["translation"],
+                counts["dismiss"], counts["unsure"], f"{dt:.0f}",
+                f"{meta['model']}{cost}"))
+    return done, skipped, added, fixed
 
 
 # ---------------------------------------------------------------- сноски
@@ -1553,7 +1692,8 @@ def all_notes(work, order, to=""):
     """Все сноски в порядке следования по книге, по одной на блок."""
     got, seen = {}, set()
     src = []
-    for sub, key in (("tr", "footnotes"), ("ed", "footnotes"), ("nt", "notes")):
+    for sub, key in (("tr", "footnotes"), ("ed", "footnotes"),
+                     ("vf", "footnotes"), ("nt", "notes")):
         d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue

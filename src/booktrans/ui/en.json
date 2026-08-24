@@ -244,5 +244,16 @@
  "like_cut": "cycle names cut to the {1} character limit: {0}",
  "reanchored": "block numbering shifted: translation re-anchored, blocks: {}",
  "like_used": "cycle names: {} books, {} chars",
- "h_name_series": "include the cycle and book number in the output file name: “Author. Cycle 2. Title”"
+ "h_name_series": "include the cycle and book number in the output file name: “Author. Cycle 2. Title”",
+ "step_verify": "verifying remarks against the original",
+ "done_verify": "verified {}, already done {}, {} footnotes, {} fixes",
+ "nothing_verify": "no remarks to verify",
+ "vf_start": "VERIFY   {0} paras",
+ "vf_done": "DONE     author {0}, translation {1}, dismissed {2}, for a human {3}, in {4} s [{5}]",
+ "vf_author": "author's error, footnote added —",
+ "vf_fixed": "translation fixed —",
+ "vf_dismissed": "dismissed —",
+ "vf_unsure": "unresolved, needs a human —",
+ "pass_vf": "verifying",
+ "h_verifier": "model chain for verifying editor remarks against the original (defaults to --editor)"
 }

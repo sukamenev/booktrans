@@ -9,7 +9,8 @@ from xml.sax.saxutils import escape
 
 from . import lang, output
 from .pipeline import _blockmap as pipe_blockmap
-from .pipeline import all_notes, all_translations, chunk_files, lpath
+from .pipeline import (all_notes, all_translations, chunk_files, fingerprint,
+                       has_notes, lpath)
 from .pipeline import mkparent, strip
 from .tune import CAPTION
 
@@ -763,11 +764,17 @@ def review_report(work, log, T=None, to=""):
                 continue
             x = json.load(open(os.path.join(d, n), encoding="utf-8"))
             t = (x.get("notes") or "").strip()
-            # «замечаний нет» редактор пишет на языке перевода, и списком
-            # отрицаний это не покрыть: отсекаем по длине.
-            if t and len(t) > 12 and t.lower().rstrip(".") not in (
-                    "нет", "none", "keine", "aucune", "无", "なし", "-", "—"):
-                items.append((x.get("index"), t))
+            if not has_notes(t):
+                continue
+            # Сверенное замечание показываем резолюциями сверщика: что
+            # подтвердилось сноской, что исправлено, что снято. Человеку
+            # остаётся только нерешённое — и след, чем кончилось остальное.
+            vp = os.path.join(lpath(work, "vf", to), n)
+            if os.path.exists(vp):
+                v = json.load(open(vp, encoding="utf-8"))
+                if v.get("remark") == fingerprint(t):
+                    t = v.get("notes") or t
+            items.append((x.get("index"), t))
     p = lpath(work, "review.md", to)
     if not items:
         # Замечания помечены номером куска. Убрали редактуру — файл обязан
@@ -919,7 +926,7 @@ def usage_report(work, log, T=None, to=""):
     """
     rows = {}
     for sub, name in (("tr", T("pass_tr")), ("ed", T("pass_ed")),
-                      ("nt", T("pass_nt"))):
+                      ("vf", T("pass_vf")), ("nt", T("pass_nt"))):
         d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue

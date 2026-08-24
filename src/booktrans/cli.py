@@ -27,7 +27,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Сноски делает проход редактуры: он и так держит оригинал с переводом
 # рядом, а отдельный проход перечитывал бы всю книгу второй раз. Шаг notes
 # остался для случая, когда редактуру пропускают.
-STEPS = ("ocr", "structure", "ocrfix", "scout", "translate", "edit", "build", "qa")
+STEPS = ("ocr", "structure", "ocrfix", "scout", "translate", "edit", "verify",
+         "build", "qa")
 ALL_STEPS = STEPS + ("notes",)
 
 
@@ -307,6 +308,7 @@ def main():
     ap.add_argument("--name-series", action="store_true", help=T("h_name_series"))
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
+    ap.add_argument("--verifier", help=T("h_verifier"))
     ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
     ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
                     help=T("h_formatter"))
@@ -395,6 +397,11 @@ def main():
     atexit.register(lambda: os.path.exists(lock) and os.unlink(lock))
     steps = [args.only] if args.only else [s for s in STEPS if s not in args.skip.split(",")]
     only_chunks = _chunks(args.chunks) if args.chunks else None
+    # Сверщику по умолчанию — цепочка редактора, а не переводчика: вердикт
+    # «ошибся перевод» выносится работе переводчика, и судьёй в собственном
+    # деле ему быть нельзя. Редактор к спорным блокам непричастен: он их
+    # сознательно не правил, а вынес замечанием.
+    args.verifier = args.verifier or args.editor
 
     def _make(name, model, effort=None):
         return make_agent(name, model, args.agent_cmd, wait=args.wait,
@@ -790,6 +797,17 @@ def main():
             log("")
             log("  " + T("run_halted"))
             return
+
+    if "verify" in steps:
+        n += 1
+        log("")
+        log(head("step_verify", n))
+        d, s, fn, fx = pipeline.verify(
+            work, chunks, agent_for("verifier"), sysprompt(), task("verify"),
+            args.retries, log, only_chunks,
+            fallback=backup_for("verifier"), to=args.to)
+        log("  " + (T("done_verify", d, s, fn, fx) if d or s
+                    else T("nothing_verify")))
 
     if "notes" in steps:
         n += 1

@@ -14,8 +14,8 @@
 
     Книга.work/
         book.json  marks.json  images/  …      ← общее
-        ru/  tr/ ed/ nt/ prompts/ scout.md …   ← всё русское
-        de/  tr/ ed/ nt/ prompts/ scout.md …   ← всё немецкое
+        ru/  tr/ ed/ vf/ nt/ prompts/ scout.md …   ← всё русское
+        de/  tr/ ed/ vf/ nt/ prompts/ scout.md …   ← всё немецкое
 
 Разбор оригинала, разметка и картинки языка не имеют и лежат общими; они и
 стоят дороже всего после самого перевода. Перевод, редактура, сноски,
@@ -47,7 +47,7 @@
 | [Чтение книги](reading.md) | `book.json`, `structure.json`, `marks.json`, `toc.json`, картинки |
 | [Разведка](scout.md) | `scout.md`, `scout.json`, `state.json` |
 | [Перевод](translate.md) | `tr/`, `headings.json`, `code.json`, `ocrfix.json` |
-| [Редактура и сноски](edit.md) | `ed/`, `nt/`, `review.md` |
+| [Редактура, сверка и сноски](edit.md) | `ed/`, `vf/`, `nt/`, `review.md` |
 | [Сборка и проверки](build.md) | `terms.json`, `fixups.json`, `source.json`, отчёты |
 
 ## Все файлы разом
@@ -72,6 +72,7 @@
 | `code.json` | перевод | `pipeline.code_comments` | листинги с переведёнными комментариями |
 | `ocrfix.json` | правка OCR | `pipeline.fix_ocr` | починка порчи распознавания |
 | `ed/NNNN.json` | редактура | `pipeline.edit` | правки и замечания редактора |
+| `vf/NNNN.json` | сверка | `pipeline.verify` | вердикты по замечаниям: сноски «ошибка автора» и исправления перевода |
 | `nt/NNNN.json` | сноски | `pipeline.notes` | сноски отдельным проходом |
 | `prompts/` | все | каждый проход | запросы как есть, для разбирательств |
 | `source.json` | сборка | `pipeline.note_source` | чем читали и размечали — для раздела «О переводе» |

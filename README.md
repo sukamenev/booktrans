@@ -322,6 +322,7 @@ in `work/structure.json`. If the book genuinely has no chapters, use
 | **headings** | translates all headings in one request | ten occurrences of one name must match exactly |
 | **translation** | chunks of ~2600 words, plus footnotes | the main work |
 | **editing** | second pass: calques, officialese, word order, seams | removes the traces of translation |
+| **verification** | the editor's remarks go to a verifier along with the original: a confirmed author's error becomes a footnote, a translation error gets fixed, an empty suspicion is dismissed | the editor works blind to the original, and its suspicions are settled by the one who sees both sides |
 | **assembly** | book with footnotes, images, structure | |
 | **checks** | completeness, numbers, lengths, stray source text, footnote references, terminology | |
 
@@ -550,6 +551,7 @@ key for each would double their number.
 | `--scout` | reconnaissance: the reference about the book |
 | `--translator` | translation |
 | `--editor` | editing and footnotes |
+| `--verifier` | verifying the editor's remarks against the original; unnamed — the editor's chain |
 | `--formatter` | markup detection: epub and fb2 styles, pdf and txt pieces |
 | `--ocrfixer` | repairing OCR damage |
 | `--model` | every pass at once, save the last two |
@@ -800,7 +802,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --to CODE             target language (langs/CODE.md), en by default
 --ui CODE             interface language (ui/CODE.json), en by default
 --encoding NAME       input encoding, when detection got it wrong
---only STEP           a single step: ocr|structure|ocrfix|scout|translate|edit|build|qa|notes
+--only STEP           a single step: ocr|structure|ocrfix|scout|translate|edit|verify|build|qa|notes
 --skip a,b            skip steps
 --chunks 5,6,7        only these chunks; a range works too: 41-93
 --pages 5,6,10        only these pages (for PDF visual extraction)
@@ -810,7 +812,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --formatter ID        model that works out the markup, any format
 --ocrfixer ID         model that repairs recognition damage in the original
 --model ID            model for every pass
---scout / --translator / --editor ID   model for one pass
+--scout / --translator / --editor / --verifier ID   model for one pass
 --agent claude|cmd    agent
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing and footnotes
