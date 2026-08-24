@@ -250,10 +250,10 @@
  "nothing_verify": "no remarks to verify",
  "vf_start": "VERIFY   {0} paras",
  "vf_done": "DONE     author {0}, translation {1}, dismissed {2}, for a human {3}, in {4} s [{5}]",
- "vf_author": "author's error, footnote added —",
- "vf_fixed": "translation fixed —",
- "vf_dismissed": "dismissed —",
- "vf_unsure": "unresolved, needs a human —",
+ "vf_author": "author's error → footnote.",
+ "vf_fixed": "translation fixed.",
+ "vf_dismissed": "dismissed.",
+ "vf_unsure": "left to a human.",
  "pass_vf": "verifying",
  "h_verifier": "model chain for verifying editor remarks against the original (defaults to --editor)"
 }

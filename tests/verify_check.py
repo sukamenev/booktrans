@@ -106,6 +106,20 @@ def main():
         ok("сверка поверх редактуры в куске",
            P.current(w, 1, "ru") == {"a": "сверено", "b": "цел"},
            P.current(w, 1, "ru"))
+        # Сноска сверки помечается редакторской — сборка подпишет её
+        # «Прим. ред.»; смесь с переводческой остаётся переводческой.
+        json.dump({"index": 1, "footnotes": [
+            {"block": "a", "kind": "fact", "term": "т1", "text": "правда."},
+            {"block": "b", "kind": "term", "term": "т2", "text": "толк."}]},
+            open(f"{w}/ru/vf/0001.json", "w", encoding="utf-8"))
+        json.dump({"index": 1, "tr": {}, "footnotes": [
+            {"block": "b", "kind": "term", "term": "т3", "text": "своя."}]},
+            open(f"{w}/ru/tr/0002.json", "w", encoding="utf-8"))
+        notes = P.all_notes(w, {"a": 0, "b": 1}, "ru")
+        ok("сноска сверки — редакторская", notes["a"]["editor"] is True,
+           notes["a"])
+        ok("смесь остаётся переводческой", notes["b"]["editor"] is False,
+           notes["b"])
 
     print(f"\nПроверок: {seen}, расхождений: {bad}")
     return 1 if bad else 0

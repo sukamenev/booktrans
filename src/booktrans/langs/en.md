@@ -53,6 +53,7 @@ str.about_date: Translated: {date}.
 str.about_quality: Terminology and names are kept consistent throughout, the text went through a separate editing pass, and the translator's footnotes are marked explicitly.
 str.about_caveat: Long dialogue, wordplay and the author's rhythm may suffer.
 str.note_prefix: Translator's note:
+str.editor_note: Ed. note
 str.date_fmt: {month} {d}, {y}
 str.months: January,February,March,April,May,June,July,August,September,October,November,December
 str.notes_title: Notes

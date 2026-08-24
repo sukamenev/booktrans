@@ -32,6 +32,7 @@ str.about_date: 翻译日期：{date}
 str.about_quality: 全书术语与专名保持一致，文本另经一道润色工序，译者注均已明确标注。
 str.about_caveat: 长对话、文字游戏和作者的节奏可能有所折损。
 str.note_prefix: 译注：
+str.editor_note: 编者注
 str.date_fmt: {y}年{m}月{d}日
 str.notes_title: 注释
 str.toc_title: 目录

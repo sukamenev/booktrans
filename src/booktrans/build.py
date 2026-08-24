@@ -375,6 +375,7 @@ FB2_INLINE = {
 }
 
 NOTE_PREFIX = "Прим. переводчика: "
+EDITOR_NOTE = "Прим. ред."
 PIPELINE = "BookTrans"
 PIPELINE_URL = "https://github.com/sukamenev/booktrans"
 
@@ -510,6 +511,14 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     order = {b["id"]: i for i, b in enumerate(blocks)}
     notes = all_notes(work, order, to)
     notes = {k: v for k, v in notes.items() if k in tr}
+    # Сноска сверки говорит от имени редактора: подпись курсивом в конце, как
+    # принято в книгах. Переводческий префикс ей не нужен — флаг source_only
+    # у всех писателей значит ровно «префикс не ставить».
+    for v in notes.values():
+        if v.get("editor"):
+            v["text"] = (v["text"].rstrip()
+                         + f' — <i>{st.get("editor_note", EDITOR_NOTE)}</i>')
+            v["source_only"] = True
     # Оговорка про цитату — здесь, до развилки по форматам: она нужна читателю
     # любой книги, а не только fb2.
     say = st.get("source_caveat", SOURCE_CAVEAT)

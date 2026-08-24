@@ -1747,13 +1747,14 @@ def all_notes(work, order, to=""):
             continue
         for n in sorted(os.listdir(d)):
             if n.endswith(".json"):
-                src += json.load(open(f"{d}/{n}", encoding="utf-8")).get(key) or []
-    for it in src:
+                src += [(it, sub) for it in
+                        json.load(open(f"{d}/{n}", encoding="utf-8")).get(key) or []]
+    for it, sub in src:
         key = it["term"].lower()
         if key in seen:
             continue                    # одно понятие объясняем один раз
         seen.add(key)
-        got.setdefault(it["block"], []).append(it)
+        got.setdefault(it["block"], []).append((it, sub))
     merged = {}
     for bid in sorted(got, key=lambda x: order.get(x, 10 ** 9)):
         # Метку «Прим. переводчика» получают все сноски этого прохода, включая
@@ -1761,16 +1762,22 @@ def all_notes(work, order, to=""):
         # примечание, а библиография», но у книги, где авторских сносок нет
         # вовсе, читатель принимал такую сноску за авторскую. Авторские сюда
         # не попадают: они приходят блоками из самой книги.
-        merged[bid] = {"text": " ".join(_lead(i) for i in got[bid]),
+        merged[bid] = {"text": " ".join(_lead(i) for i, _ in got[bid]),
                        # Термины — для точной привязки знака сноски: он
                        # ставится в тексте сразу после объясняемого слова.
-                       "terms": [i["term"] for i in got[bid] if i.get("term")],
+                       "terms": [i["term"] for i, _ in got[bid] if i.get("term")],
                        "source_only": False,
+                       # Сноска сверки говорит от имени редактора, и сборка
+                       # подписывает её «Прим. ред.» вместо переводческого
+                       # префикса. Смесь с переводческой в одном блоке идёт
+                       # под общим префиксом: подпись одна на сноску.
+                       "editor": all(s == "vf" for _, s in got[bid]),
                        # Цитата по чужому переводу: машина не может
                        # подтвердить, что текст взят из издания, а не
                        # восстановлен по памяти. Читателю говорят об этом
                        # прямо у цитаты, а не только в отчёте.
-                       "source": any(i.get("kind") == "source" for i in got[bid])}
+                       "source": any(i.get("kind") == "source"
+                                     for i, _ in got[bid])}
     return merged
 
 
