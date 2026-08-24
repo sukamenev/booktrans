@@ -302,8 +302,8 @@ def main():
     ok("имя сведено к канону старшей книги",
        "| Пётр | Pyotr |" in got and "Peter" not in got,
        [l for l in got.splitlines() if "Пётр" in l or "Peter" in l])
-    ok("подмножество слов — то же имя",
-       "| Michael Poole | Michael Poole |" in got and "| Poole | Пул |" not in got,
+    ok("подмножество слов гасит дописывание, не замену",
+       "| Poole | Пул |" in got and "| Michael Poole |" not in got,
        [l for l in got.splitlines() if "Poole" in l])
     ok("пропущенное разведкой имя дописано из канона",
        "| Анна | Anna |" in got, [l for l in got.splitlines() if "Анна" in l])
@@ -318,6 +318,32 @@ def main():
     P.cycle_merge(f"{d}/cur", [f"{d}/нет-такой"], "en", blocks)
     ok("несуществующая книга пропускается",
        open(sp, encoding="utf-8").read() == got)
+    ok("перед записью остаётся копия",
+       os.path.exists(sp + ".bak"))
+    # Имена живут и в подразделах: `## NAMES` кончается не на `### Люди`,
+    # а на следующем заголовке того же уровня. Пока сведение видело только
+    # тело `## NAMES` — пустое, — свои строки оставались невидимы, и канон
+    # дописывался целиком: 360 строк на живой книге.
+    os.makedirs(f"{d}/sub/en", exist_ok=True)
+    sp2 = f"{d}/sub/en/scout.md"
+    open(sp2, "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = Subs\n\n"
+        "## NAMES — Имена\n\n### Люди\n\n| Пётр | Peter |\n\n"
+        "### Места\n\n| изба | hut |\n\n"
+        "## GENDER — Род\n\n| Пётр | м |\n")
+    P.cycle_merge(f"{d}/sub", [f"{d}/cyc2"], "en", blocks)
+    got2 = open(sp2, encoding="utf-8").read()
+    ok("строка в подразделе видна сведению",
+       got2.count("Пётр") == 2 and "Peter" in got2,
+       [l for l in got2.splitlines() if "Пётр" in l])
+    ok("дописанное встаёт в хвост раздела, не в GENDER",
+       got2.index("| Анна | Anna |") < got2.index("## GENDER"),
+       got2[got2.index("### Места"):][:120])
+    # Дописывание — только по полной фразе ключа: у терминов слова обычные,
+    # и правило «хватит любого слова» тащило канон целиком.
+    ok("однословного совпадения мало",
+       "Michael Poole" not in got2,
+       [l for l in got2.splitlines() if "Poole" in l])
     _sh.rmtree(f"{d}/cyc1", ignore_errors=True)
 
     # Сноска начинается с термина: по ссылке читалка показывает её одну,

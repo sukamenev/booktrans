@@ -2407,7 +2407,38 @@ def _name_key(line):
     if not m:
         return ""
     k = re.sub(r"[\s*_`]+", " ", m.group(1)).strip().lower()
-    return "" if not k or re.fullmatch(r"[-: ]+", k) else k
+    if not k or re.fullmatch(r"[-: ]+", k) or k in ("оригинал", "original"):
+        return ""                       # разделитель или шапка таблицы
+    return k
+
+
+def _domains(parts):
+    """Границы разделов NAMES/TERMS в нарезке по заголовкам.
+
+    Раздел включает свои подразделы: `## NAMES` кончается не на `### Люди`,
+    а на следующем заголовке того же или старшего уровня. Пока сведение
+    видело только тело самого `## NAMES` — пустое, потому что имена лежали
+    в подразделах, — свои строки оставались невидимы, и весь канон
+    дописывался заново: 360 строк на живой книге.
+
+    Возвращает список (kind, [индексы тел в parts]).
+    """
+    out, cur, kind, depth = [], None, None, 0
+    for i_ in range(1, len(parts), 2):
+        level = len(parts[i_]) - len(parts[i_].lstrip("#"))
+        m = re.match(r"#{1,4}\s*(NAMES|ИМЕНА|TERMS|ТЕРМИН)", parts[i_], re.I)
+        if cur is not None and level <= depth:
+            out.append((kind, cur))
+            cur = None
+        if m:
+            kind = ("NAMES" if m.group(1).upper() in ("NAMES", "ИМЕНА")
+                    else "TERMS")
+            cur, depth = [i_ + 1], level
+        elif cur is not None:
+            cur.append(i_ + 1)
+    if cur is not None:
+        out.append((kind, cur))
+    return out
 
 
 def _cycle_canon(paths, to, log=None):
@@ -2431,15 +2462,12 @@ def _cycle_canon(paths, to, log=None):
             continue
         parts = re.split(r"(?m)^(#{1,4}\s.*)$",
                          open(path, encoding="utf-8").read())
-        for i_ in range(1, len(parts), 2):
-            m = re.match(r"#{1,4}\s*(NAMES|ИМЕНА|TERMS|ТЕРМИН)", parts[i_], re.I)
-            if not m:
-                continue
-            kind = "NAMES" if m.group(1).upper() in ("NAMES", "ИМЕНА") else "TERMS"
-            for line in parts[i_ + 1].split("\n"):
-                k = _name_key(line)
-                if k and k not in rows:
-                    rows[k] = (line.rstrip(), kind)
+        for kind, bodies in _domains(parts):
+            for at in bodies:
+                for line in parts[at].split("\n"):
+                    k = _name_key(line)
+                    if k and k not in rows:
+                        rows[k] = (line.rstrip(), kind)
         sm = scout_meta(os.path.dirname(path) or ".", "")
         for key in ("author_target", "series_target"):
             if sm.get(key) and key not in meta:
@@ -2458,9 +2486,13 @@ def cycle_merge(work, likes, to, blocks, log=None):
     живущее в тексте книги, но пропущенное разведкой, дописывается. Бюджета
     нет — в справочник попадает только то, что есть в текущем тексте.
 
-    Ключи сводятся и по подмножеству слов: «Poole» в этой книге и
-    «Michael Poole» в прошлой — одно имя; «Mary Poole» и «Michael Poole» —
-    разные.
+    Замена — только по точному ключу. Подмножество слов лишь гасит
+    дописывание («Poole» уже есть — «Michael Poole» не дописывается), а
+    заменять по нему нельзя: на живой книге оно подменило «Michael Poole
+    Bazalget» (другого персонажа) Пулом и убило «drone = трутень» каноном
+    «antibody drone» из чужой книги. Дописывается имя только по полной
+    фразе ключа в тексте: правило «хватит любого слова» тащило канон
+    целиком — у терминов слова обычные.
     """
     if not likes:
         return
@@ -2472,40 +2504,47 @@ def cycle_merge(work, likes, to, blocks, log=None):
         return
     txt = open(sp, encoding="utf-8").read()
     parts = re.split(r"(?m)^(#{1,4}\s.*)$", txt)
-    body_words = set(re.findall(r"[^\W\d_]{3,}",
-                                " ".join(b["text"] for b in blocks).lower()))
+    body_text = re.sub(r"\s+", " ", " ".join(b["text"] for b in blocks))
 
-    def in_book(key):
-        return any(w in body_words for w in key.split() if len(w) >= 3)
+    def in_book(row):
+        # Полная фраза ключа, в исходном регистре: «Sheen» с прописной — имя,
+        # «sheen» строчными — блик на коже, и правило без регистра тащило
+        # в справочник термины чужих книг по случайным словам прозы.
+        m = re.match(r"\s*\|?\s*([^|=]+?)\s*[|=]", row)
+        key = re.sub(r"[\s*_`]+", " ", m.group(1)).strip() if m else ""
+        # Дописываются только имена собственные — в ключе есть заглавная.
+        # Строчные общие слова («star», «bus») у каждой книги цикла свои:
+        # правило без этого тащило «звезду в милю поперечником» из одного
+        # мира в справочник другого.
+        if not key or not any(ch.isupper() for ch in key):
+            return False
+        return re.search(
+            rf"(?<![^\W\d_]){re.escape(key)}(?![^\W\d_])",
+            body_text) is not None
 
     swapped = added = 0
-    seen, first = set(), {}
-    for i_ in range(1, len(parts), 2):
-        m = re.match(r"#{1,4}\s*(NAMES|ИМЕНА|TERMS|ТЕРМИН)", parts[i_], re.I)
-        if not m:
-            continue
-        kind = "NAMES" if m.group(1).upper() in ("NAMES", "ИМЕНА") else "TERMS"
-        first.setdefault(kind, i_ + 1)
-        out = []
-        for line in parts[i_ + 1].split("\n"):
-            k = _name_key(line)
-            hit, ck = (rows[k], k) if k in rows else (None, None)
-            if not hit and k:
-                for rk, rv in rows.items():
-                    aw, bw = set(k.split()), set(rk.split())
-                    if aw <= bw or bw <= aw:
-                        hit, ck = rv, rk
-                        break
-            if hit:
-                seen.add(ck)
-                if line.strip() != hit[0].strip():
-                    swapped += 1
-                    line = hit[0]
-            out.append(line)
-        parts[i_ + 1] = "\n".join(out)
-    for kind, at in first.items():
+    seen, tail = set(), {}
+    for kind, bodies in _domains(parts):
+        tail.setdefault(kind, bodies[-1])
+        for at in bodies:
+            out = []
+            for line in parts[at].split("\n"):
+                k = _name_key(line)
+                if k in rows:
+                    seen.add(k)
+                    if line.strip() != rows[k][0].strip():
+                        swapped += 1
+                        line = rows[k][0]
+                elif k:
+                    for rk in rows:
+                        aw, bw = set(k.split()), set(rk.split())
+                        if aw <= bw or bw <= aw:
+                            seen.add(rk)
+                out.append(line)
+            parts[at] = "\n".join(out)
+    for kind, at in tail.items():
         extra = [rv[0] for rk, rv in rows.items()
-                 if rk not in seen and rv[1] == kind and in_book(rk)]
+                 if rk not in seen and rv[1] == kind and in_book(rv[0])]
         if extra:
             parts[at] = parts[at].rstrip("\n") + "\n" + "\n".join(extra) + "\n\n"
             added += len(extra)
@@ -2530,6 +2569,9 @@ def cycle_merge(work, likes, to, blocks, log=None):
                 txt2 = txt2[:tm.end()] + f"\n{key} = {val}" + txt2[tm.end():]
                 added += 1
     if txt2 != txt:
+        # Сведение переписывает справочник — единственный экземпляр ручной
+        # и машинной работы разом. Копия обходится в ничто, а спасает всё.
+        open(sp + ".bak", "w", encoding="utf-8").write(txt)
         open(sp, "w", encoding="utf-8").write(txt2)
     if log and (swapped or added):
         log("  " + T("cycle_merged", swapped, added))
