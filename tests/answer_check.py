@@ -121,7 +121,27 @@ def main():
     honest = {"b": "Снова? Но пол не меняют, как одежду, — сказал он с досадой."}
     ok("честная правка проходит", P._swap_edit(honest, dr) is None)
 
-    print(f"\nслучаев: {len(TAILS) + 12}   с расхождениями: {bad}")
+    # Перевод со сдвигом: под меткой N — текст блока N−1, последний блок
+    # куска пропал. Метки на месте, тексты разные, длины поодиночке
+    # правдоподобны — выдаёт только строй длин в окне соседних блоков.
+    lens = [100, 180, 60, 150, 260, 90, 210, 130]
+    sids = [f"s40.b{n:04d}" for n in range(len(lens))]
+    abc = "абвгдежз"
+    src = {i: "и" * L for i, L in zip(sids, lens)}
+    slid = [("s40.b0000", abc[0] * 95)] + [
+        (sids[k], abc[k] * lens[k - 1]) for k in range(1, len(lens))]
+    try:
+        P._parse_translate(answer(*slid), sids, src)
+        ok("сдвиг на блок пойман", False, "разбор промолчал")
+    except ValueError as e:
+        ok("сдвиг на блок пойман", "сдвинут" in str(e), e)
+    straight = {i: abc[n] * int(L * 0.95)
+                for n, (i, L) in enumerate(zip(sids, lens))}
+    ok("ровный перевод не задет", P._shifted(straight, src, sids) is None)
+    ok("короткому окну заслон не судья",
+       P._shifted({i: straight[i] for i in sids[:3]}, src, sids[:3]) is None)
+
+    print(f"\nслучаев: {len(TAILS) + 15}   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

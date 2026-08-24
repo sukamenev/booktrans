@@ -4,6 +4,7 @@ import difflib
 import concurrent.futures as cf
 import hashlib
 import json
+import math
 import os
 import re
 import threading
@@ -25,7 +26,8 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
                    CYCLE_BUDGET, RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
-                   SCOUT_WORDS, STUB_MIN, STUB_SHARE,
+                   SCOUT_WORDS, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
+                   STUB_MIN, STUB_SHARE,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
                    VERSE_GROUP, HEAD_CHUNK)
@@ -1048,6 +1050,39 @@ def _twins(res, src, order):
     return None
 
 
+def _shifted(res, src, order):
+    """Перевод со сдвигом: под меткой блока — текст соседнего.
+
+    Модель вернула все идентификаторы по разу, тексты все разные и каждый
+    сам по себе правдоподобен — счёт блоков, близнецы и обрубки молчат.
+    Но под меткой N стоит перевод блока N−1: содержание молча разъехалось,
+    а последний блок куска остался непереведённым. На живой книге так
+    съехали 26 блоков из 38, и заметила это только проверка длин на уже
+    собранной книге.
+
+    Семантику разбору сверить нечем — он не зовёт моделей и не знает
+    языков. А длину есть чем: длина перевода следует за длиной оригинала.
+    Одиночное совпадение с соседом — случайность, окно подряд, где каждый
+    перевод ближе к чужому оригиналу, чем к своему, — строй.
+    """
+    ids = [i for i in order if i in res
+           and len(src.get(i, "")) >= SHIFT_MIN and len(res[i]) > 5]
+
+    def off(a, b):
+        return abs(math.log(len(res[a]) / len(src[b])))
+
+    for step in (-1, 1):
+        for at in range(len(ids) - SHIFT_WIN + 1):
+            w = ids[at:at + SHIFT_WIN]
+            straight = sum(off(i, i) for i in w) / len(w)
+            pairs = [(w[k], w[k + step]) for k in range(len(w))
+                     if 0 <= k + step < len(w)]
+            slid = sum(off(a, b) for a, b in pairs) / len(pairs)
+            if slid + SHIFT_GAP < straight and straight > SHIFT_BAD:
+                return w[0], step
+    return None
+
+
 def _parse_translate(out, expected, src=None):
     """Ответ переводчика: абзацы + сноски + служебный блок."""
     ids = {i for i in expected}
@@ -1071,6 +1106,10 @@ def _parse_translate(out, expected, src=None):
     if twin:
         raise ValueError(f"один перевод на два блока: {twin[0]} и {twin[1]} "
                          f"— оригиналы у них разные")
+    slip = _shifted(res, src or {}, expected)
+    if slip:
+        raise ValueError(f"перевод сдвинут: в окне от {slip[0]} тексты "
+                         f"стоят под метками соседних блоков")
     m = re.search(r"\[\[\[META\]\]\]\s*(.*)$", out, re.S)
     if m:
         extra = _unscaffold(m.group(1))

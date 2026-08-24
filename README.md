@@ -104,6 +104,9 @@ translation, adds footnotes and assembles the file.
 - **carries over** images, links, front and back matter, publication data;
 - **leaves code alone** in programming books, but translates the comments
   inside it;
+- **rejects mangled replies** before they touch the disk: a stub instead
+  of a scene, one translation for two blocks, texts slid under the
+  neighbouring labels — the chunk is retried or handed down the chain;
 - **resumes** after any failure and **waits** for rate limits to recover;
 - **reports spending** by pass and model;
 - **works with any agent**, Claude Code by default;
