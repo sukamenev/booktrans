@@ -275,43 +275,49 @@ def main():
     ok("вне таблиц имён и терминов не ищем",
        P._forked(f"## CHARACTERS — Персонажи\n\n{pair}", "ru") == [])
 
-    # Имена соседних книг цикла (`--like`). В разведку уходят только имена и
-    # термины: справочник целиком — тридцать тысяч знаков, а эти два раздела
-    # — три-семь. Порядок значим: он же порядок выхода книг.
+    # Имена соседних книг цикла (`--like`) сводятся ПОСЛЕ разведки кодом:
+    # просьба в промпте оставляла модели волю (на живой книге разведка молча
+    # переименовала заглавие при живом каноне), а бюджет промпта обрезал
+    # цикл на второй книге из четырёх.
     import shutil as _sh
-    for k, (title, who) in enumerate((("The First", "Пётр"), ("The Second", "Иван")), 1):
+    for k, (title, row) in enumerate((("The First", "| Пётр | Pyotr |"),
+                                      ("The Second", "| Michael Poole | Michael Poole |")), 1):
         os.makedirs(f"{d}/cyc{k}/en", exist_ok=True)
         open(f"{d}/cyc{k}/en/scout.md", "w", encoding="utf-8").write(
-            f"## META — Выходные данные\n\ntitle_target = {title}\n\n"
-            f"## CHARACTERS — Персонажи\n\nдлинная проза про персонажей\n\n"
-            f"## NAMES — Имена\n\n| {who} | {who} |\n\n"
-            f"## TERMS — Термины\n\n| меч | sword |\n")
-    got = P.cycle_names([f"{d}/cyc1", f"{d}/cyc2"], "en")
-    ok("книги идут в заданном порядке",
-       [l for l in got.splitlines() if l.startswith("### ")]
-       == ["### 1. The First", "### 2. The Second"],
-       [l for l in got.splitlines() if l.startswith("### ")])
-    ok("взяты только имена и термины",
-       "Пётр" in got and "меч" in got and "проза про персонажей" not in got,
-       got[:80])
-    # Сквозное имя есть в каждой книге цикла; повторы съедали бюджет и
-    # вытесняли редкие имена. Остаётся запись самой ранней книги.
-    os.makedirs(f"{d}/cyc3/en", exist_ok=True)
-    open(f"{d}/cyc3/en/scout.md", "w", encoding="utf-8").write(
-        "## META — Выходные данные\n\ntitle_target = The Third\n\n"
-        "## NAMES — Имена\n\n| Пётр | Питер |\n| Анна | Анна |\n")
-    got3 = P.cycle_names([f"{d}/cyc1", f"{d}/cyc3"], "en")
-    ok("повтор имени выброшен, ранняя запись главнее",
-       "Питер" not in got3 and "| Пётр | Пётр |" in got3 and "Анна" in got3,
-       [l for l in got3.splitlines() if "Пётр" in l or "Анна" in l])
-
+            f"## META — Выходные данные\n\ntitle_target = {title}\n"
+            "author_target = Viktoria Zimenkova\n\n"
+            "## CHARACTERS — Персонажи\n\nдлинная проза\n\n"
+            f"## NAMES — Имена\n\n{row}\n| Анна | Anna |\n\n"
+            "## TERMS — Термины\n\n| меч-кладенец | magic sword |\n")
+    os.makedirs(f"{d}/cur/en", exist_ok=True)
+    sp = f"{d}/cur/en/scout.md"
+    open(sp, "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = The Third\n"
+        "author_target = Victoria Zimenkova\n\n"
+        "## NAMES — Имена\n\n| Пётр | Peter |\n| Poole | Пул |\n\n"
+        "## TERMS — Термины\n\n| изба | hut |\n")
+    blocks = [{"text": "Пётр и Анна вошли, Poole ждал их у избы."}]
+    P.cycle_merge(f"{d}/cur", [f"{d}/cyc1", f"{d}/cyc2"], "en", blocks)
+    got = open(sp, encoding="utf-8").read()
+    ok("имя сведено к канону старшей книги",
+       "| Пётр | Pyotr |" in got and "Peter" not in got,
+       [l for l in got.splitlines() if "Пётр" in l or "Peter" in l])
+    ok("подмножество слов — то же имя",
+       "| Michael Poole | Michael Poole |" in got and "| Poole | Пул |" not in got,
+       [l for l in got.splitlines() if "Poole" in l])
+    ok("пропущенное разведкой имя дописано из канона",
+       "| Анна | Anna |" in got, [l for l in got.splitlines() if "Анна" in l])
+    ok("термина, которого нет в тексте, не дописываем",
+       "меч-кладенец" not in got, [l for l in got.splitlines() if "меч" in l])
+    ok("своя строка без канона не тронута", "| изба | hut |" in got)
+    ok("автор наследуется от старшей книги",
+       "author_target = Viktoria Zimenkova" in got,
+       [l for l in got.splitlines() if "author_target" in l])
+    P.cycle_merge(f"{d}/cur", [f"{d}/cyc1", f"{d}/cyc2"], "en", blocks)
+    ok("сведение идемпотентно", open(sp, encoding="utf-8").read() == got)
+    P.cycle_merge(f"{d}/cur", [f"{d}/нет-такой"], "en", blocks)
     ok("несуществующая книга пропускается",
-       P.cycle_names([f"{d}/нет-такой"], "en") == "")
-    # Предел бережёт запрос разведки: справочник цикла в него уходит целиком.
-    was, P.CYCLE_BUDGET = P.CYCLE_BUDGET, 120
-    small = P.cycle_names([f"{d}/cyc1", f"{d}/cyc2"], "en")
-    P.CYCLE_BUDGET = was
-    ok("предел соблюдается", len(small) < 400, len(small))
+       open(sp, encoding="utf-8").read() == got)
     _sh.rmtree(f"{d}/cyc1", ignore_errors=True)
 
     # Сноска начинается с термина: по ссылке читалка показывает её одну,

@@ -722,10 +722,6 @@ def main():
         hints = {
             "filename": os.path.basename(args.book),
             "meta": meta,
-            # Имена соседних книг цикла — только в разведку. Указания
-            # ключом `-pt` уезжают в каждый запрос перевода, а согласование
-            # имён нужно осмыслить один раз: дальше оно живёт в справочнике.
-            "cycle": pipeline.cycle_names(args.like or [], args.to, log),
         }
         ref = pipeline.scout(work, blocks, agent_for("scout"), sysprompt(),
                              task("scout"), args.retries, log, args.to,
@@ -743,6 +739,10 @@ def main():
             log(T("inject_hint"))
             if not args.force_injected:
                 raise SystemExit(T("inject_stop"))
+        # Имена соседних книг цикла (`--like`) сводятся после разведки кодом,
+        # а не просьбой в промпте: замена в файле стопроцентна, бюджет не
+        # нужен, и работает это даже когда разведка уже была сделана.
+        pipeline.cycle_merge(work, args.like or [], args.to, blocks, log)
         # Выходные данные разведка находит только сейчас, а метаданные были
         # собраны до неё. Без этого перечитывания книга первого прогона
         # выходила с заглавием оригинала, и оно появлялось лишь при повторной

@@ -24,7 +24,7 @@ from . import lang
 from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
-                   CYCLE_BUDGET, RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
+                   RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
                    SCOUT_WORDS, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
                    STUB_MIN, STUB_SHARE,
@@ -2401,19 +2401,25 @@ def reanchor(work, blocks, to, log):
     return len(remap)
 
 
-def cycle_names(paths, to, log=None):
-    """Имена и термины соседних книг цикла — в порядке их выхода.
+def _name_key(line):
+    """Ключ строки раздела NAMES/TERMS: имя на языке оригинала."""
+    m = re.match(r"\s*\|?\s*([^|=]+?)\s*[|=]", line)
+    if not m:
+        return ""
+    k = re.sub(r"[\s*_`]+", " ", m.group(1)).strip().lower()
+    return "" if not k or re.fullmatch(r"[-: ]+", k) else k
 
-    Берутся только разделы `NAMES` и `TERMS`: у справочника целиком тридцать
-    тысяч знаков, а имён и терминов — три-семь, и в разведку должно уехать
-    второе. Ключ в заголовке раздела латинский, поэтому разделы находятся
-    на любом целевом языке.
 
-    Порядок значим и передаётся номерами: имя, принятое в вышедшей раньше
-    книге, менять нельзя — читатель встретил его там.
+def _cycle_canon(paths, to, log=None):
+    """Канон цикла: строки NAMES/TERMS и выходные данные прежних книг.
+
+    Повтор имени остаётся за самой ранней книгой — по правилу старшинства:
+    написание, которое читатель встретил в вышедшей раньше книге, менять
+    нельзя. Ключ раздела латинский, поэтому разделы находятся на любом
+    целевом языке.
     """
-    out, total, seen_terms = [], 0, set()
-    for i, p in enumerate(paths, 1):
+    rows, meta = {}, {}
+    for p in paths:
         path = p
         if os.path.isdir(p):
             path = lpath(p, "scout.md", to)
@@ -2423,62 +2429,110 @@ def cycle_names(paths, to, log=None):
             if log:
                 log("  " + T("like_none", p))
             continue
-        txt = open(path, encoding="utf-8").read()
-        parts = re.split(r"(?m)^(#{1,4}\s.*)$", txt)
-        keep = "".join(parts[i_] + parts[i_ + 1] for i_ in range(1, len(parts), 2)
-                       if re.match(r"#{1,4}\s*(?:NAMES|TERMS|ИМЕНА|ТЕРМИН)",
-                                   parts[i_], re.I))
-        keep = keep.strip()
-        if not keep:
+        parts = re.split(r"(?m)^(#{1,4}\s.*)$",
+                         open(path, encoding="utf-8").read())
+        for i_ in range(1, len(parts), 2):
+            m = re.match(r"#{1,4}\s*(NAMES|ИМЕНА|TERMS|ТЕРМИН)", parts[i_], re.I)
+            if not m:
+                continue
+            kind = "NAMES" if m.group(1).upper() in ("NAMES", "ИМЕНА") else "TERMS"
+            for line in parts[i_ + 1].split("\n"):
+                k = _name_key(line)
+                if k and k not in rows:
+                    rows[k] = (line.rstrip(), kind)
+        sm = scout_meta(os.path.dirname(path) or ".", "")
+        for key in ("author_target", "series_target"):
+            if sm.get(key) and key not in meta:
+                meta[key] = sm[key]
+    return rows, meta
+
+
+def cycle_merge(work, likes, to, blocks, log=None):
+    """Сведение имён цикла — после разведки, кодом и без моделей.
+
+    Прежде канон уезжал в промпт разведки просьбой, и модель была вольна её
+    игнорировать: на живой книге разведка молча переименовала заглавие при
+    живом каноне, а бюджет промпта обрезал цикл на второй книге из четырёх.
+    Теперь разведка идёт чистой, а канон принуждается здесь: строка
+    справочника, чьё имя знают прежние книги, заменяется их строкой; имя,
+    живущее в тексте книги, но пропущенное разведкой, дописывается. Бюджета
+    нет — в справочник попадает только то, что есть в текущем тексте.
+
+    Ключи сводятся и по подмножеству слов: «Poole» в этой книге и
+    «Michael Poole» в прошлой — одно имя; «Mary Poole» и «Michael Poole» —
+    разные.
+    """
+    if not likes:
+        return
+    sp = lpath(work, "scout.md", to)
+    if not os.path.isfile(sp):
+        return
+    rows, meta = _cycle_canon(likes, to, log)
+    if not rows and not meta:
+        return
+    txt = open(sp, encoding="utf-8").read()
+    parts = re.split(r"(?m)^(#{1,4}\s.*)$", txt)
+    body_words = set(re.findall(r"[^\W\d_]{3,}",
+                                " ".join(b["text"] for b in blocks).lower()))
+
+    def in_book(key):
+        return any(w in body_words for w in key.split() if len(w) >= 3)
+
+    swapped = added = 0
+    seen, first = set(), {}
+    for i_ in range(1, len(parts), 2):
+        m = re.match(r"#{1,4}\s*(NAMES|ИМЕНА|TERMS|ТЕРМИН)", parts[i_], re.I)
+        if not m:
             continue
-        # Сквозное имя есть в справочнике каждой книги, и девять копий
-        # «Poole = Пул» съедали бюджет, вытесняя редкие имена. Повтор
-        # выбрасываем; остаётся запись самой ранней книги — по правилу
-        # старшинства она и главная.
-        out_lines = []
-        for line in keep.splitlines():
-            m = re.match(r"\s*\|?\s*([^|=]+?)\s*[|=]", line)
-            k = re.sub(r"[\s*_`]+", " ", m.group(1)).strip().lower() if m else ""
-            if k and not re.fullmatch(r"[-: ]+", k):
-                if k in seen_terms:
-                    continue
-                seen_terms.add(k)
-            out_lines.append(line)
-        keep = "\n".join(out_lines).strip()
-        if not keep:
+        kind = "NAMES" if m.group(1).upper() in ("NAMES", "ИМЕНА") else "TERMS"
+        first.setdefault(kind, i_ + 1)
+        out = []
+        for line in parts[i_ + 1].split("\n"):
+            k = _name_key(line)
+            hit, ck = (rows[k], k) if k in rows else (None, None)
+            if not hit and k:
+                for rk, rv in rows.items():
+                    aw, bw = set(k.split()), set(rk.split())
+                    if aw <= bw or bw <= aw:
+                        hit, ck = rv, rk
+                        break
+            if hit:
+                seen.add(ck)
+                if line.strip() != hit[0].strip():
+                    swapped += 1
+                    line = hit[0]
+            out.append(line)
+        parts[i_ + 1] = "\n".join(out)
+    for kind, at in first.items():
+        extra = [rv[0] for rk, rv in rows.items()
+                 if rk not in seen and rv[1] == kind and in_book(rk)]
+        if extra:
+            parts[at] = parts[at].rstrip("\n") + "\n" + "\n".join(extra) + "\n\n"
+            added += len(extra)
+    txt2 = parts[0] + "".join(parts[i_] + parts[i_ + 1]
+                              for i_ in range(1, len(parts), 2))
+    # Автор и цикл живут в META и в имена не входят, а разойтись им проще
+    # всего: на третьей книге цикла автор вышел «Victoria» против
+    # «Viktoria» в двух первых.
+    for key in ("author_target", "series_target"):
+        val = meta.get(key)
+        if not val:
             continue
-        if total + len(keep) > CYCLE_BUDGET:
-            keep = keep[:max(0, CYCLE_BUDGET - total)]
-            if log:
-                log("  " + T("like_cut", os.path.basename(p), CYCLE_BUDGET))
-        total += len(keep)
-        # Заглавие для ярлыка: сперва указания заказчика — они сильнее
-        # разведки и там стоит верное имя, если её пришлось поправить.
-        d = os.path.dirname(path) or "."
-        said = os.path.join(d, "prompt_meta.json")
-        name = ""
-        if os.path.isfile(said):
-            try:
-                name = (json.load(open(said, encoding="utf-8")).get("meta")
-                        or {}).get("title_target") or ""
-            except Exception:
-                pass
-        sm = scout_meta(d, "")
-        name = name or sm.get("title_target") \
-            or os.path.basename(str(p)).replace(".work", "")
-        # Автор и заглавие живут в META и в имена-термины не входят, а
-        # разойтись им проще всего: на третьей книге цикла автор вышел
-        # «Victoria» против «Viktoria» в двух первых.
-        head = "".join(f"{k} = {sm[k]}\n" for k in
-                       ("title_target", "author_target", "series_target")
-                       if sm.get(k))
-        out.append(f"### {i}. {name}\n\n{head}\n{keep}")
-        if total >= CYCLE_BUDGET:
-            break
-    got = "\n\n".join(out)
-    if got and log:
-        log("  " + T("like_used", len(out), len(got)))
-    return got
+        pat = re.compile(rf"(?m)^({key}\s*=\s*)(.*)$")
+        m2 = pat.search(txt2)
+        if m2:
+            if m2.group(2).strip() != val:
+                txt2 = pat.sub(lambda mm: mm.group(1) + val, txt2, count=1)
+                swapped += 1
+        else:
+            tm = re.search(r"(?m)^title_target\s*=.*$", txt2)
+            if tm:
+                txt2 = txt2[:tm.end()] + f"\n{key} = {val}" + txt2[tm.end():]
+                added += 1
+    if txt2 != txt:
+        open(sp, "w", encoding="utf-8").write(txt2)
+    if log and (swapped or added):
+        log("  " + T("cycle_merged", swapped, added))
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
@@ -2515,11 +2569,6 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if cur:
         parts.append(cur)
 
-    cycle = ""
-    if (hints or {}).get("cycle"):
-        tpl, _ = lang.prompt("scout_cycle")
-        cycle = "\n\n---\n\n" + tpl + "\n" + hints["cycle"]
-
     half = lpath(work, "scout.part.json", to)
     if os.path.exists(half):
         findings = json.load(open(half, encoding="utf-8"))
@@ -2553,7 +2602,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
 
         # Имена цикла идут в каждый кусок, а не только в первый: имена
         # встречаются по всей книге, и согласовать их надо всюду.
-        prompt = boxed(f"{task}{hint}{cycle}\n\n---\n\n"
+        prompt = boxed(f"{task}{hint}\n\n---\n\n"
                        f"## Часть {i} из {len(parts)}\n\n{text}",
                        "SCOUT", "номер этой части")
         log("  " + T("scout_block", i, len(parts),
