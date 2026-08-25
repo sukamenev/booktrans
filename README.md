@@ -502,7 +502,7 @@ Fourteen ship with the package, in `profiles/`:
 
 | | |
 |---|---|
-| `agy` | Antigravity alone: Gemini Pro in front, its Opus behind |
+| `agy` | Antigravity alone: Gemini Flash in front, its Opus rescues refusals |
 | `agy-claude` | the same, with Claude Code's own Opus as the last link |
 | `agy-probe` | Flash — a probe run of the machinery, not for reading |
 | `best-agy-claude` | Gemini translates, Opus edits |

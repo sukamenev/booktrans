@@ -438,7 +438,7 @@ Thoat — тоат, восьминогое ездовое животное; не
 
 | | |
 |---|---|
-| `agy` | только Antigravity: впереди Gemini Pro, за ним его же Opus |
+| `agy` | только Antigravity: впереди Gemini Flash, отказы спасает его же Opus |
 | `agy-claude` | то же, последним звеном — Opus через сам Claude Code |
 | `agy-probe` | Flash — пробный прогон механики, не для чтения |
 | `best-agy-claude` | Gemini переводит, Opus редактирует |
