@@ -420,7 +420,7 @@ Thoat — тоат, восьминогое ездовое животное; не
 ```
 # profiles/agy.conf — Gemini впереди, Claude на подстраховке
 --agent agy
---translator gemini-3.1-pro-high,claude:claude-opus-5
+--translator gemini-3.7-flash-high,gemini-3.1-pro-high,claude:claude-opus-5
 --editor     gemini-3.1-pro-high,claude:claude-sonnet-5
 --jobs 5
 ```
