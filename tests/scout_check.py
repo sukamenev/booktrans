@@ -344,6 +344,25 @@ def main():
     ok("однословного совпадения мало",
        "Michael Poole" not in got2,
        [l for l in got2.splitlines() if "Poole" in l])
+    # Артикль не рознит ключи, а разделы без решёток читаются: на живой
+    # книге «META» голым словом оставило книгу без заглавия, а «Qax» против
+    # канонного «the Qax» — расу в чужом переводе.
+    os.makedirs(f"{d}/bare/en", exist_ok=True)
+    sp3 = f"{d}/bare/en/scout.md"
+    open(sp3, "w", encoding="utf-8").write(P._headify(
+        "META\ntitle_target = Bare\n\nNAMES\nQax = кваксы\n"))
+    os.makedirs(f"{d}/cyc4/en", exist_ok=True)
+    open(f"{d}/cyc4/en/scout.md", "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = Old\n\n"
+        "## NAMES — Имена\n\n| the Qax | хаксы |\n")
+    P.cycle_merge(f"{d}/bare", [f"{d}/cyc4"], "en",
+                  [{"text": "the Qax ruled"}])
+    got3 = open(sp3, encoding="utf-8").read()
+    ok("голое слово-раздел стало заголовком", "## META" in got3
+       and "## NAMES" in got3, got3.splitlines()[:2])
+    ok("артикль не мешает сведению",
+       "| the Qax | хаксы |" in got3 and "кваксы" not in got3,
+       [l for l in got3.splitlines() if "акс" in l])
     _sh.rmtree(f"{d}/cyc1", ignore_errors=True)
 
     # Сноска начинается с термина: по ссылке читалка показывает её одну,

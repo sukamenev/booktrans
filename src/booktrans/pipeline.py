@@ -2274,6 +2274,25 @@ def injected(merged):
     return out or [m.group(1).strip()]
 
 
+def _headify(text):
+    """Разделы, написанные голым словом: «META» вместо «## META».
+
+    Модель порой опускает решётки, а заголовки ищут все потребители
+    справочника: выходные данные, сведение имён цикла, двоящиеся термины,
+    пересжатие. На живой книге безрешёточный файл молча оставил книгу без
+    заглавия, а сведение имён — без единого раздела.
+    """
+    out = []
+    for line in text.split("\n"):
+        t = line.strip()
+        if (t and not t.startswith("#") and len(t) < 60 and re.match(
+                r"(?:META|CHARACTERS|VOICES|NAMES|TERMS|GENDER|ADDRESS|"
+                r"WORLD|FOOTNOTES|VERSE|RISK)\b\s*($|—|-|:)", t)):
+            line = "## " + t
+        out.append(line)
+    return "\n".join(out)
+
+
 def scout_meta(work, to=""):
     """Выходные данные, вычитанные разведкой из самого текста.
 
@@ -2407,6 +2426,9 @@ def _name_key(line):
     if not m:
         return ""
     k = re.sub(r"[\s*_`]+", " ", m.group(1)).strip().lower()
+    # Артикль не рознит ключи: «the Qax» прежней книги и «Qax» новой — одно
+    # имя, а без этого канон не принуждался и раса уехала в другой перевод.
+    k = re.sub(r"^(?:the|a|an)\s+", "", k)
     if not k or re.fullmatch(r"[-: ]+", k) or k in ("оригинал", "original"):
         return ""                       # разделитель или шапка таблицы
     return k
@@ -2593,7 +2615,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         log("  " + T("scout_done_already"))
         # Готовый справочник всё равно проверяем на двоящиеся термины: он мог
         # быть собран прежней версией, а платить за разведку заново незачем.
-        merged = open(out_path, encoding="utf-8").read()
+        raw = open(out_path, encoding="utf-8").read()
+        merged = _headify(raw)
+        if merged != raw:
+            open(out_path, "w", encoding="utf-8").write(merged)
         merged = _condense_scout(merged, who, "", retries, log, out_path)
         forked = _forked(merged, to)
         if forked:
@@ -2671,7 +2696,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     else:
         merged = findings[0] if findings else ""
 
-    open(mkparent(out_path), "w", encoding="utf-8").write(merged)
+    open(mkparent(out_path), "w", encoding="utf-8").write(_headify(merged))
     # Модель разведки нигде больше не записана, а в книге её надо назвать.
     json.dump({"model": meta.get("model")},
               open(mkparent(lpath(work, "scout.json", to)), "w", encoding="utf-8"),
@@ -2944,7 +2969,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
     out.append("")
     out += [f"- {x}" for x in done]
     merged = "\n".join(out)
-    open(mkparent(out_path), "w", encoding="utf-8").write(merged)
+    open(mkparent(out_path), "w", encoding="utf-8").write(_headify(merged))
     for x in done:
         log(f"      {x}")
     return merged
