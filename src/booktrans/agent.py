@@ -351,7 +351,7 @@ class ClaudeAgent(Agent):
             # Объяснение claude кладёт в stdout, внутрь json, а не в stderr.
             msg = said(r)
             if limited(msg):
-                raise RateLimited(msg[:300])
+                raise RateLimited(CLI_NOISE.sub("", msg).strip()[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
             raise AgentError(f"claude вернул {r.returncode}: {msg[:400]}")
@@ -364,7 +364,7 @@ class ClaudeAgent(Agent):
         if env.get("is_error"):
             msg = str(env.get("result"))
             if limited(msg):
-                raise RateLimited(msg[:300])
+                raise RateLimited(CLI_NOISE.sub("", msg).strip()[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
             raise AgentError(f"агент сообщил об ошибке: {msg[:300]}")
@@ -462,7 +462,7 @@ class AgyAgent(Agent):
         if r.returncode != 0:
             msg = said(r)
             if limited(msg):
-                raise RateLimited(msg[:300])
+                raise RateLimited(CLI_NOISE.sub("", msg).strip()[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
             plain = bare_words(msg, payload)
@@ -515,7 +515,9 @@ class CodexAgent(Agent):
         if r.returncode != 0:
             msg = said(r)
             if limited(msg):
-                raise RateLimited(msg[:300])
+                # Леса CLI срезаем и здесь: в трёхстах знаках лимита должен
+                # быть виден срок возвращения, а не баннер с workdir.
+                raise RateLimited(CLI_NOISE.sub("", msg).strip()[:300])
             plain = bare_words(msg, payload)
             if not plain:
                 # Так codex гибнет, когда о лимит бьются несколько сессий

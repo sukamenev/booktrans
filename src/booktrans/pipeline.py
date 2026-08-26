@@ -768,6 +768,48 @@ def _hold(who, waited, log):
     return pause
 
 
+def _run_patient(agent, backups, system, prompt, retries, parse, log, lock=None):
+    """`_run`, пережидающий на месте лимит и молчаливую смерть.
+
+    Лимит, ударивший в момент вызова, — не приговор куску: обёртка агента уже
+    пополнила общий реестр, соседние куски его пережидают, и этот должен ждать
+    с ними, а не объявляться несделанным. Кусок уступается цепочке только
+    когда запасная модель свободна, а своя — под лимитом: тогда отдать дешевле,
+    чем ждать. Молчаливая смерть пережидается как в _chain_run, с потолком
+    HUSH_MAX: неизвестной беде час, известному лимиту — до max_wait.
+    """
+    def say(*lines):
+        if lock:
+            with lock:
+                for x in lines:
+                    log(x)
+        else:
+            for x in lines:
+                log(x)
+
+    held = 0
+    while True:
+        while True:
+            step = _hold([agent] + backups, held, log)
+            if not step:
+                break
+            held += step
+        try:
+            return _run(agent, system, prompt, retries, parse, log)
+        except agent_mod.RateLimited as e:
+            free = any(not agent_mod.limit_left(fb)
+                       for fb in backups if fb is not agent)
+            if free or held >= getattr(agent, "max_wait", 86400) or STOP.is_set():
+                raise
+            say("", "    " + T("chunk_failed", e))
+        except agent_mod.Hushed as e:
+            if held >= HUSH_MAX or STOP.is_set():
+                raise
+            say("", "    " + T("hush_wait", HUSH_PAUSE // 60, int(held) // 60))
+            time.sleep(HUSH_PAUSE)
+            held += HUSH_PAUSE
+
+
 def _chain_run(who, system, prompt, retries, parse, log):
     """`_run` по цепочке: следующая модель подхватывает и отказ, и сбой.
 
@@ -942,16 +984,11 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         log(f"[{idx:04d}/{len(chunks):04d}] {c['label'][:24]:24s} "
             + T("words_n", f"{c['words']:5d}") + " ... ", end="")
         # Вся цепочка под лимитом — переждать; иначе кусок объявили бы
-        # непереведённым, а через три таких прогон бы встал.
-        held = 0
-        while agent_mod.limit_left(agent):
-            step = _hold([agent] + _backups(fallback), held, log)
-            if not step:
-                break
-            held += step
+        # непереведённым, а через три таких прогон бы встал. Лимит, ударивший
+        # в момент самого вызова, пережидается на месте — см. _run_patient.
         try:
-            (res, extra), meta, dt = _run(
-                agent, system, prompt, retries,
+            (res, extra), meta, dt = _run_patient(
+                agent, _backups(fallback), system, prompt, retries,
                 lambda o: _parse_translate(o, expected, srcs), log)
         except (Refused, RuntimeError, Fatal) as e:
             # Отказ и сбой поставщика тут равны: кусок не переведён, а
@@ -1338,14 +1375,10 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
 
         # Заняты все — переждать. Прогон не встанет: три подряд «не взялись»
         # останавливают редактуру, а лимит — не отказ и пройдёт сам.
-        held = 0
-        while True:
-            step = _hold([mine] + _backups(fallback), held, log)
-            if not step:
-                break
-            held += step
         try:
-            (res, notes), meta, dt = _run(mine, system, prompt, retries, parse, log)
+            (res, notes), meta, dt = _run_patient(mine, _backups(fallback),
+                                                  system, prompt, retries,
+                                                  parse, log, lock)
         except (Refused, RuntimeError, Fatal) as e:
             # Сбой — не то же, что «править нечего»: пустой результат нельзя
             # записать как готовый кусок, иначе следующий запуск сочтёт его
