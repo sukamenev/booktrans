@@ -23,7 +23,8 @@ from .lang import T
 from . import lang
 from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
-                   MAX_BLOCKS, MAX_VERSE, MAX_WORDS, OCR_SAMPLE, REFUSE_ROW,
+                   MAX_BLOCKS, MAX_VERSE, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
+                   REFUSE_ROW,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
                    SCOUT_WORDS, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
@@ -2599,6 +2600,25 @@ def cycle_merge(work, likes, to, blocks, log=None):
         log("  " + T("cycle_merged", swapped, added))
 
 
+def _merge_batches(findings, limit=MERGE_INPUT):
+    """Пачки разборов для сведения, каждая в пределах входа транспорта.
+
+    Жадно и с сохранением порядка: части книги идут по сюжету, и сводить
+    соседей полезнее, чем случайных. Разбор, в одиночку превышающий предел,
+    получает пачку из самого себя — сведение такую пропустит как есть.
+    """
+    batches, cur, cw = [], [], 0
+    for f in findings:
+        if cur and cw + len(f) > limit:
+            batches.append(cur)
+            cur, cw = [], 0
+        cur.append(f)
+        cw += len(f)
+    if cur:
+        batches.append(cur)
+    return batches
+
+
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
           hints=None, fallback=None):
     """Крупноблочный проход ДО перевода.
@@ -2683,16 +2703,36 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
 
     if len(findings) > 1:
-        log("  " + T("scout_merge"), end="")
         merge_prompt, _ = lang.prompt("scout_merge")
-        merge = boxed(merge_prompt.format(budget=SCOUT_BUDGET,
-                                          parts=len(findings))
-                      + "\n\n---\n\n" + "\n\n---\n\n".join(findings),
-                      "SCOUT", "число сведённых разборов, названное выше")
-        (merged, _), meta, dt = _chain_run(who, system, merge, retries,
-                                           _parse_scout, log)
-        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-        log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        # Все разборы одним запросом не отправить: у транспорта есть предел
+        # входа, и режет он молча — agy отдаёт модели ~50 тыс. токенов, модель
+        # получает обрубок и отвечает пустотой. Поэтому разборы сводятся
+        # пачками в пределах MERGE_INPUT, затем сводятся результаты пачек —
+        # и так до одного, сколько бы книга ни весила.
+        while len(findings) > 1:
+            batches = _merge_batches(findings)
+            if len(batches) == len(findings):
+                # каждый разбор — пачка сам по себе: группировать нечем,
+                # сводим единым запросом, как раньше, а не крутимся вечно
+                batches = [findings]
+            nxt = []
+            for j, batch in enumerate(batches, 1):
+                if len(batch) == 1:
+                    nxt.append(batch[0])
+                    continue
+                log("  " + (T("scout_merge_part", j, len(batches))
+                            if len(batches) > 1 else T("scout_merge")), end="")
+                merge = boxed(merge_prompt.format(budget=SCOUT_BUDGET,
+                                                  parts=len(batch))
+                              + "\n\n---\n\n" + "\n\n---\n\n".join(batch),
+                              "SCOUT", "число сведённых разборов, названное выше")
+                (m, _), meta, dt = _chain_run(who, system, merge, retries,
+                                              _parse_scout, log)
+                cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+                log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+                nxt.append(m)
+            findings = nxt
+        merged = findings[0]
     else:
         merged = findings[0] if findings else ""
 

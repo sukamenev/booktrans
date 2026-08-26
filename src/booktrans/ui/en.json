@@ -56,6 +56,7 @@
  "scout_done_already": "scouting already done (delete work/scout.md to redo it)",
  "scout_block": "block {0}/{1}  {2} words ... ",
  "scout_merge": "merging ... ",
+ "scout_merge_part": "merging batch {0}/{1} ... ",
  "scout_ref": "reference: {0}  ({1} chars)",
  "scout_big": "WARNING: the reference is oversized and goes into every translation request. Trim {0} by hand, or delete it and redo the scouting pass.",
  "shr_ok": "{0} -> {1} chars [{2}]",

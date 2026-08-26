@@ -384,6 +384,22 @@ def main():
         ok(f"термин впереди: {it['term'] or 'пусто'}", P._lead(it) == want,
            P._lead(it))
 
+    # Сведение пачками: транспорт молча режет длинный вход, поэтому разборы
+    # группируются в пределах лимита — жадно и с сохранением порядка.
+    f10 = [f"разбор {i} " + "x" * 24000 for i in range(10)]
+    bs = P._merge_batches(f10, 100000)
+    ok("пачки: каждая в пределе",
+       all(sum(len(x) for x in b) <= 100000 for b in bs),
+       [sum(len(x) for x in b) for b in bs])
+    ok("пачки: ничего не потеряно, порядок цел",
+       [x for b in bs for x in b] == f10, len(bs))
+    ok("пачки: мелочь одной пачкой",
+       len(P._merge_batches(["a", "b"], 100)) == 1, None)
+    ok("пачки: переросток отдельно и не падает",
+       [len(b) for b in P._merge_batches(["y" * 200, "z"], 100)] == [1, 1],
+       None)
+    ok("пачки: пусто — пусто", P._merge_batches([], 100) == [], None)
+
     import shutil
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
