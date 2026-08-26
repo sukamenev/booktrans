@@ -120,6 +120,15 @@ def main():
            notes["a"])
         ok("смесь остаётся переводческой", notes["b"]["editor"] is False,
            notes["b"])
+        # Запечённая сверочная сноска: второй проход редактуры переносит её
+        # в tr с пометкой в самой записи — голос остаётся редакторским.
+        json.dump({"index": 3, "tr": {}, "footnotes": [
+            {"block": "c", "kind": "fact", "term": "т4", "text": "истина.",
+             "editor": True}]},
+            open(f"{w}/ru/tr/0003.json", "w", encoding="utf-8"))
+        notes = P.all_notes(w, {"a": 0, "b": 1, "c": 2}, "ru")
+        ok("запечённая сноска сохраняет голос редактора",
+           notes["c"]["editor"] is True, notes["c"])
 
     print(f"\nПроверок: {seen}, расхождений: {bad}")
     return 1 if bad else 0
