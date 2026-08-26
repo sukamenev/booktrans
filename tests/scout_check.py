@@ -117,8 +117,11 @@ def main():
     d = tempfile.mkdtemp()
     out = f"{d}/scout.md"
 
-    # Системный промпт обязан быть пуст: иначе справочник уезжает на вход по
-    # разу на каждый запрос, а модель, увидев его целиком, перекраивает всё.
+    # Справочника в системном промпте быть не должно: иначе он уезжает на
+    # вход по разу на каждый запрос, а модель, увидев его целиком,
+    # перекраивает всё. Совсем пустым промпт тоже не оставить — агентная
+    # обёртка без системы отвечает пустотой, — поэтому там ровно одна
+    # пристёгивающая строка из prompts/text_only.md.
     seen = []
 
     class Watch(Obedient):
@@ -126,9 +129,10 @@ def main():
             seen.append(system)
             return Obedient.run(self, system, user)
 
+    pin = P._text_only()
     got = P._condense_scout(BOOK, [Watch()], "", 1, hush, out)
     ok("справочник не уезжает в системный промпт",
-       seen and not any(x.strip() for x in seen), seen[:1])
+       seen and all(x == pin for x in seen), seen[:1])
     ok("справочник уложился в предел", len(got) <= P.SCOUT_BUDGET,
        f"{len(got)} знаков при пределе {P.SCOUT_BUDGET}")
     ok("послушная модель таблиц не трогает", P._rows(BOOK) == P._rows(got),

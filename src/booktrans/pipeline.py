@@ -2797,6 +2797,19 @@ def _floor(part, over):
     return max(len(part) - over, tbl + prose // 3)
 
 
+def _text_only():
+    """Система для проходов, которым обычный системный промпт не положен.
+
+    Пересжатию и расфуркам он не достаётся нарочно — в нём лежит сам
+    справочник (см. _condense_scout). Но совсем пустая система ломает
+    агентные обёртки: flash через agy на «ужми это» пять раз подряд вернул
+    пустой ответ, а с одной пристёгивающей строкой отдал сжатие с первого
+    захода. Строка задаёт только форму ответа и о содержании не говорит
+    ничего, так что довод «модель перепишет всё» ею не задет.
+    """
+    return lang.prompt("text_only")[0]
+
+
 def _condense_scout(merged, who, system, retries, log, out_path):
     """Пересжать справочник, если он перерос предел.
 
@@ -2806,6 +2819,8 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     переписать всё. На живой книге она так и сделала: раздел на 27 887 знаков
     вернулся четырьмя новыми разделами — содержание уцелело, но следующему
     проходу досталось вдвое больше разделов, а значит и запросов.
+    «Пустой» — это без справочника; форму ответа держит промпт `text_only`,
+    без него агентная обёртка отвечает пустотой.
 
     Просьба «уложиться в столько-то знаков» стоит и в промпте сведения, но
     исполняется там плохо: на одной книге вышло полтора предела. Отдельный
@@ -2907,7 +2922,7 @@ def _shrink(part, want, who, system, retries, log):
     ask = boxed(ask_prompt.format(len_part=len(part), want=want)
                 + "\n\n---\n\n" + part,
                 "SHRINK", "нужный размер в знаках, названный выше")
-    (short, _), meta, _dt = _chain_run(who, system, ask, retries,
+    (short, _), meta, _dt = _chain_run(who, system or _text_only(), ask, retries,
                                        lambda o: (unbox(o, "SHRINK"), ""),
                                        log)
 
@@ -2967,7 +2982,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
     log("  " + T("scout_unfork", len(forked)), end="")
     ask_prompt, _ = lang.prompt("scout_oneterm")
     ask = ask_prompt + "\n\n" + "\n".join(line for _, line in forked)
-    (res, _), meta, dt = _chain_run(who, system, ask, retries,
+    (res, _), meta, dt = _chain_run(who, system or _text_only(), ask, retries,
                                     lambda o: (o, ""), log)
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
     log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
