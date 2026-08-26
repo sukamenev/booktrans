@@ -2547,6 +2547,19 @@ def _cycle_canon(paths, to, log=None):
     return rows, meta
 
 
+def _no_shrink_path(out_path):
+    """Путь кэша «дожать не вышло» рядом со справочником.
+
+    Имя выводится из пути справочника: у него уже стоит суффикс языка,
+    и разойтись эти два файла не должны.
+    """
+    root = os.path.splitext(out_path)[0]                  # …/scout_ru
+    head, _, suffix = os.path.basename(root).partition("_")
+    return os.path.join(
+        os.path.dirname(root),
+        f"{head}.no_shrink" + (f"_{suffix}" if suffix else "") + ".json")
+
+
 def cycle_merge(work, likes, to, blocks, log=None):
     """Сведение имён цикла — после разведки, кодом и без моделей.
 
@@ -2645,6 +2658,20 @@ def cycle_merge(work, likes, to, blocks, log=None):
         # и машинной работы разом. Копия обходится в ничто, а спасает всё.
         open(sp + ".bak", "w", encoding="utf-8").write(txt)
         open(sp, "w", encoding="utf-8").write(txt2)
+        # Кэш «дожать не вышло» равняется на новый размер. Без этого
+        # пересжатие и сведение играли в пинг-понг: пересжатие выбрасывает
+        # строки имён цикла, сведение их возвращает, размер меняется — и
+        # каждый запуск заново платил три запроса за то же сжатие.
+        nsp = _no_shrink_path(sp)
+        if os.path.exists(nsp):
+            try:
+                got = json.load(open(nsp, encoding="utf-8"))
+                if not isinstance(got, dict):
+                    got = {m: None for m in got}
+                json.dump({m: len(txt2) for m in got},
+                          open(nsp, "w", encoding="utf-8"), ensure_ascii=False)
+            except Exception:
+                pass
     if log and (swapped or added):
         log("  " + T("cycle_merged", swapped, added))
 
@@ -2890,13 +2917,7 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     if len(merged) <= SCOUT_MAX:
         return merged
     
-    # Имя выводим из пути справочника: у него уже стоит суффикс языка,
-    # и разойтись эти два файла не должны.
-    root = os.path.splitext(out_path)[0]                  # …/scout_ru
-    head, _, suffix = os.path.basename(root).partition("_")
-    no_shrink_path = os.path.join(
-        os.path.dirname(root),
-        f"{head}.no_shrink" + (f"_{suffix}" if suffix else "") + ".json")
+    no_shrink_path = _no_shrink_path(out_path)
     # Кэш «дожать не вышло» хранит и достигнутый размер: модель, остановившаяся
     # на 32 602 знаках, при следующем прогоне видела те же 32 602 и честно
     # начинала заново — с тем же исходом и за те же деньги. Пока справочник не

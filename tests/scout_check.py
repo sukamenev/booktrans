@@ -314,6 +314,7 @@ def main():
     ok("термина, которого нет в тексте, не дописываем",
        "меч-кладенец" not in got, [l for l in got.splitlines() if "меч" in l])
     ok("своя строка без канона не тронута", "| изба | hut |" in got)
+
     ok("автор наследуется от старшей книги",
        "author_target = Viktoria Zimenkova" in got,
        [l for l in got.splitlines() if "author_target" in l])
@@ -324,6 +325,21 @@ def main():
        open(sp, encoding="utf-8").read() == got)
     ok("перед записью остаётся копия",
        os.path.exists(sp + ".bak"))
+
+    # Сведение, изменившее справочник, равняет кэш «дожать не вышло» на новый
+    # размер: иначе пересжатие и сведение играют в пинг-понг — пересжатие
+    # выбрасывает строки имён цикла, сведение возвращает, размер меняется, и
+    # каждый запуск платит за то же сжатие заново.
+    nsp = P._no_shrink_path(sp)
+    json.dump({"m1": 11, "m2": None}, open(nsp, "w", encoding="utf-8"))
+    open(sp, "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = The Third\n\n"
+        "## NAMES — Имена\n\n| Пётр | Peter |\n")
+    P.cycle_merge(f"{d}/cur", [f"{d}/cyc1"], "en", blocks)
+    size = len(open(sp, encoding="utf-8").read())
+    got_ns = json.load(open(nsp, encoding="utf-8"))
+    ok("сведение равняет кэш пересжатия на новый размер",
+       got_ns == {"m1": size, "m2": size}, (got_ns, size))
     # Имена живут и в подразделах: `## NAMES` кончается не на `### Люди`,
     # а на следующем заголовке того же уровня. Пока сведение видело только
     # тело `## NAMES` — пустое, — свои строки оставались невидимы, и канон
