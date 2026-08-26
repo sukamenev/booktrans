@@ -78,6 +78,25 @@ def main():
        "--print-timeout" in cmd and cmd[cmd.index("--print-timeout") + 1]
        == "1234s", cmd)
 
+    # Молчаливая смерть: баннер и эхо промпта — не объяснение. Леса
+    # срезаются, эхо режется только узнанным, настоящие слова выживают.
+    banner = ("Reading prompt from stdin...\nOpenAI Codex v0.147.0\n"
+              "--------\nworkdir: /tmp\nmodel: sol\nprovider: openai\n"
+              "--------\nuser\nЯзыковая правка куска")
+    ok("леса и эхо срезаны в пустоту",
+       A.bare_words(banner, "Языковая правка куска целиком") == "",
+       repr(A.bare_words(banner, "Языковая правка куска целиком")))
+    ok("настоящая причина выживает",
+       "quota" in A.bare_words(banner + "\nERROR: quota exceeded",
+                               "Языковая правка куска целиком"),
+       repr(A.bare_words(banner + "\nERROR: quota exceeded", "")))
+    ok("чужое эхо не режется",
+       A.bare_words("user\nсовсем другой текст", "наш промпт") != "",
+       repr(A.bare_words("user\nсовсем другой текст", "наш промпт")))
+    ok("Hushed — подвид сбоя агента",
+       issubclass(A.Hushed, A.AgentError) and not issubclass(A.Hushed, A.Fatal),
+       A.Hushed.__mro__)
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 

@@ -37,6 +37,14 @@ class RateLimited(AgentError):
     """Кончились лимиты подписки. Не ошибка запроса — надо подождать."""
 
 
+class Hushed(AgentError):
+    """Агент умер, не объяснившись: ненулевой код возврата и ни слова по
+    существу. Так гибнут внешние беды — лимит или давка сессий, пришедшие
+    раньше, чем поставщик успел напечатать причину; свойство самого куска
+    (отказ, кривой ответ) всегда приходит со словами. Такой сбой не приговор
+    куску: подождать и переспросить."""
+
+
 # Об исчерпанной подписке поставщики пишут кто во что горазд: «usage limit»,
 # «session limit», «out of credits», «Quota exceeded», «resets 12:50am». Список
 # фраз за ними не поспевает, и цена промаха несимметрична: неузнанный запрет
@@ -113,6 +121,34 @@ def said(r):
     except Exception:
         msg = out
     return " ".join(x for x in ((r.stderr or "").strip(), str(msg).strip()) if x)
+
+
+# Codex на каждом запуске печатает в stderr баннер, а в stdout — эхо промпта.
+# При молчаливой смерти это всё его наследство, и в сообщении о сбое баннер
+# выдаёт себя за объяснение: «сбой: Reading prompt from stdin… user Язы».
+CLI_NOISE = re.compile(
+    r"Reading prompt from stdin\.\.\.|OpenAI Codex v[\d.]+|^-{4,}\s*$|"
+    r"^(?:workdir|model|provider|approval|sandbox|reasoning effort|"
+    r"reasoning summaries|session id):.*$", re.M)
+
+
+def bare_words(msg, sent=""):
+    """Что агент сказал по существу: сбой без лесов CLI и эха промпта.
+
+    Эхо режется только когда оно узнано — хвост после строки `user` совпадает
+    с началом нашего же промпта: настоящий ответ модели так не начинается,
+    а резать наугад значит прятать объяснения.
+    """
+    msg = CLI_NOISE.sub("", msg or "")
+    m = re.search(r"(?m)^user\s*$", msg)
+    if m:
+        tail = msg[m.end():].strip()
+        s = sent.strip()
+        if not tail or (s and s.startswith(tail[:200])):
+            msg = msg[:m.start()]          # эхо оборвано на полуслове
+        elif s and tail.startswith(s[:200]):
+            msg = msg[:m.start()] + tail[len(s):]   # эхо целиком, дальше слова
+    return msg.strip()
 
 
 class Limits:
@@ -429,7 +465,10 @@ class AgyAgent(Agent):
                 raise RateLimited(msg[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
-            raise AgentError(f"agy вернул {r.returncode}: {msg[:400]}")
+            plain = bare_words(msg, payload)
+            if not plain:
+                raise Hushed(f"agy вернул {r.returncode} без объяснения")
+            raise AgentError(f"agy вернул {r.returncode}: {plain[:400]}")
         try:
             env = json.loads(r.stdout)
             text = env.get("result") or env.get("response") or r.stdout
@@ -477,7 +516,13 @@ class CodexAgent(Agent):
             msg = said(r)
             if limited(msg):
                 raise RateLimited(msg[:300])
-            raise AgentError(f"codex вернул {r.returncode}: {msg[:400]}")
+            plain = bare_words(msg, payload)
+            if not plain:
+                # Так codex гибнет, когда о лимит бьются несколько сессий
+                # разом: часть получает внятный отказ, часть обрывается до
+                # печати причины.
+                raise Hushed(f"codex вернул {r.returncode} без объяснения")
+            raise AgentError(f"codex вернул {r.returncode}: {plain[:400]}")
         actual_model = self.model
         if r.stderr:
             m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)

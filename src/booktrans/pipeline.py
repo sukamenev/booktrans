@@ -23,6 +23,7 @@ from .lang import T
 from . import lang
 from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
+                   HUSH_MAX, HUSH_PAUSE,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
                    REFUSE_ROW,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
@@ -799,7 +800,18 @@ def _chain_run(who, system, prompt, retries, parse, log):
                 last = e
         pause = _hold(who, waited, log)
         if not pause:
-            raise last or AgentError(T("lim_gave_up", waited // 3600, ""))
+            # Молчаливая смерть — почти всегда внешняя беда (лимит, давка
+            # сессий), пришедшая раньше, чем реестр лимитов о ней узнал:
+            # свойство самого куска приходит со словами. Пережидаем штатный
+            # интервал и спрашиваем снова; потолок нарочно ниже суточного —
+            # неизвестной беде час, известному лимиту сутки.
+            if isinstance(last, agent_mod.Hushed) and waited < HUSH_MAX:
+                pause = HUSH_PAUSE
+                log("")
+                log("    " + T("hush_wait", pause // 60, int(waited) // 60))
+                time.sleep(pause)
+            else:
+                raise last or AgentError(T("lim_gave_up", waited // 3600, ""))
         waited += pause
 
 
