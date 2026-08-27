@@ -487,7 +487,12 @@ class AgyAgent(Agent):
             raise AgentError(f"agy вернул {r.returncode}: {plain[:400]}")
         try:
             env = json.loads(r.stdout)
-            text = env.get("result") or env.get("response") or r.stdout
+            text = env.get("result") or env.get("response")
+            if not str(text or "").strip():
+                # SUCCESS с пустым текстом — не ответ. Прежний код подставлял
+                # сюда весь json-конверт, и разбор жаловался на «ответ без
+                # маркеров» с конвертом вместо текста в сообщении.
+                raise AgentError("agy вернул SUCCESS без текста")
         except json.JSONDecodeError:
             text = r.stdout
         return text, {"model": self.model, "cost_usd": None}

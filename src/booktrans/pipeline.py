@@ -539,7 +539,11 @@ def condense(state, upto, agent, retries, log, fallback=None):
                    "DIGEST", lang.prompt("box_digest")[0])
     log("  " + T("digest_go"), end="")
     try:
-        (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
+        # Система — пристёгивающая строка, не пустота: агентная обёртка без
+        # системы зовёт инструмент, headless его отклоняет — и приходит
+        # SUCCESS с пустым текстом, по три попытки на каждое сжатие.
+        (new, _), meta, dt = _chain_run([agent] + _backups(fallback),
+                                        _text_only(), prompt,
                                         retries,
                                         _parse_digest, log)
     except (Refused, RuntimeError, Fatal) as e:
@@ -3289,7 +3293,8 @@ def detect_structure(work, styles, agent, task, retries, log, fallback=None):
             raise ValueError("не разобрал ни одной строки вида тег|класс = вид")
         return got, ""
 
-    (got, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
+    (got, _), meta, dt = _chain_run([agent] + _backups(fallback),
+                                    _text_only(), prompt,
                                     retries, parse_map, log)
 
     known = {f'{r["tag"]}|{r["cls"]}' for r in styles}

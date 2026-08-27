@@ -307,6 +307,14 @@ def prompt_roots():
            os.path.join(config_dir(), "prompts"), PROMPTS]
     return [p for p in out if p]
 
+# Прочитанное держится в памяти процесса. Не ради скорости: покусковые
+# проходы читают файл при каждом куске, и правка рабочей копии — новая
+# версия, другие поля шаблона — на живом прогоне меняла промпт под ногами
+# у давно загруженного кода. Прогон работает с тем, что застал при первом
+# чтении; правка промптов вступает в силу с перезапуска.
+_prompts = {}
+
+
 def prompt(name, to=None, roots=None):
     """Промпт прохода, с учётом перекрытий.
 
@@ -321,6 +329,9 @@ def prompt(name, to=None, roots=None):
     с авторской, — иначе своё дополнение отменяло бы авторское.
     """
     roots = roots or prompt_roots()
+    key = (name, to, tuple(roots))
+    if key in _prompts:
+        return _prompts[key]
     base = None
     for root in roots:
         for p in ([os.path.join(root, to, f"{name}.md")] if to else []) + \
@@ -342,7 +353,8 @@ def prompt(name, to=None, roots=None):
     # «Своё» — всё, кроме авторского файла из последней папки: о нём человеку
     # сообщают, потому что дальше конвейер работает не по тому, что в пакете.
     own = base if base != os.path.join(roots[-1], f"{name}.md") else None
-    return "\n\n".join(out), own
+    _prompts[key] = ("\n\n".join(out), own)
+    return _prompts[key]
 
 
 def lost_tokens(name, over, root=PROMPTS):
