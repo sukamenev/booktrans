@@ -2733,11 +2733,15 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         parts.append(cur)
 
     half = lpath(work, "scout.part.json", to)
+    mfile = lpath(work, "scout.merge.json", to)
     if os.path.exists(half):
         findings = json.load(open(half, encoding="utf-8"))
     else:
         findings = []
-        
+
+    # После рестарта разборы и сведение могут быть целиком в кэше — тогда
+    # циклы ниже не делают ни одного запроса, и модели для scout.json нет.
+    meta = {}
     for i, part in enumerate(parts, 1):
         if i <= len(findings):
             continue
@@ -2785,6 +2789,13 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         # получает обрубок и отвечает пустотой. Поэтому разборы сводятся
         # пачками в пределах MERGE_INPUT, затем сводятся результаты пачек —
         # и так до одного, сколько бы книга ни весила.
+        #
+        # Каждая сведённая пачка тут же ложится на диск: пачка стоит минут и
+        # денег, а прерванный прогон начинал пирамиду с нуля. После рестарта
+        # уцелевшие результаты группируются заново — дерево сведения выйдет
+        # другим, но сведёт то же самое.
+        if os.path.exists(mfile):
+            findings = json.load(open(mfile, encoding="utf-8"))
         while len(findings) > 1:
             batches = _merge_batches(findings)
             if len(batches) == len(findings):
@@ -2807,6 +2818,9 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
                 log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
                 nxt.append(m)
+                json.dump(nxt + [f for b in batches[j:] for f in b],
+                          open(mkparent(mfile), "w", encoding="utf-8"),
+                          ensure_ascii=False)
             findings = nxt
         merged = findings[0]
     else:
@@ -2837,8 +2851,9 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         log("  " + T("scout_forked", len(forked)))
         for _, line in forked[:8]:
             log(f"      {line}")
-    if os.path.exists(half):
-        os.unlink(half)
+    for cache in (half, mfile):
+        if os.path.exists(cache):
+            os.unlink(cache)
     return merged
 
 

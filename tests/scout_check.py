@@ -420,7 +420,58 @@ def main():
        None)
     ok("пачки: пусто — пусто", P._merge_batches([], 100) == [], None)
 
+    # Сведение переживает рестарт: каждая сведённая пачка тут же ложится в
+    # scout.merge.json, и оборванный прогон продолжает пирамиду с уцелевшего,
+    # а не пересводит уже оплаченное с нуля.
+    import tempfile as _tf
+    md = _tf.mkdtemp()
+    f3 = [f"## РАЗБОР {i}\n\n" + "строка наблюдений; " * 2500 for i in range(3)]
+    half = os.path.join(md, "ru", "scout.part.json")
+    os.makedirs(os.path.dirname(half), exist_ok=True)
+    json.dump(f3, open(half, "w", encoding="utf-8"), ensure_ascii=False)
+
+    class Mortal:
+        model, kind = "смертная", "стенд"
+
+        def __init__(self):
+            self.calls = 0
+
+        def run(self, system, user):
+            self.calls += 1
+            if self.calls > 1:
+                raise P.agent_mod.Fatal("обрыв между пачками")
+            return ("[[[SCOUT 2]]]\n## СВОДКА\n\nпачка сведена\n[[[/SCOUT 2]]]",
+                    {"model": self.model, "cost_usd": 0})
+
+    crashed = False
+    try:
+        P.scout(md, [], Mortal(), "", "задание", 1, hush)
+    except P.agent_mod.Fatal:
+        crashed = True
+    mfile = os.path.join(md, "ru", "scout.merge.json")
+    saved = (json.load(open(mfile, encoding="utf-8"))
+             if os.path.exists(mfile) else [])
+    ok("обрыв сведения: сведённая пачка уцелела",
+       crashed and len(saved) == 2 and "пачка сведена" in saved[0]
+       and saved[1] == f3[2], (crashed, len(saved)))
+
+    class Counter(Mortal):
+        model = "счётная"
+
+        def run(self, system, user):
+            self.calls += 1
+            return ("[[[SCOUT 2]]]\n## СВОДКА\n\nвсё сведено\n[[[/SCOUT 2]]]",
+                    {"model": self.model, "cost_usd": 0})
+
+    c = Counter()
+    got = P.scout(md, [], c, "", "задание", 1, hush)
+    ok("рестарт доводит сведение одним запросом",
+       c.calls == 1 and "всё сведено" in got, (c.calls, got[:40]))
+    ok("кэши сведения убраны за собой",
+       not os.path.exists(mfile) and not os.path.exists(half), None)
+
     import shutil
+    shutil.rmtree(md, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0
