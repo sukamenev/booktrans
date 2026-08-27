@@ -137,6 +137,15 @@ def main():
     ok("срок «try again at 9:36 AM» понят",
        0 < got <= 86400, got)
 
+    # Повтор в саму минуту обещанного срока получает то же сообщение со
+    # свежепрошедшим временем. Это «окно открывается сейчас», а не «завтра»:
+    # книга ждала сутки при живой квоте.
+    just = A.time.localtime(A.time.time() - 180)
+    h12 = just.tm_hour % 12 or 12
+    half = "PM" if just.tm_hour >= 12 else "AM"
+    got = A.reset_after(f"…or try again at {h12}:{just.tm_min:02d} {half}.")
+    ok("свежепрошедший срок — пауза, а не сутки", 0 < got <= 600, got)
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 
