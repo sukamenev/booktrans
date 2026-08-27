@@ -678,7 +678,9 @@ def main():
         log("  " + T("ocr_made", made_by_ocr))
 
     def sysprompt(extra="", lean=False):
-        parts = [f"Язык перевода: **{lang.lang_name(args.to)}**. Переводить на него.",
+        # Порядок частей закреплён: всё здесь неизменно на всю книгу, и
+        # поставщики кешируют запрос по дословно совпадающему началу.
+        parts = [lang.prompt("sys_language")[0].format(lang=lang.lang_name(args.to)),
                  task("style")]
         # Порча от распознавания — свойство исходника, а не прохода: её видят
         # и разведка, и перевод, и редактура, поэтому место ей в общем промпте.
@@ -686,7 +688,7 @@ def main():
             parts.append(task("ocr_error_fix"))
         rules = lang.rules(args.to)
         if rules:
-            parts.append("# Правила целевого языка\n\n" + rules)
+            parts.append(lang.prompt("sys_rules")[0] + "\n\n" + rules)
         sp = pipeline.lpath(work, "scout.md", args.to)
         if os.path.exists(sp):
             ref = open(sp, encoding="utf-8").read()
@@ -697,13 +699,9 @@ def main():
                 # всю книгу — транспорт кеширует её по совпадающему началу —
                 # и не тащит сотни строк, из которых куску нужны единицы.
                 ref = pipeline.split_ref(ref)[0]
-            parts.append("# Справочник по этой книге\n\n"
-                         "Собран разведочным проходом. Решения по именам, родам и "
-                         "интонациям приняты здесь и обсуждению не подлежат.\n\n"
-                         + ref)
+            parts.append(lang.prompt("sys_ref")[0] + "\n\n" + ref)
         if user_text:
-            parts.append("# Указания заказчика\n\n"
-                         "**Имеют приоритет над всем вышесказанным.**\n\n" + user_text)
+            parts.append(lang.prompt("sys_user")[0] + "\n\n" + user_text)
         if extra:
             parts.append(extra)
         return "\n\n---\n\n".join(parts)

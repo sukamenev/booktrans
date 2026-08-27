@@ -310,8 +310,8 @@ def _run(agent, system, prompt, retries, parse_fn, log):
                 raise Refused(e.first, e.n, e.total) from None
             stops.append(e.first)
             last = e
-            cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
-                            "Верни РОВНО требуемые идентификаторы, каждый один раз.")
+            cur = prompt + "\n\n---\n\n" + \
+                lang.prompt("retry_reject")[0].format(err=e)
         except (Fatal, RateLimited):
             # Повторять нечего. У Fatal беда не в тексте, а лимит — вообще не
             # осечка запроса, а состояние времени: до срока модель ответит
@@ -327,8 +327,8 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             if isinstance(e, AgentError) and attempt < retries:
                 time.sleep(min(RETRY_PAUSE * attempt, RETRY_PAUSE * 4))
             err = e
-            cur = prompt + (f"\n\n---\n\nВАЖНО: прошлая попытка отвергнута — {e}\n"
-                            "Верни РОВНО требуемые идентификаторы, каждый один раз.")
+            cur = prompt + "\n\n---\n\n" + \
+                lang.prompt("retry_reject")[0].format(err=e)
     if last is not None:
         # Кусок обрывался до последней попытки — это отказ, а не сбой связи.
         # Через Refused его подхватит запасная модель; RuntimeError валил
@@ -534,10 +534,9 @@ def condense(state, upto, agent, retries, log, fallback=None):
         return (digest + "\n\n" + "\n\n".join(fresh)).strip()
 
     prompt_tpl, _ = lang.prompt("digest")
-    prompt = boxed(prompt_tpl.format(budget=DIGEST_BUDGET, upto=upto)
-                   + "\n\n## Конспект\n\n" + (digest or "(пока пусто)")
-                   + "\n\n## Что было дальше\n\n" + "\n\n".join(fresh),
-                   "DIGEST", "номер куска, названный выше")
+    prompt = boxed(prompt_tpl.format(budget=DIGEST_BUDGET, upto=upto,
+                                     digest=digest, fresh="\n\n".join(fresh)),
+                   "DIGEST", lang.prompt("box_digest")[0])
     log("  " + T("digest_go"), end="")
     try:
         (new, _), meta, dt = _chain_run([agent] + _backups(fallback), "", prompt,
@@ -619,13 +618,21 @@ def ref_rows_for(rows, text):
     return got
 
 
+def _chunk_head(index, label):
+    """Первая строка запроса куска. Раздел упоминается, только когда он есть:
+    файл-вариант вместо склейки строк, чтобы шов не жил в коде."""
+    name = "chunk_head_label" if label else "chunk_head"
+    return lang.prompt(name)[0].format(index=index, label=label)
+
+
 def translate_prompt(chunk, nxt, summary, tail, terms, refs, task):
     # стихи помечаем отдельно: иначе модель их не отличит и переведёт прозой,
     # а редактор потом «выправит» ритм окончательно
     src = "\n".join(f"[[[{MARK.get(b['kind'], 'P')} {b['id']}]]]\n{b['text']}"
                     for b in translatable(chunk["blocks"]))
-    parts = [task, f"Фрагмент {chunk['index']}."
-                   + (f" Раздел: {chunk['label']}." if chunk["label"] else "")]
+    # Задание — первым: оно неизменно на всю книгу, а поставщики кешируют
+    # запрос по дословно совпадающему началу. Переменное — дальше.
+    parts = [task, _chunk_head(chunk["index"], chunk["label"])]
     if summary:
         parts.append(lang.prompt("translate_prev")[0] + "\n\n" + summary)
     if tail:
@@ -1012,9 +1019,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                                   ref_rows_for(ref_rows, here), task)
         canon = verse_canon(state, c["blocks"])
         if canon:
-            prompt += ("\n\n---\n\n## Строки, уже переведённые ранее\n\n"
-                       "Эти стихотворные строки уже встречались и переведены. "
-                       "Используй перевод дословно:\n\n"
+            prompt += ("\n\n---\n\n" + lang.prompt("verse_canon")[0] + "\n\n"
                        + "\n\n".join(f"[[[P {k}]]]\n{v}" for k, v in canon.items()))
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.txt'), "w",
              encoding="utf-8").write(prompt)
@@ -1380,7 +1385,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # правка идёт в сторону чужого синтаксиса, а не хорошего русского
         pairs = [f"[[[{MARK.get(b['kind'], 'P')} {b['id']}]]]\n{draft[b['id']]}"
                  for b in translatable(c["blocks"]) if b["id"] in draft]
-        parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
+        parts = [task, _chunk_head(idx, c["label"])]
         if digest:
             hint_prev, _ = lang.prompt("translate_hint_prev")
             parts.append(hint_prev + "\n\n" + digest)
@@ -1393,7 +1398,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         refs = ref_rows_for(ref_rows, src_txt)
         if refs:
             parts.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
-        parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
+        parts.append(lang.prompt("edit_fragment")[0] + "\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.edit.txt'), "w",
              encoding="utf-8").write(prompt)
@@ -1658,13 +1663,13 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                 skipped += 1
                 continue
         who = ((by_index.get(idx) or {}).get("label") or "—")[:24]
-        rows = [f"### {i}\n\nОригинал:\n\n{orig[i]}\n\nПеревод:\n\n{cur[i]}"
-                for i in ids]
-        pieces = [task, "## Замечания редактора\n\n" + remark]
+        pair_tpl = lang.prompt("verify_pair")[0]
+        rows = [pair_tpl.format(id=i, orig=orig[i], tr=cur[i]) for i in ids]
+        pieces = [task, lang.prompt("verify_remarks")[0] + "\n\n" + remark]
         refs = ref_rows_for(ref_rows, " ".join(orig[i] for i in ids))
         if refs:
             pieces.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
-        pieces.append("## Абзацы\n\n" + "\n\n".join(rows))
+        pieces.append(lang.prompt("verify_pairs")[0] + "\n\n" + "\n\n".join(rows))
         prompt = "\n\n---\n\n".join(pieces)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.verify.txt'), "w",
              encoding="utf-8").write(prompt)
@@ -1761,13 +1766,14 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("nt_start"))
 
-        pairs = [f"[[[P {b['id']}]]]\nОРИГИНАЛ: {b['text']}\nПЕРЕВОД:  {tr[b['id']]}"
+        pair_tpl = lang.prompt("notes_pair")[0]
+        pairs = [pair_tpl.format(id=b["id"], orig=b["text"], tr=tr[b["id"]])
                  for b in translatable(c["blocks"]) if b["id"] in tr]
-        parts = [task, f"Фрагмент {idx}." + (f" Раздел: {c['label']}." if c["label"] else "")]
+        parts = [task, _chunk_head(idx, c["label"])]
         if already:
             hint_already, _ = lang.prompt("edit_hint_already")
             parts.append(hint_already + "\n\n" + "\n".join(sorted(set(already))))
-        parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
+        parts.append(lang.prompt("edit_fragment")[0] + "\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.notes.txt'), "w",
              encoding="utf-8").write(prompt)
@@ -2830,8 +2836,9 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         # Имена цикла идут в каждый кусок, а не только в первый: имена
         # встречаются по всей книге, и согласовать их надо всюду.
         prompt = boxed(f"{task}{hint}\n\n---\n\n"
-                       f"## Часть {i} из {len(parts)}\n\n{text}",
-                       "SCOUT", "номер этой части")
+                       + lang.prompt("scout_part")[0].format(i=i, n=len(parts))
+                       + f"\n\n{text}",
+                       "SCOUT", lang.prompt("box_scout_part")[0])
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,
@@ -2872,7 +2879,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 merge = boxed(merge_prompt.format(budget=SCOUT_BUDGET,
                                                   parts=len(batch))
                               + "\n\n---\n\n" + "\n\n---\n\n".join(batch),
-                              "SCOUT", "число сведённых разборов, названное выше")
+                              "SCOUT", lang.prompt("box_scout_merge")[0])
                 (m, _), meta, dt = _chain_run(who, system, merge, retries,
                                               _parse_scout, log)
                 cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
@@ -3066,7 +3073,7 @@ def _shrink(part, want, who, system, retries, log):
     ask_prompt, _ = lang.prompt("scout_condense")
     ask = boxed(ask_prompt.format(len_part=len(part), want=want)
                 + "\n\n---\n\n" + part,
-                "SHRINK", "нужный размер в знаках, названный выше")
+                "SHRINK", lang.prompt("box_shrink")[0])
     (short, _), meta, _dt = _chain_run(who, system or _text_only(), ask, retries,
                                        lambda o: (unbox(o, "SHRINK"), ""),
                                        log)
@@ -3161,11 +3168,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
     # остаётся двойным. Переписывать прозу подстановкой опасно, поэтому выбор
     # закрепляем отдельным разделом в конце: он короткий и старше остального.
     out.append("")
-    out.append("## ОКОНЧАТЕЛЬНЫЙ ВЫБОР ПО ТЕРМИНАМ")
-    out.append("")
-    out.append("Ниже — термины, у которых выше по справочнику осталось "
-               "несколько вариантов перевода. Пишутся только так; всё, что "
-               "сказано о них выше, этому подчиняется.")
+    out.append(lang.prompt("scout_oneterm_apply")[0])
     out.append("")
     out += [f"- {x}" for x in done]
     merged = "\n".join(out)

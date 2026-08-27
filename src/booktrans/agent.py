@@ -206,8 +206,12 @@ def limit_left(a):
     return LIMITS.left(key_of(a))
 
 
-PING_SYS = "Answer with a single word."
-PING_ASK = "Reply with the word: ok"
+# Текст пробы живости — из prompts, как и весь текст для модели. Константы,
+# а не функция: стенды сверяют присланный вопрос с PING_ASK на равенство.
+from .lang import prompt as _prompt
+
+PING_SYS = _prompt("ping_sys")[0]
+PING_ASK = _prompt("ping_ask")[0]
 
 
 def alive(a):
@@ -347,7 +351,9 @@ class ClaudeAgent(Agent):
             cmd += ["--effort", self.effort]
         
         if image:
-            user += f"\n\nHere is the image file you need to extract: {os.path.abspath(image)}\nPlease use your vision capabilities to read it."
+            from . import lang
+            user += "\n\n" + lang.prompt("image_read_vision")[0].format(
+                path=os.path.abspath(image))
             
         try:
             r = subprocess.run(cmd, input=user, capture_output=True,
@@ -460,7 +466,9 @@ class AgyAgent(Agent):
         if self.effort:
             cmd += ["--effort", self.effort]
         if image:
-            payload += f"\n\nHere is the image file you need to extract: {os.path.abspath(image)}\nPlease use your tools (e.g. view_file) to read it if it's not automatically attached."
+            from . import lang
+            payload += "\n\n" + lang.prompt("image_read_tools")[0].format(
+                path=os.path.abspath(image))
         try:
             r = subprocess.run(cmd, input=payload, capture_output=True,
                                text=True, timeout=self.timeout)
