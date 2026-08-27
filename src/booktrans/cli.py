@@ -677,7 +677,7 @@ def main():
     if made_by_ocr:
         log("  " + T("ocr_made", made_by_ocr))
 
-    def sysprompt(extra=""):
+    def sysprompt(extra="", lean=False):
         parts = [f"Язык перевода: **{lang.lang_name(args.to)}**. Переводить на него.",
                  task("style")]
         # Порча от распознавания — свойство исходника, а не прохода: её видят
@@ -689,10 +689,18 @@ def main():
             parts.append("# Правила целевого языка\n\n" + rules)
         sp = pipeline.lpath(work, "scout.md", args.to)
         if os.path.exists(sp):
+            ref = open(sp, encoding="utf-8").read()
+            if lean:
+                # Покусковым проходам таблицы имён и терминов не кладутся в
+                # систему целиком: их строки приезжают с каждым куском своей
+                # выжимкой (см. split_ref). Система остаётся неизменной на
+                # всю книгу — транспорт кеширует её по совпадающему началу —
+                # и не тащит сотни строк, из которых куску нужны единицы.
+                ref = pipeline.split_ref(ref)[0]
             parts.append("# Справочник по этой книге\n\n"
                          "Собран разведочным проходом. Решения по именам, родам и "
                          "интонациям приняты здесь и обсуждению не подлежат.\n\n"
-                         + open(sp, encoding="utf-8").read())
+                         + ref)
         if user_text:
             parts.append("# Указания заказчика\n\n"
                          "**Имеют приоритет над всем вышесказанным.**\n\n" + user_text)
@@ -762,7 +770,7 @@ def main():
                           args.retries, log, fallback=backup_for("translator"),
                           to=args.to)
         d, s, halted = pipeline.translate(
-            work, chunks, agent_for("translator"), sysprompt(),
+            work, chunks, agent_for("translator"), sysprompt(lean=True),
             task("translate", model=agent_for("translator").model
                  or agent_for("translator").kind.capitalize()),
             args.retries, log, only_chunks, fallback=backup_for("translator"),
@@ -788,7 +796,7 @@ def main():
         log("")
         log(head("step_edit", n))
         d, s, t, halted = pipeline.edit(
-            work, chunks, agent_for("editor"), sysprompt(), task("edit"),
+            work, chunks, agent_for("editor"), sysprompt(lean=True), task("edit"),
             args.retries, log, only_chunks, args.jobs,
             fallback=backup_for("editor"), force=args.force_editing, to=args.to)
         if d or not halted:
@@ -803,7 +811,7 @@ def main():
         log("")
         log(head("step_verify", n))
         d, s, fn, fx = pipeline.verify(
-            work, chunks, agent_for("verifier"), sysprompt(), task("verify"),
+            work, chunks, agent_for("verifier"), sysprompt(lean=True), task("verify"),
             args.retries, log, only_chunks,
             fallback=backup_for("verifier"), to=args.to)
         log("  " + (T("done_verify", d, s, fn, fx) if d or s

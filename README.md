@@ -92,7 +92,9 @@ translation, adds footnotes and assembles the file.
 - **scouts the book before translating** — narrator voices, names, terms,
   gender and declension, physical properties of things, how characters change;
 - **translates in chunks**, never crossing a boundary between narrators, with
-  a cumulative plot digest and a shared list of accepted terms;
+  a cumulative plot digest and a shared list of accepted terms; of the
+  reference tables only the rows that occur in the chunk ride along — the
+  rest of the reference stays unchanged and provider-cacheable;
 - **proposes footnotes** and flags claims that contradict reality without
   correcting the author: the text keeps the mistake, the footnote holds the
   truth;

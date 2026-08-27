@@ -580,7 +580,46 @@ def verse_learn(state, blocks, res):
             known.setdefault(fingerprint(b["text"]), res[b["id"]])
 
 
-def translate_prompt(chunk, nxt, summary, tail, terms, task):
+def split_ref(text):
+    """Справочник надвое: костяк и строки таблиц.
+
+    Костяк — проза: голоса, род, обращения, опасные места. Он неизменен на
+    всю книгу и уходит в системный промпт, который транспорт кеширует по
+    совпадающему началу. Строки таблиц — большая часть справочника, а куску
+    из них нужны считаные: те, чьи ключи в нём встречаются. Они уезжают из
+    системы и приезжают с куском — см. ref_rows_for.
+    """
+    frame, rows = [], []
+    for line in text.splitlines():
+        t = line.strip()
+        if t.startswith("|") and t.count("|") > 2:
+            key = re.sub(r"[\s*_`~]+", " ", t.split("|")[1]).strip()
+            if key and not set(key) <= set("- :"):
+                rows.append((key, line))
+            continue                 # шапки и линейки таблиц — тоже прочь
+        frame.append(line)
+    return "\n".join(frame), rows
+
+
+def ref_rows_for(rows, text):
+    """Строки справочника, чьи ключи встречаются в этом тексте.
+
+    Ключ — первая ячейка; составной («duo / trio») ловится любой частью.
+    Совпадение — полной фразой в границах слова, как у сведения имён цикла,
+    но без оглядки на регистр: пропущенная строка стоит разнобоя в имени,
+    лишняя — сотни знаков.
+    """
+    got = []
+    for key, line in rows:
+        for part in re.split(r"\s*[/,;]\s*", key):
+            if len(part) > 1 and re.search(
+                    rf"(?<![^\W\d_]){re.escape(part)}(?![^\W\d_])", text, re.I):
+                got.append(line)
+                break
+    return got
+
+
+def translate_prompt(chunk, nxt, summary, tail, terms, refs, task):
     # стихи помечаем отдельно: иначе модель их не отличит и переведёт прозой,
     # а редактор потом «выправит» ритм окончательно
     src = "\n".join(f"[[[{MARK.get(b['kind'], 'P')} {b['id']}]]]\n{b['text']}"
@@ -588,32 +627,25 @@ def translate_prompt(chunk, nxt, summary, tail, terms, task):
     parts = [task, f"Фрагмент {chunk['index']}."
                    + (f" Раздел: {chunk['label']}." if chunk["label"] else "")]
     if summary:
-        parts.append("## Что было в книге до этого места\n\n"
-                     "Фон для связности. Не переводить и не пересказывать в ответе.\n\n" + summary)
+        parts.append(lang.prompt("translate_prev")[0] + "\n\n" + summary)
     if tail:
-        parts.append("## Последние абзацы уже готового перевода\n\n"
-                     "Продолжай этим же стилем и ритмом; не повторяй только что "
-                     "использованные обороты.\n\n" + tail)
+        parts.append(lang.prompt("translate_tail")[0] + "\n\n" + tail)
     if terms:
-        parts.append("## Термины, уже принятые в предыдущих фрагментах\n\n"
-                     "Твои же решения из ранее переведённых кусков. Встретишь любой — "
-                     "бери отсюда дословно, нового варианта не придумывай.\n\n" + "\n".join(terms))
-    parts.append("## Фрагмент для перевода\n\n"
-                 "Переведи каждый абзац. Верни все идентификаторы, в том же порядке.\n\n" + src)
+        parts.append(lang.prompt("translate_terms")[0] + "\n\n" + "\n".join(terms))
+    if refs:
+        parts.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
+    parts.append(lang.prompt("translate_fragment")[0] + "\n\n" + src)
     if nxt:
         ahead = " ".join(strip(b["text"]) for b in translatable(nxt["blocks"])[:4])
         ahead = " ".join(ahead.split()[:LOOKAHEAD_WORDS])
         if ahead:
-            parts.append("## Что идёт дальше (переводить НЕ надо)\n\n"
-                         "Нужно только чтобы не оборвать мысль.\n\n" + ahead)
+            parts.append(lang.prompt("translate_ahead")[0] + "\n\n" + ahead)
     # Последней строкой — предупреждение об отвержении. Замерено на живой
     # отказной сцене: голый промпт Gemini рвал в 2 случаях из 3, с вестью об
     # отвергнутой попытке проходил 3 из 3, с этим честным предупреждением —
     # 2 из 3. Действующее вещество — весть об отвержении; повтор с настоящим
     # «прошлая попытка отвергнута» остаётся второй линией.
-    parts.append("Оборванный или неполный ответ будет отвергнут, и тот же "
-                 "запрос уйдёт повторно либо другой модели. Верни РОВНО "
-                 "перечисленные идентификаторы, каждый один раз, целиком.")
+    parts.append(lang.prompt("translate_finish")[0])
     return "\n\n---\n\n".join(parts)
 
 
@@ -945,6 +977,13 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
     if old:
         log("  " + T("no_fingerprint"))
 
+    # Строки таблиц справочника: в запрос идут не все, а встречающиеся в
+    # куске — как термины из state.json. Костяк справочника уже в системном
+    # промпте, см. split_ref.
+    rp = lpath(work, "scout.md", to)
+    ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
+        if os.path.exists(rp) else []
+
     done = skipped = 0
     refused, halted = [0], False
     for i, c in enumerate(chunks):
@@ -969,7 +1008,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         nxt = chunks[i + 1] if i + 1 < len(chunks) else None
         here = " ".join(b["text"] for b in translatable(c["blocks"]))
         prompt = translate_prompt(c, nxt, summary, tail,
-                                  accumulated_terms(state, idx, here), task)
+                                  accumulated_terms(state, idx, here),
+                                  ref_rows_for(ref_rows, here), task)
         canon = verse_canon(state, c["blocks"])
         if canon:
             prompt += ("\n\n---\n\n## Строки, уже переведённые ранее\n\n"
@@ -1200,6 +1240,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     os.makedirs(lpath(work, "ed", to), exist_ok=True)
     now = getattr(agent, "model", None) or ""
 
+    # Строки таблиц справочника едут с куском, а не в системе — см. split_ref.
+    # Ключи — оригиналы, поэтому отбор идёт по исходному тексту куска, хотя
+    # сам оригинал редактору намеренно не показывается.
+    rp = lpath(work, "scout.md", to)
+    ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
+        if os.path.exists(rp) else []
+
     # Черновик собираем по всей книге, а не из файла с тем же номером.
     # Нарезка могла измениться — от новой версии конвейера или от другого
     # --chunk-words, — и тогда tr/0004.json покрывает уже не тот кусок.
@@ -1315,6 +1362,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # если не знаешь, кто в сцене, что уже случилось и кем персонажи
         # приходятся друг другу.
         digest, terms = "", []
+        src_txt = " ".join(b["text"] for b in translatable(c["blocks"]))
         sp = f"{work}/state.json"
         if os.path.exists(sp):
             st = json.load(open(sp, encoding="utf-8"))
@@ -1327,8 +1375,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             # оттуда «балдо» в одной главе и «бальдо» в следующей. Редактор
             # работает после всех и видит справочник целиком, поэтому свести
             # разнобой к одному виду может только он.
-            terms = accumulated_terms(
-                st, 1 << 30, " ".join(b["text"] for b in translatable(c["blocks"])))
+            terms = accumulated_terms(st, 1 << 30, src_txt)
         # только русский текст: оригинал намеренно не показываем, иначе
         # правка идёт в сторону чужого синтаксиса, а не хорошего русского
         pairs = [f"[[[{MARK.get(b['kind'], 'P')} {b['id']}]]]\n{draft[b['id']]}"
@@ -1343,6 +1390,9 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         if terms:
             parts.append(
                 lang.prompt("translate_hint_terms")[0] + "\n\n" + "\n".join(terms))
+        refs = ref_rows_for(ref_rows, src_txt)
+        if refs:
+            parts.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
         parts.append("## Фрагмент\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.edit.txt'), "w",
@@ -1579,6 +1629,10 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             orig[b["id"]] = b["text"]
     by_index = {c["index"]: c for c in chunks}
     cur, _ = all_translations(work, to)
+    # Строки таблиц справочника — по оригиналам спорных блоков, см. split_ref.
+    rp = lpath(work, "scout.md", to)
+    ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
+        if os.path.exists(rp) else []
     os.makedirs(lpath(work, "vf", to), exist_ok=True)
     done = skipped = added = fixed = 0
     n_all = len(chunks)
@@ -1606,9 +1660,12 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         who = ((by_index.get(idx) or {}).get("label") or "—")[:24]
         rows = [f"### {i}\n\nОригинал:\n\n{orig[i]}\n\nПеревод:\n\n{cur[i]}"
                 for i in ids]
-        prompt = "\n\n---\n\n".join(
-            [task, "## Замечания редактора\n\n" + remark,
-             "## Абзацы\n\n" + "\n\n".join(rows)])
+        pieces = [task, "## Замечания редактора\n\n" + remark]
+        refs = ref_rows_for(ref_rows, " ".join(orig[i] for i in ids))
+        if refs:
+            pieces.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
+        pieces.append("## Абзацы\n\n" + "\n\n".join(rows))
+        prompt = "\n\n---\n\n".join(pieces)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.verify.txt'), "w",
              encoding="utf-8").write(prompt)
         log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
