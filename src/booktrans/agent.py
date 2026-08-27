@@ -120,7 +120,10 @@ def said(r):
             msg = msg.get("message") or json.dumps(msg, ensure_ascii=False)
     except Exception:
         msg = out
-    return " ".join(x for x in ((r.stderr or "").strip(), str(msg).strip()) if x)
+    # Склейка через перевод строки: пробел приклеивал последнюю строку stderr
+    # к первой строке stdout — `user` из эха промпта, — и построчные срезки
+    # (CLI_NOISE, bare_words) переставали узнавать своё.
+    return "\n".join(x for x in ((r.stderr or "").strip(), str(msg).strip()) if x)
 
 
 # Codex на каждом запуске печатает в stderr баннер, а в stdout — эхо промпта.
@@ -138,16 +141,20 @@ def bare_words(msg, sent=""):
     Эхо режется только когда оно узнано — хвост после строки `user` совпадает
     с началом нашего же промпта: настоящий ответ модели так не начинается,
     а резать наугад значит прятать объяснения.
+
+    Сперва ищется эхо целиком со словами после него, и только потом —
+    оборванное. В обратном порядке двухсотзнаковая проба на длинном промпте
+    признаёт оборванным любой хвост и съедает слова вместе с эхом.
     """
     msg = CLI_NOISE.sub("", msg or "")
     m = re.search(r"(?m)^user\s*$", msg)
     if m:
         tail = msg[m.end():].strip()
         s = sent.strip()
-        if not tail or (s and s.startswith(tail[:200])):
-            msg = msg[:m.start()]          # эхо оборвано на полуслове
-        elif s and tail.startswith(s[:200]):
+        if s and len(tail) > len(s) and tail.startswith(s[:200]):
             msg = msg[:m.start()] + tail[len(s):]   # эхо целиком, дальше слова
+        elif not tail or (s and s.startswith(tail[:200])):
+            msg = msg[:m.start()]          # эхо оборвано на полуслове
     return msg.strip()
 
 
@@ -462,7 +469,8 @@ class AgyAgent(Agent):
         if r.returncode != 0:
             msg = said(r)
             if limited(msg):
-                raise RateLimited(CLI_NOISE.sub("", msg).strip()[:300])
+                plain = bare_words(msg, payload)
+                raise RateLimited((plain or CLI_NOISE.sub("", msg).strip())[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
             plain = bare_words(msg, payload)
@@ -515,9 +523,11 @@ class CodexAgent(Agent):
         if r.returncode != 0:
             msg = said(r)
             if limited(msg):
-                # Леса CLI срезаем и здесь: в трёхстах знаках лимита должен
-                # быть виден срок возвращения, а не баннер с workdir.
-                raise RateLimited(CLI_NOISE.sub("", msg).strip()[:300])
+                # Леса и эхо срезаем и здесь: в трёхстах знаках лимита должен
+                # быть виден срок возвращения, а не баннер с workdir и не
+                # начало нашего же промпта.
+                plain = bare_words(msg, payload)
+                raise RateLimited((plain or CLI_NOISE.sub("", msg).strip())[:300])
             plain = bare_words(msg, payload)
             if not plain:
                 # Так codex гибнет, когда о лимит бьются несколько сессий

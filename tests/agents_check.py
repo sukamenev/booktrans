@@ -97,6 +97,40 @@ def main():
        issubclass(A.Hushed, A.AgentError) and not issubclass(A.Hushed, A.Fatal),
        A.Hushed.__mro__)
 
+    # Эхо длиннее двухсотзнаковой пробы: раньше полный хвост признавался
+    # оборванным эхом, и слова после него съедались вместе с ним.
+    sent = ("правь кусок по стилевому руководству ниже " * 8).strip()
+    ok("длинное эхо целиком: слова после выживают",
+       A.bare_words(f"user\n{sent}\nERROR: quota exceeded", sent)
+       == "ERROR: quota exceeded",
+       repr(A.bare_words(f"user\n{sent}\nERROR: quota exceeded", sent)))
+
+    # Склейка stderr и stdout пробелом приклеивала последнюю строку баннера
+    # к строке `user`, и построчные срезки переставали узнавать эхо.
+    glue = Ran("user\n" + sent)
+    glue.stderr, glue.returncode = "--------", 1
+    ok("said не приклеивает stderr к строке user",
+       A.bare_words(A.said(glue), sent) == "",
+       repr(A.bare_words(A.said(glue), sent)))
+
+    # Лимит codex приходит после эха промпта. Срок возвращения реестр читает
+    # из сообщения RateLimited, и эхо выталкивало его за предел в триста
+    # знаков — лимит с названным сроком ждали вслепую по четверти часа.
+    lim = Ran(f"user\n{sent}\n\n---\n\nзапрос\n"
+              "You have hit your usage limit. Resets in 2h5m3s.")
+    lim.returncode = 1
+    A.subprocess.run = lim
+    msg = ""
+    try:
+        A.make_agent("codex", model="проба").run(sent, "запрос")
+    except A.RateLimited as e:
+        msg = str(e)
+    finally:
+        A.subprocess.run = real
+    ok("лимит codex: в сообщении срок, а не эхо промпта",
+       A.reset_after(msg) == 2 * 3600 + 5 * 60 + 3 and "правь кусок" not in msg,
+       repr(msg[:80]))
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 
