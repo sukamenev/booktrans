@@ -79,9 +79,10 @@ def limited(msg):
 RESET_IN = re.compile(r"resets? in\s+(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?",
                       re.I)
 
-# «resets 12:50am» — то же самое, но по часам. Пояс поставщик пишет свой, а
-# время показывает наше, местное.
-RESET_AT = re.compile(r"resets?(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
+# «resets 12:50am», «try again at 9:36 AM» — то же самое, но по часам. Пояс
+# поставщик пишет свой, а время показывает наше, местное.
+RESET_AT = re.compile(r"(?:resets?(?:\s+at)?|try again at|available(?: again)? at)"
+                      r"\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
 
 
 def reset_after(msg):

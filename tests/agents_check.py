@@ -131,6 +131,12 @@ def main():
        A.reset_after(msg) == 2 * 3600 + 5 * 60 + 3 and "правь кусок" not in msg,
        repr(msg[:80]))
 
+    # Живой codex пишет срок и так: «try again at 9:36 AM» — без слова
+    # resets. Непонятый срок — это слепые ожидания по четверти часа.
+    got = A.reset_after("You've hit your usage limit. …or try again at 9:36 AM.")
+    ok("срок «try again at 9:36 AM» понят",
+       0 < got <= 86400, got)
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 
