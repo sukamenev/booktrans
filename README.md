@@ -57,7 +57,7 @@ What each part does:
 | `-pt "leave the names in Latin"` | the same, but as a string — a typo in a filename must not silently become an instruction |
 | `--to ru` | target language |
 | `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, and `cmd` for a CLI of your own |
-| `--name-series` | include the cycle and book number in output file names: “Author. Cycle 2. Title” — a cycle's books line up in reading order |
+| `--name-series` | include the cycle and book number in output file names: “Author. Cycle 02. Title” — a cycle's books line up in reading order; the number is zero-padded to two digits so plain alphabetical sorting keeps book 10 after book 9 |
 | `--like Book.work` | a book of the same cycle translated earlier: after reconnaissance its names are merged into the new reference — the spelling accepted there wins by force, so the cycle keeps one spelling. Repeat the key; the order is the order of publication |
 | `--jobs 5` | five threads for editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
 

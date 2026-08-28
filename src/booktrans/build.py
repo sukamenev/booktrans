@@ -347,6 +347,11 @@ def out_name(meta, fallback, with_series=False):
     if with_series:
         ser = meta.get("series_target") or meta.get("series")
         no = re.sub(r"\.0$", "", str(meta.get("series_no") or "").strip())
+        # Номер — двумя цифрами: список файлов сортируется по буквам, и
+        # «10» без нуля вставала между «1» и «2». Дробные и нечисловые
+        # номера («3.5», «II») не трогаем.
+        if no.isdigit():
+            no = no.zfill(2)
         if ser:
             title = f"{ser} {no}. {title}" if no else f"{ser}. {title}"
     au = (meta.get("author_target") or meta.get("author") or "").split()
