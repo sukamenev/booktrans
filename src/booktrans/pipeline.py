@@ -790,6 +790,38 @@ def _backups(fallback):
     return list(fallback) if isinstance(fallback, (list, tuple)) else [fallback]
 
 
+def _edit_row(primary, spares, by, ban):
+    """Очередь редакторов для куска.
+
+    Обычный кусок правит заданная цепочка. Кусок, переведённый запасной
+    моделью после отказа (`by` — её имя), идёт той же цепочке за вычетом
+    записанных отказавшихся (`ban`): отказ вызван содержанием, и на правке
+    он повторится — причём тихо, обрывом в начале, который не всегда отличим
+    от «править нечего». Переведшая модель ставится дном очереди: содержание
+    она заведомо приняла. Первой её ставить нельзя — это самоправка, слепая
+    к своим калькам.
+
+    В старых файлах имён отказавшихся нет (`ban is None`): кто именно
+    отказался, уже не восстановить, а угадать редактора, который откажется
+    тихо, дороже самоправки — такой кусок по-старому правит переведшая.
+    """
+    if not by:
+        return [primary] + spares
+    translator = next((f for f in spares if by == getattr(f, "model", None)),
+                      None)
+    if ban is None:
+        if translator is None:
+            return [primary] + spares
+        return [translator] + [a for a in spares if a is not translator]
+    row = [a for a in [primary] + spares
+           if getattr(a, "model", None) not in ban]
+    if translator is not None and translator not in row:
+        row.append(translator)
+    # Отказали всем, а переведшей модели в цепочке нет: кто-то должен
+    # попробовать, и пусть это будет заданный редактор.
+    return row or [primary]
+
+
 def _hold(who, waited, log):
     """Сколько ждать, когда под лимитом вся цепочка. 0 — кто-то свободен.
 
@@ -864,7 +896,7 @@ def _chain_run(who, system, prompt, retries, parse, log):
     реестр, и переспрашивать её на каждом куске значит платить запросом за
     уже известный ответ.
     """
-    waited, last, refused = 0, None, False
+    waited, last, refused = 0, None, []
     while True:
         for k, a in enumerate(who):
             if agent_mod.limit_left(a):
@@ -874,14 +906,18 @@ def _chain_run(who, system, prompt, retries, parse, log):
                 log("    " + T("refused_retry", getattr(a, "model", "?")), end="")
             try:
                 got, meta, dt = _run(a, system, prompt, retries, parse, log)
-                # Пометка «после отказа» уходит в файл куска: по ней редактура
-                # знает, что этот кусок нельзя отдавать основному редактору —
-                # он упрётся в то же содержание.
+                # Пометка «после отказа» уходит в файл куска вместе с именами
+                # отказавшихся: редактура обведёт их стороной, а цепочку
+                # редакторов пройдёт как задана. Именно имена, не флаг: без
+                # них ей остаётся только отдать кусок переведшей модели —
+                # самоправка, слепая к своим калькам.
                 if refused:
-                    meta = dict(meta, after_refusal=True)
+                    meta = dict(meta, after_refusal=True, refused_by=refused)
                 return got, meta, dt
             except (Refused, RuntimeError, Fatal) as e:
-                refused = refused or isinstance(e, Refused)
+                m = getattr(a, "model", None)
+                if isinstance(e, Refused) and m and m not in refused:
+                    refused.append(m)
                 last = e
         pause = _hold(who, waited, log)
         if not pause:
@@ -1262,7 +1298,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
     # Прежде это кончалось пустым запросом: редактор честно отвечал, что
     # править нечего, пустой файл правки ложился поверх старого, и сделанная
     # редактура пропадала кусок за куском.
-    raw, whose = {}, {}
+    raw, whose, banned = {}, {}, {}
     for _, p_ in chunk_files(lpath(work, "tr", to)):
         x = json.load(open(p_, encoding="utf-8"))
         for k, v in x["tr"].items():
@@ -1272,6 +1308,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             # редактуру к переводчику на всяком совпадении моделей — и в
             # best-профилях гемини-куски получали самоправку гемини.
             whose[k] = (x.get("model") or "") if x.get("after_refusal") else ""
+            if x.get("after_refusal"):
+                banned[k] = x.get("refused_by")
 
     # Что уже отредактировано — тоже по блокам, а не по номерам файлов. Кусок,
     # на котором правка оборвалась, считаем сделанным только до места обрыва.
@@ -1339,15 +1377,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         draft = {i: raw[i] for i in ids if i in raw}
         if not draft:
             return
-        # Кусок, который основная модель переводить отказалась, она откажется
-        # и править: отказ вызван содержанием, а оно никуда не делось.
-        # Редактируем той же моделью, что перевела. Замерено: на таком куске
-        # основная модель дала 2 правки из 41, и обе в первых двух абзацах.
-        mine = agent
-        by = whose.get(ids[0], "")
-        if by:
-            mine = next((f for f in _backups(fallback)
-                         if by == getattr(f, "model", None)), mine)
+        # Кусок, переведённый после отказа, идёт обычной цепочке редакторов
+        # за вычетом отказавшихся: отказ вызван содержанием, и на правке он
+        # повторится (замерено: 2 правки из 41, обе в первых двух абзацах).
+        # Очередь и судьба старых файлов без имён — в _edit_row.
+        row = _edit_row(agent, _backups(fallback), whose.get(ids[0], ""),
+                        banned.get(ids[0]))
+        mine, spares = row[0], row[1:]
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_start", f"{len(draft):3d}"))
         # при jobs>1 предыдущий кусок может быть ещё не отредактирован —
@@ -1435,7 +1471,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # Заняты все — переждать. Прогон не встанет: три подряд «не взялись»
         # останавливают редактуру, а лимит — не отказ и пройдёт сам.
         try:
-            (res, notes), meta, dt = _run_patient(mine, _backups(fallback),
+            (res, notes), meta, dt = _run_patient(mine, spares,
                                                   system, prompt, retries,
                                                   parse, log, lock)
         except (Refused, RuntimeError, Fatal) as e:
@@ -1450,7 +1486,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         else:
             failed = False
         stopped = _stopped(res, ids)
-        for fb in _backups(fallback):
+        for fb in spares:
             if agent_mod.limit_left(fb):
                 continue
             # Оборвалась правка — передаём кусок следующей модели цепочки, как
@@ -1488,7 +1524,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 if not halt[0]:
                     halt[0] = _stop_row(refused, log, force, "edit")
             if not halt[0]:
-                _cool([mine] + _backups(fallback), refused, log)
+                _cool([mine] + spares, refused, log)
             return
         # Отпечатки — только по блокам, до которых правка дошла: по ним и
         # считается сделанное. Хвост оборванного куска в `src` не пишем,
