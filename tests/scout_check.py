@@ -497,7 +497,45 @@ def main():
        bool(seen) and "| the Qax | хаксы" in seen[0] and "Пул" not in seen[0],
        (seen[0][:160] if seen else "запроса не было"))
 
+    # Часть, начавшаяся посреди главы, знает эту главу, а разборы приходят
+    # на сведение подписанными: пачки пирамиды друг друга не видят, и
+    # перемену («женщина» в части 1 — «мужчина» в части 2) сведению нечем
+    # было бы датировать.
+    md3 = _tf.mkdtemp()
+    cap = {"parts": [], "merge": ""}
+
+    class Teller:
+        model, kind = "рассказчик", "стенд"
+
+        def run(self, system, user):
+            if "## Часть" in user:
+                cap["parts"].append(user)
+                i = len(cap["parts"])
+                return (f"[[[SCOUT {i}]]]\n## РАЗБОР\n\nчасть {i}\n"
+                        f"[[[/SCOUT {i}]]]",
+                        {"model": self.model, "cost_usd": 0})
+            cap["merge"] = user
+            raise P.agent_mod.Fatal("хватит")
+
+    blocks3 = ([{"kind": "title", "text": "Глава первая"}]
+               + [{"kind": "p", "text": "слово " * 200} for _ in range(180)])
+    try:
+        P.scout(os.path.join(md3, "w.work"), blocks3, Teller(), "", "задание",
+                1, hush)
+    except P.agent_mod.Fatal:
+        pass
+    p1, p2 = (cap["parts"] + ["", ""])[:2]
+    ok("часть с заголовком — без подсказки о главе",
+       "## Часть 1 из 2" in p1 and "посреди главы" not in p1, p1[:120])
+    ok("часть посреди главы знает её имя",
+       "## Часть 2 из 2" in p2 and "посреди главы «Глава первая»" in p2,
+       p2[:120])
+    ok("разборы на сведении подписаны частями",
+       "[разбор части 1 из 2]" in cap["merge"]
+       and "[разбор части 2 из 2]" in cap["merge"], cap["merge"][:160])
+
     import shutil
+    shutil.rmtree(md3, ignore_errors=True)
     shutil.rmtree(md2, ignore_errors=True)
     shutil.rmtree(md, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)

@@ -2829,8 +2829,16 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
 
     paras = [b for b in blocks if b["kind"] in ("p", "title")]
     parts, cur, cw = [], [], 0
+    # Глава, внутри которой начинается часть. Часть, стартующая посреди
+    # главы, своего заголовка не видит — а перемены в справочнике датируются
+    # главами, и без этой подсказки началу части нечем их пометить.
+    starts, last_title = [], ""
     for b in paras:
+        if not cur:
+            starts.append("" if b["kind"] == "title" else last_title)
         cur.append(b)
+        if b["kind"] == "title":
+            last_title = strip(b["text"])
         cw += words(b["text"])
         if cw >= SCOUT_WORDS:
             parts.append(cur)
@@ -2886,14 +2894,23 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         crows = ref_rows_for(canon_rows, text)
         canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
                  + "\n".join(crows)) if crows else ""
+        at = (lang.prompt("scout_part_at")[0].format(chapter=starts[i - 1])
+              if starts[i - 1] else "")
         prompt = boxed(f"{task}{hint}{canon}\n\n---\n\n"
-                       + lang.prompt("scout_part")[0].format(i=i, n=len(parts))
+                       + lang.prompt("scout_part")[0].format(i=i, n=len(parts),
+                                                             at=at)
                        + f"\n\n{text}",
                        "SCOUT", lang.prompt("box_scout_part")[0])
         log("  " + T("scout_block", i, len(parts),
                      f"{sum(words(b['text']) for b in part):6d}"), end="")
         (res, _), meta, dt = _chain_run(who, system, prompt, retries,
                                         _parse_scout, log)
+        # Подпись части остаётся в разборе до сведения: пачки пирамиды друг
+        # друга не видят, и противоречие состояний («женщина» в части 1,
+        # «мужчина» в части 5) сведение датирует именно этими подписями.
+        if len(parts) > 1:
+            res = (lang.prompt("scout_label")[0].format(i=i, n=len(parts))
+                   + "\n\n" + res)
         findings.append(res)
         json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
                   ensure_ascii=False)
