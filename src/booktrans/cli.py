@@ -731,7 +731,8 @@ def main():
         }
         ref = pipeline.scout(work, blocks, agent_for("scout"), sysprompt(),
                              task("scout"), args.retries, log, args.to,
-                             hints=hints, fallback=backup_for("scout"))
+                             hints=hints, fallback=backup_for("scout"),
+                             likes=args.like)
         # Внедрённое обращение к машине — повод остановиться до перевода, а не
         # обнаружить его в готовой книге. Разведка отличает такое указание от
         # книги, которая об инъекциях рассказывает: вторую переводим молча.

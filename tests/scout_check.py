@@ -470,7 +470,35 @@ def main():
     ok("кэши сведения убраны за собой",
        not os.path.exists(mfile) and not os.path.exists(half), None)
 
+    # Канон цикла едет в запрос части — но только строками, чьи имена в
+    # части встречаются: канон целиком уже резал бюджет на живом цикле.
+    md2 = _tf.mkdtemp()
+    prev = os.path.join(md2, "prev.work")
+    os.makedirs(os.path.join(prev, "ru"), exist_ok=True)
+    open(os.path.join(prev, "ru", "scout.md"), "w", encoding="utf-8").write(
+        "## NAMES — Имена\n\n| the Qax | хаксы | раса |\n"
+        "| Poole | Пул | человек |\n")
+    seen = []
+
+    class Spy:
+        model, kind = "шпион", "стенд"
+
+        def run(self, system, user):
+            seen.append(user)
+            raise P.agent_mod.Fatal("хватит")
+
+    blocks2 = [{"kind": "p", "text": "The Qax ruled Earth. " * 40}]
+    try:
+        P.scout(os.path.join(md2, "new.work"), blocks2, Spy(), "", "задание",
+                1, hush, likes=[prev])
+    except P.agent_mod.Fatal:
+        pass
+    ok("канон цикла в части: упомянутое есть, лишнего нет",
+       bool(seen) and "| the Qax | хаксы" in seen[0] and "Пул" not in seen[0],
+       (seen[0][:160] if seen else "запроса не было"))
+
     import shutil
+    shutil.rmtree(md2, ignore_errors=True)
     shutil.rmtree(md, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")

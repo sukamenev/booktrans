@@ -2802,7 +2802,7 @@ def _merge_batches(findings, limit=MERGE_INPUT):
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
-          hints=None, fallback=None):
+          hints=None, fallback=None, likes=None):
     """Крупноблочный проход ДО перевода.
 
     Собирает голоса персонажей, имена собственные и повторяющиеся термины.
@@ -2845,6 +2845,16 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     else:
         findings = []
 
+    # Канон цикла для частей. Целиком канон в промпт уже пробовали — бюджет
+    # резал его на второй книге цикла (см. cycle_merge, он принуждает таблицы
+    # кодом). Здесь другое и дешёвое: в часть едут только строки, чьи имена
+    # в ней встречаются, — чтобы проза разделов (голоса, род, обращения)
+    # рождалась с каноническим написанием, а не со своей транслитерацией.
+    canon_rows = []
+    if likes:
+        canon_rows = [(k, line) for k, (line, _) in
+                      _cycle_canon(likes, to)[0].items()]
+
     # После рестарта разборы и сведение могут быть целиком в кэше — тогда
     # циклы ниже не делают ни одного запроса, и модели для scout.json нет.
     meta = {}
@@ -2873,9 +2883,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint_meta, _ = lang.prompt("scout_hint_meta")
                 hint += "\n\n" + hint_meta
 
-        # Имена цикла идут в каждый кусок, а не только в первый: имена
-        # встречаются по всей книге, и согласовать их надо всюду.
-        prompt = boxed(f"{task}{hint}\n\n---\n\n"
+        crows = ref_rows_for(canon_rows, text)
+        canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
+                 + "\n".join(crows)) if crows else ""
+        prompt = boxed(f"{task}{hint}{canon}\n\n---\n\n"
                        + lang.prompt("scout_part")[0].format(i=i, n=len(parts))
                        + f"\n\n{text}",
                        "SCOUT", lang.prompt("box_scout_part")[0])
