@@ -362,6 +362,10 @@ def out_name(meta, fallback, with_series=False):
     else:
         who = au[0] if au else ""
     name = f"{who}. {title}" if who else title
+    # Двоеточие в заглавии — почти всегда «: », и типографская замена ему —
+    # тире: «Xeelee: Endurance» → «Зили — Выносливость». Прочим запрещённым
+    # знакам осмысленной замены нет, их глушит общая строка ниже.
+    name = name.replace(": ", " — ")
     # знаки, недопустимые в именах файлов, и лишние пробелы
     name = re.sub(r'[/\\:*?"<>|\x00-\x1f]', "-", name)
     return re.sub(r"\s+", " ", name).strip(" .")[:180]
