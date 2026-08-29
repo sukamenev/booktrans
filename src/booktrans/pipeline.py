@@ -583,25 +583,120 @@ def verse_learn(state, blocks, res):
             known.setdefault(fingerprint(b["text"]), res[b["id"]])
 
 
-def split_ref(text):
-    """Справочник надвое: костяк и строки таблиц.
+# Разделы, где карточки «- **Имя (Name):** …» ключуются и едут с куском по
+# упоминанию, как строки таблиц. Остальные разделы — костяк: он нужен
+# каждому куску и живёт в системном промпте.
+REF_KEYED = ("CHARACTERS", "NAMES", "TERMS", "GENDER", "ADDRESS", "WORLD",
+             "FOOTNOTES")
+_BULLET_KEY = re.compile(r"\s*[-*]\s+\*\*(.+?):?\*\*(?=[\s:—–-])")
 
-    Костяк — проза: голоса, род, обращения, опасные места. Он неизменен на
-    всю книгу и уходит в системный промпт, который транспорт кеширует по
-    совпадающему началу. Строки таблиц — большая часть справочника, а куску
-    из них нужны считаные: те, чьи ключи в нём встречаются. Они уезжают из
-    системы и приезжают с куском — см. ref_rows_for.
+
+def _unbracket(inner):
+    """Скобочная альтернатива — в составной ключ: «Имя (Name)» → «Имя / Name»,
+    чтобы отбор по куску ловил оба написания."""
+    names = [re.sub(r"\s+", " ", re.sub(r"\([^()]*\)", " ", inner))
+             .strip(" \t:—–-")]
+    names += [p.strip() for p in re.findall(r"\(([^()]+)\)", inner)]
+    return " / ".join(dict.fromkeys(n for n in names if n))
+
+
+# Слова шапок таблиц: модель воспроизводит шапку из образца в промпте, и
+# без фильтра та въезжает в реестр строкой.
+_HEADER_KEYS = {"оригинал", "original", "имя", "name", "имя в оригинале",
+                "персонаж", "character", "термин", "term", "слово", "word",
+                "ключ", "key"}
+
+
+def _line_key(line, sec=None):
+    """Ключ строки реестра: первая ячейка таблицы или полужирное начало
+    карточки «- **Имя (Name):** …». `sec` ограничивает карточки разделами
+    из REF_KEYED; None — без ограничения."""
+    t = line.strip()
+    key = ""
+    if t.startswith("|") and t.count("|") > 2:
+        key = re.sub(r"[\s*_`~]+", " ", t.split("|")[1]).strip()
+        if not key or set(key) <= set("- :"):
+            return ""
+        key = _unbracket(key) if "(" in key else key
+    elif sec is None or sec in REF_KEYED:
+        m = _BULLET_KEY.match(line)
+        if m:
+            key = _unbracket(m.group(1).strip())
+    if key and all(p.strip().lower() in _HEADER_KEYS
+                   for p in re.split(r"\s*/\s*", key)):
+        return ""
+    return key
+
+
+def _norm_key(key):
+    """Нормальный вид ключа реестра: регистр, выделение и артикль строку не
+    рознят, составной ключ не зависит от порядка половин."""
+    parts = []
+    for p in re.split(r"\s*[/,;]\s*", key):
+        p = re.sub(r"[\s*_`~]+", " ", p).strip().lower()
+        p = re.sub(r"^(?:the|a|an)\s+", "", p)
+        if p:
+            parts.append(p)
+    return " / ".join(sorted(parts))
+
+
+def _ref_scan(text):
+    """Разметка справочника построчно: (раздел, заголовок, ключ, строка, род).
+
+    Род: `head` — заголовок, `row` — строка реестра, `junk` — шапка или
+    линейка таблицы, `frame` — проза костяка. Раздел — латинский ключ
+    ближайшего заголовка («CHARACTERS», «NAMES»…); заголовок того же или
+    старшего уровня раздел закрывает, подразделы остаются внутри.
     """
-    frame, rows = [], []
+    out, sec, depth, head = [], "", 0, ""
     for line in text.splitlines():
         t = line.strip()
+        m = re.match(r"(#{1,4})\s*(.+)", t)
+        if m:
+            level = len(m.group(1))
+            if sec and level <= depth:
+                sec = ""
+            km = re.match(r"([A-Z]{2,})\b", m.group(2))
+            if km:
+                sec, depth = km.group(1), level
+            head = line
+            out.append((sec, head, "", line, "head"))
+            continue
         if t.startswith("|") and t.count("|") > 2:
-            key = re.sub(r"[\s*_`~]+", " ", t.split("|")[1]).strip()
-            if key and not set(key) <= set("- :"):
-                rows.append((key, line))
-            continue                 # шапки и линейки таблиц — тоже прочь
-        frame.append(line)
-    return "\n".join(frame), rows
+            key = _line_key(line)
+            out.append((sec, head, key, line, "row" if key else "junk"))
+            continue
+        key = _line_key(line, sec)
+        out.append((sec, head, key, line, "row" if key else "frame"))
+    return out
+
+
+def split_ref(text):
+    """Справочник надвое: костяк и строки реестра.
+
+    Костяк — проза: повествование, опасные места, стихи. Он неизменен на
+    всю книгу и уходит в системный промпт, который транспорт кеширует по
+    совпадающему началу. Реестр — таблицы и карточки, а куску из них нужны
+    считаные: те, чьи ключи в нём встречаются. Они уезжают из системы и
+    приезжают с куском — см. ref_rows_for. Заголовок, под которым не
+    осталось прозы, уходит вместе со своими строками: пустая шапка в
+    системе только путает.
+    """
+    recs = _ref_scan(text)
+    rows = [(k, l) for _, _, k, l, kind in recs if kind == "row"]
+    live, cur, has = set(), None, False
+    for i, (_, _, _, line, kind) in enumerate(recs):
+        if kind == "head":
+            if cur is not None and has:
+                live.add(cur)
+            cur, has = i, False
+        elif kind == "frame" and line.strip():
+            has = True
+    if cur is not None and has:
+        live.add(cur)
+    frame = "\n".join(line for i, (_, _, _, line, kind) in enumerate(recs)
+                      if kind == "frame" or (kind == "head" and i in live))
+    return re.sub(r"\n{3,}", "\n\n", frame), rows
 
 
 def ref_rows_for(rows, text):
@@ -1789,6 +1884,13 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                                      encoding="utf-8"))["notes"]:
                 already.append(it["term"])
 
+    # Строки реестра — по оригиналам куска, как у перевода: см. split_ref.
+    # Кандидаты в сноски и пометки «автор объясняет сам» лежат в реестре и
+    # приезжают только в куски, где их слово встречается.
+    rp = lpath(work, "scout.md", to)
+    ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
+        if os.path.exists(rp) else []
+
     done = total = 0
     lock = threading.Lock()
     n_all = len(chunks)
@@ -1813,6 +1915,10 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         if already:
             hint_already, _ = lang.prompt("edit_hint_already")
             parts.append(hint_already + "\n\n" + "\n".join(sorted(set(already))))
+        refs = ref_rows_for(ref_rows, " ".join(
+            b["text"] for b in translatable(c["blocks"])))
+        if refs:
+            parts.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
         parts.append(lang.prompt("edit_fragment")[0] + "\n\n" + "\n\n".join(pairs))
         prompt = "\n\n---\n\n".join(parts)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.notes.txt'), "w",
@@ -2801,15 +2907,125 @@ def _merge_batches(findings, limit=MERGE_INPUT):
     return batches
 
 
+def _registry(findings):
+    """Реестр строк из разборов частей: сведение кодом, без потерь.
+
+    Пирамида сведения пересжимала строки к бюджету на каждом уровне, и на
+    большой книге второстепенные имена выпадали до того, как становилось
+    известно, нужны ли они. Строки сводит код: потерь нет, а модель зовут
+    только к разноголосице — см. _settle_rows.
+
+    Возвращает (порядок, группы, заголовки): порядок — (раздел, нормальный
+    ключ) по первому появлению; группы — там же варианты (номер части,
+    строка) без дословных повторов; заголовки — первая шапка раздела.
+    """
+    order, groups, heads = [], {}, {}
+    for i, f in enumerate(findings, 1):
+        # Разделы без решёток — обычное дело у моделей; без поправки все
+        # строки такого разбора остались бы без раздела.
+        for sec, head, key, line, kind in _ref_scan(_headify(f)):
+            if (kind == "head" and sec and sec not in heads
+                    and re.match(r"#{1,4}\s*" + sec, head.strip())):
+                heads[sec] = "## " + head.lstrip("# ").strip()
+            if kind != "row":
+                continue
+            gk = (sec, _norm_key(key))
+            if gk not in groups:
+                groups[gk] = []
+                order.append((gk, key, head))
+            var = " ".join(line.split())
+            if all(var != v for _, v in groups[gk]):
+                groups[gk].append((i, var))
+    return order, groups, heads
+
+
+def _render_registry(order, groups, heads):
+    """Реестр в хвост справочника: разделы в устойчивом порядке, строки —
+    в порядке первого появления. Подразделы не переносятся: строка реестра
+    самодостаточна, а одинаковых подразделов у разных частей не бывает."""
+    out = []
+    for sec in REF_KEYED:
+        mine = [gk for gk, _, _ in order if gk[0] == sec]
+        if mine:
+            out += ["", heads.get(sec, f"## {sec}"), ""]
+            for gk in mine:
+                out += [v for _, v in groups[gk]]
+    stray = [(gk, head) for gk, _, head in order
+             if gk[0] not in REF_KEYED]
+    last = None
+    for gk, head in stray:
+        if head != last:
+            out += ["", head or "## REF", ""]
+            last = head
+        out += [v for _, v in groups[gk]]
+    return "\n".join(out).strip()
+
+
+def _settle_rows(conflicts, total, who, system, retries, log):
+    """Свести разноголосицу реестра: моделью и только спорные ключи.
+
+    conflicts: [(гк, ключ, [(часть, строка), …]), …]. Варианты подписаны
+    своими разборами — по подписям модель датирует перемены. Не свелось —
+    остаётся вариант самой ранней части, по тому же правилу старшинства,
+    что у имён цикла.
+    """
+    task = lang.prompt("scout_rows")[0]
+    box = lang.prompt("box_scout_rows")[0]
+    label = lang.prompt("scout_label")[0]
+    got = {}
+
+    def flush(batch):
+        log("  " + T("scout_rows", len(batch)), end="")
+        body = "\n\n".join(
+            "\n".join([f"### {key}"]
+                      + [label.format(i=p, n=total) + " " + v
+                         for p, v in vs])
+            for _, key, vs in batch)
+        prompt = boxed(task + "\n\n---\n\n" + body, "SCOUT", box)
+        try:
+            (res, _), meta, dt = _chain_run(who, system, prompt, retries,
+                                            _parse_scout, log)
+        except Exception:
+            log(T("scout_rows_kept"))
+            return
+        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
+        log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        for line in res.splitlines():
+            t = line.strip()
+            if not t or t.startswith("#"):
+                continue
+            nk = _norm_key(_line_key(t))
+            if not nk:
+                continue
+            for gk, _, _ in batch:
+                if gk not in got and gk[1] == nk:
+                    got[gk] = " ".join(t.split())
+                    break
+
+    batch, size = [], 0
+    for gk, key, vs in conflicts:
+        piece = sum(len(v) for _, v in vs) + len(key) + 40 * len(vs)
+        if batch and size + piece > MERGE_INPUT:
+            flush(batch)
+            batch, size = [], 0
+        batch.append((gk, key, vs))
+        size += piece
+    if batch:
+        flush(batch)
+    return got
+
+
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
           hints=None, fallback=None, likes=None):
     """Крупноблочный проход ДО перевода.
 
     Собирает голоса персонажей, имена собственные и повторяющиеся термины.
     Дёшево: на вход идут десятки тысяч слов, на выходе — короткий разбор.
-    Результат склеивается в work/scout.md и дальше уходит в системный промпт
-    каждого запроса, так что решения по именам и интонациям принимаются
-    один раз на всю книгу, а не заново в каждом куске.
+    Результат — work/scout.md о двух ярусах: реестр строк, сведённый кодом
+    без потерь (едет с куском по упоминанию), и костяк прозы, сведённый
+    пирамидой (уходит в системный промпт каждого запроса). Решения по
+    именам и интонациям принимаются один раз на всю книгу, а не заново в
+    каждом куске.
     """
     out_path = lpath(work, "scout.md", to)
     who = [agent] + _backups(fallback)
@@ -2863,6 +3079,21 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         canon_rows = [(k, line) for k, (line, _) in
                       _cycle_canon(likes, to)[0].items()]
 
+    # Канон своих же частей: имя, рождённое в части 1, приезжает в часть 5
+    # тем же механизмом, что канон цикла. Первенство за ранней частью, а
+    # строки цикла главнее: их написания читатель прежних книг уже видел.
+    liked = {_norm_key(k) for k, _ in canon_rows}
+    known = {}
+
+    def _learn(res):
+        for sec, _, key, line, kind in _ref_scan(_headify(res)):
+            gk = (sec, _norm_key(key))
+            if kind == "row" and gk[1] and gk[1] not in liked:
+                known.setdefault(gk, (key, line))
+
+    for f in findings:
+        _learn(f)
+
     # После рестарта разборы и сведение могут быть целиком в кэше — тогда
     # циклы ниже не делают ни одного запроса, и модели для scout.json нет.
     meta = {}
@@ -2891,7 +3122,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint_meta, _ = lang.prompt("scout_hint_meta")
                 hint += "\n\n" + hint_meta
 
-        crows = ref_rows_for(canon_rows, text)
+        crows = ref_rows_for(canon_rows + list(known.values()), text)
         canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
                  + "\n".join(crows)) if crows else ""
         at = (lang.prompt("scout_part_at")[0].format(chapter=starts[i - 1])
@@ -2912,31 +3143,50 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             res = (lang.prompt("scout_label")[0].format(i=i, n=len(parts))
                    + "\n\n" + res)
         findings.append(res)
+        _learn(res)
         json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
                   ensure_ascii=False)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
 
+    # Реестр сводится кодом и без потерь — до пирамиды и по исходным
+    # разборам. Моделью решается только разноголосица: одному ключу разные
+    # части дали разные строки.
+    order, groups, heads_map = _registry(findings)
+    conflicts = [(gk, key, groups[gk]) for gk, key, _ in order
+                 if len(groups[gk]) > 1]
+    if conflicts:
+        got = _settle_rows(conflicts, len(parts), who, system, retries, log)
+        for gk, line in got.items():
+            groups[gk] = [(0, line)]
+        for gk, key, vs in conflicts:
+            if gk not in got:           # не свелось — вариант ранней части
+                groups[gk] = vs[:1]
+
     if len(findings) > 1:
         merge_prompt, _ = lang.prompt("scout_merge")
-        # Все разборы одним запросом не отправить: у транспорта есть предел
-        # входа, и режет он молча — agy отдаёт модели ~50 тыс. токенов, модель
-        # получает обрубок и отвечает пустотой. Поэтому разборы сводятся
-        # пачками в пределах MERGE_INPUT, затем сводятся результаты пачек —
-        # и так до одного, сколько бы книга ни весила.
+        # Пирамида сводит только прозу: строки реестра уже сведены кодом, и
+        # возить их через модель — терять. Все разборы одним запросом не
+        # отправить: у транспорта есть предел входа, и режет он молча — agy
+        # отдаёт модели ~50 тыс. токенов, модель получает обрубок и отвечает
+        # пустотой. Поэтому проза сводится пачками в пределах MERGE_INPUT,
+        # затем сводятся результаты пачек — и так до одного, сколько бы
+        # книга ни весила.
         #
         # Каждая сведённая пачка тут же ложится на диск: пачка стоит минут и
         # денег, а прерванный прогон начинал пирамиду с нуля. После рестарта
         # уцелевшие результаты группируются заново — дерево сведения выйдет
         # другим, но сведёт то же самое.
+        frames = [split_ref(_headify(f))[0] for f in findings]
         if os.path.exists(mfile):
-            findings = json.load(open(mfile, encoding="utf-8"))
-        while len(findings) > 1:
-            batches = _merge_batches(findings)
-            if len(batches) == len(findings):
+            frames = [split_ref(_headify(x))[0] for x in
+                      json.load(open(mfile, encoding="utf-8"))]
+        while len(frames) > 1:
+            batches = _merge_batches(frames)
+            if len(batches) == len(frames):
                 # каждый разбор — пачка сам по себе: группировать нечем,
                 # сводим единым запросом, как раньше, а не крутимся вечно
-                batches = [findings]
+                batches = [frames]
             nxt = []
             for j, batch in enumerate(batches, 1):
                 if len(batch) == 1:
@@ -2956,12 +3206,18 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 json.dump(nxt + [f for b in batches[j:] for f in b],
                           open(mkparent(mfile), "w", encoding="utf-8"),
                           ensure_ascii=False)
-            findings = nxt
-        merged = findings[0]
+            frames = nxt
+        merged = frames[0]
     else:
-        merged = findings[0] if findings else ""
+        merged = split_ref(_headify(findings[0]))[0] if findings else ""
 
-    open(mkparent(out_path), "w", encoding="utf-8").write(_headify(merged))
+    # Костяк — проза пирамиды; строки, которые модель всё же вернула,
+    # вычёркиваются: их полный свод — реестр — дописывается следом.
+    merged = split_ref(_headify(merged))[0]
+    registry = _render_registry(order, groups, heads_map)
+    if registry:
+        merged = merged.rstrip() + "\n\n" + registry + "\n"
+    open(mkparent(out_path), "w", encoding="utf-8").write(merged)
     # Модель разведки нигде больше не записана, а в книге её надо назвать.
     json.dump({"model": meta.get("model")},
               open(mkparent(lpath(work, "scout.json", to)), "w", encoding="utf-8"),
@@ -3037,7 +3293,8 @@ def _text_only():
 
 
 def _condense_scout(merged, who, system, retries, log, out_path):
-    """Пересжать справочник, если он перерос предел.
+    """Пересжать костяк справочника, если он перерос предел. Реестр не
+    трогается: его строки едут с куском по упоминанию и бюджета не тратят.
 
     Системный промпт сюда идёт пустой, и это важно. В обычном промпте лежит
     сам справочник целиком — он уходит в каждый запрос на перевод, — и,
@@ -3064,9 +3321,12 @@ def _condense_scout(merged, who, system, retries, log, out_path):
     постепенно. Останавливаемся, как только уложились или очередной заход не
     дал ничего.
     """
-    if len(merged) <= SCOUT_MAX:
+    # Бюджет меряется по костяку: в каждый запрос идёт только он, а реестр
+    # едет с куском по упоминанию, и ужимать его — терять строки.
+    frame, _ = split_ref(merged)
+    if len(frame) <= SCOUT_MAX:
         return merged
-    
+
     no_shrink_path = _no_shrink_path(out_path)
     # Кэш «дожать не вышло» хранит и достигнутый размер: модель, остановившаяся
     # на 32 602 знаках, при следующем прогоне видела те же 32 602 и честно
@@ -3082,12 +3342,12 @@ def _condense_scout(merged, who, system, retries, log, out_path):
             pass
     primary_model = getattr(who[0], "model", "?")
     reached = failed_models.get(primary_model, -1)
-    if primary_model in failed_models and reached in (None, len(merged)):
+    if primary_model in failed_models and reached in (None, len(frame)):
         log("  " + T("scout_big", out_path))
         return merged
-        
-    log("  " + T("scout_condense", len(merged), SCOUT_BUDGET), end="")
-    t0, cost, model, now = time.time(), 0.0, "?", merged
+
+    log("  " + T("scout_condense", len(frame), SCOUT_BUDGET), end="")
+    t0, cost, model, now = time.time(), 0.0, "?", frame
     for _ in range(SCOUT_ROUNDS):
         if len(now) <= SCOUT_BUDGET:
             break
@@ -3103,24 +3363,28 @@ def _condense_scout(merged, who, system, retries, log, out_path):
         now = short
     log("\n  " + T("took", f"{time.time() - t0:.0f}",
                   model + (f", ${cost:.2f}" if cost else "")))
-    if now == merged:
+    if now == frame:
         log("  " + T("scout_condense_no", len(_rows(merged)), len(_rows(merged))))
         log("  " + T("scout_big", out_path))
         if model != "?":
-            failed_models[model] = len(merged)
+            failed_models[model] = len(frame)
             json.dump(failed_models, open(mkparent(no_shrink_path), "w",
                                           encoding="utf-8"), ensure_ascii=False)
         return merged
+    registry = _render_registry(*_registry([merged]))
+    now = (now.rstrip() + "\n\n" + registry + "\n") if registry else now
     # Продвинулись, но до предела не дожали — это тоже «не вышло»: без записи
-    # следующий прогон начинал то же сжатие заново.
-    if len(now) > SCOUT_BUDGET and model != "?":
-        failed_models[model] = len(now)
+    # следующий прогон начинал то же сжатие заново. Записывается мера костяка
+    # уже собранного файла — её и увидит повторный вход.
+    reached_now = len(split_ref(now)[0])
+    if reached_now > SCOUT_BUDGET and model != "?":
+        failed_models[model] = reached_now
         json.dump(failed_models, open(mkparent(no_shrink_path), "w",
                                       encoding="utf-8"), ensure_ascii=False)
     open(mkparent(out_path), "w", encoding="utf-8").write(now)
     log("  " + T("scout_condense_ok", len(merged), len(now),
                  len(_rows(merged)), len(_rows(now))))
-    if len(now) > SCOUT_MAX:
+    if len(split_ref(now)[0]) > SCOUT_MAX:
         log("  " + T("scout_big", out_path))
     return now
 

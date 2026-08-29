@@ -63,8 +63,9 @@ def main():
        and "Сцена допроса" in frame, frame[:120])
     ok("выходные данные в костяке целы",
        "title_target = Великолепие" in frame, None)
-    ok("строки собраны, линейки нет",
-       len(rows) == 5 and not any("---" in k for k, _ in rows),
+    ok("строки собраны, шапки и линейки нет",
+       len(rows) == 4 and not any("---" in k or "Оригинал" in k
+                                  for k, _ in rows),
        [k for k, _ in rows])
 
     got = P.ref_rows_for(rows, "Michael Poole met the Qax envoy.")
@@ -83,6 +84,53 @@ def main():
     ok("регистр отбору не мешает", any("трутень" in l for l in got), got)
     ok("часть слова — не ключ",
        P.ref_rows_for(rows, "Poolesville and qaxophone.") == [], None)
+
+    # Двухъярусный делёж: карточки персонажей и кандидаты в сноски — тоже
+    # реестр, они едут только в куски, где их слово встречается. Разделы
+    # VOICES и RISK — костяк: рассказчик в своих главах говорит «я» и по
+    # имени не назван, ключом его не поймать.
+    TWO = """## VOICES — Повествование и слог
+
+- **Рассказчик:** Тейлор, 1-е лицо, прошедшее время.
+
+## CHARACTERS — Персонажи
+
+Одна строка прозы о составе.
+
+- **Клокблокер (Clockpicker):** остряк, речь быстрая.
+
+## FOOTNOTES — Кандидаты в сноски
+
+- **PHO (форум)** — автор объясняет сам дальше.
+
+## RISK — Опасные места
+
+- **суд** — сцену суда переводить сдержанно.
+"""
+    frame, rows = P.split_ref(TWO)
+    ok("карточка персонажа ключуется",
+       any("Клокблокер" in l for _, l in rows), rows)
+    ok("карточка едет по оригинальному написанию",
+       any("остряк" in l for l in P.ref_rows_for(rows, "Clockpicker grinned.")),
+       None)
+    ok("карточка едет и по целевому написанию",
+       any("остряк" in l for l in P.ref_rows_for(rows, "Клокблокер ухмыльнулся.")),
+       None)
+    ok("кандидат в сноски ключуется",
+       any("PHO" in l for _, l in rows)
+       and any("PHO" in l for l in P.ref_rows_for(rows, "Она открыла PHO.")),
+       rows)
+    ok("маркер в VOICES остаётся в костяке", "Рассказчик" in frame, frame)
+    ok("маркер в RISK остаётся в костяке", "сцену суда" in frame, frame)
+    ok("шапка раздела из одних строк выпала из костяка",
+       "## FOOTNOTES" not in frame and "## CHARACTERS" in frame, frame)
+    # Скобочная альтернатива в ключе таблицы тоже распахивается: строка
+    # «| Скиттер (Skitter) | … |» иначе не совпала бы ни с одним куском.
+    trows = P.split_ref("## CHARACTERS — Персонажи\n\n"
+                        "| Скиттер (Skitter) | вожак Неформалов |\n")[1]
+    ok("скобки в ключе таблицы — составной ключ",
+       any("вожак" in l for l in P.ref_rows_for(trows, "Skitter nodded.")),
+       trows)
 
     # Швы запроса — из prompts, и выжимка встаёт между терминами и текстом.
     chunk = {"index": 3, "label": "", "blocks": [

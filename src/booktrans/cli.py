@@ -820,7 +820,8 @@ def main():
         n += 1
         log("")
         log(head("step_notes", n))
-        d, s, t = pipeline.notes(work, chunks, agent_for("editor"), sysprompt(), task("notes"),
+        d, s, t = pipeline.notes(work, chunks, agent_for("editor"),
+                                 sysprompt(lean=True), task("notes"),
                                  args.retries, log, only_chunks, args.jobs,
                                  fallback=backup_for("editor"), to=args.to)
         log("  " + (T("done_notes", d, s, t) if d else T("notes_already", s)))

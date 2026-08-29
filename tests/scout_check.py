@@ -133,8 +133,9 @@ def main():
     got = P._condense_scout(BOOK, [Watch()], "", 1, hush, out)
     ok("справочник не уезжает в системный промпт",
        seen and all(x == pin for x in seen), seen[:1])
-    ok("справочник уложился в предел", len(got) <= P.SCOUT_BUDGET,
-       f"{len(got)} знаков при пределе {P.SCOUT_BUDGET}")
+    # Бюджет меряется по костяку: реестр не в счёт, он едет с куском.
+    ok("костяк уложился в предел", len(P.split_ref(got)[0]) <= P.SCOUT_BUDGET,
+       f"{len(P.split_ref(got)[0])} знаков при пределе {P.SCOUT_BUDGET}")
     ok("послушная модель таблиц не трогает", P._rows(BOOK) == P._rows(got),
        f"было {len(P._rows(BOOK))}, стало {len(P._rows(got))}")
     ok("сжатое записано на диск",
@@ -164,7 +165,8 @@ def main():
     first = P._condense_scout(BOOK, [hw], "", 1, hush, f"{d}/hw.md")
     cache = json.load(open(f"{d}/hw.no_shrink.json", encoding="utf-8"))
     ok("дожато не до конца — размер записан",
-       len(first) > P.SCOUT_BUDGET and cache.get("упрямая") == len(first),
+       len(P.split_ref(first)[0]) > P.SCOUT_BUDGET
+       and cache.get("упрямая") == len(P.split_ref(first)[0]),
        cache)
     # повторный заход с тем же текстом — запросов быть не должно
     class Counter(Halfway):
@@ -538,6 +540,104 @@ def main():
     shutil.rmtree(md3, ignore_errors=True)
     shutil.rmtree(md2, ignore_errors=True)
     shutil.rmtree(md, ignore_errors=True)
+
+    # Реестр: строки всех частей сводятся кодом и без потерь. Пирамида
+    # пересжимала их к бюджету на каждом уровне, и на большой книге
+    # второстепенные имена выпадали до того, как становилось известно,
+    # нужны ли они.
+    f_a = ("## CHARACTERS — Персонажи\n\n"
+           "| Скиттер (Skitter) | девушка, говорит коротко |\n\n"
+           "## NAMES — Имена\n\n| Brockton Bay | Броктон-Бей |\n")
+    f_b = ("## CHARACTERS — Персонажи\n\n"
+           "| Скиттер (Skitter) | девушка, говорит коротко |\n"
+           "- **Клокблокер (Clockpicker):** шутник.\n\n"
+           "## NAMES — Имена\n\n| Brockton Bay | Броктон-Бэй |\n")
+    order, groups, heads = P._registry([f_a, f_b])
+    ok("реестр: дословный повтор не двоится",
+       groups[("CHARACTERS", P._norm_key("Скиттер / Skitter"))]
+       == [(1, "| Скиттер (Skitter) | девушка, говорит коротко |")],
+       groups)
+    ok("реестр: карточка-маркер ключуется",
+       ("CHARACTERS", P._norm_key("Клокблокер / Clockpicker")) in groups,
+       list(groups))
+    con = [(gk, key, groups[gk]) for gk, key, _ in order
+           if len(groups[gk]) > 1]
+    ok("реестр: разноголосица найдена",
+       [gk[1] for gk, _, _ in con] == [P._norm_key("Brockton Bay")], con)
+    ok("составной ключ не зависит от порядка половин",
+       P._norm_key("Skitter / Скиттер") == P._norm_key("Скиттер / Skitter"))
+    ok("артикль не рознит ключи",
+       P._norm_key("the Qax") == P._norm_key("Qax"))
+    text = P._render_registry(order, groups, heads)
+    ok("реестр собран под шапками разделов",
+       text.index("## CHARACTERS") < text.index("Клокблокер")
+       < text.index("## NAMES"), text[:200])
+    ok("несведённый ключ пока держит оба варианта",
+       "Броктон-Бей" in text and "Броктон-Бэй" in text, text)
+
+    # Разноголосицу сводит модель — точечно, только спорные ключи, с
+    # подписями частей для датировки перемен. Не свелось — остаётся вариант
+    # самой ранней части.
+    asked = []
+
+    class Judge:
+        model, kind = "судья", "стенд"
+
+        def run(self, system, user):
+            asked.append(user)
+            return ("[[[SCOUT 1]]]\n| Brockton Bay | Броктон-Бей |\n"
+                    "[[[/SCOUT 1]]]", {"model": self.model, "cost_usd": 0})
+
+    got_rows = P._settle_rows(con, 2, [Judge()], "", 1, hush)
+    ok("спорному ключу — вопрос с подписанными вариантами",
+       asked and "### brockton bay" in asked[0].lower()
+       and "[разбор части 1 из 2]" in asked[0]
+       and "[разбор части 2 из 2]" in asked[0], (asked or [""])[0][:200])
+    ok("ответ судьи лёг по ключу",
+       got_rows == {con[0][0]: "| Brockton Bay | Броктон-Бей |"}, got_rows)
+
+    class Mute:
+        model, kind = "немой", "стенд"
+
+        def run(self, system, user):
+            raise P.agent_mod.Fatal("молчу")
+
+    ok("судья пал — реестр не потерян",
+       P._settle_rows(con, 2, [Mute()], "", 1, hush) == {}, None)
+
+    # Сквозной прогон: строки частей доезжают до scout.md без потерь, а
+    # имя из части 1 приезжает каноном в запрос части 2.
+    md4 = _tf.mkdtemp()
+    cap4 = []
+
+    class TwoParts:
+        model, kind = "двухчастный", "стенд"
+
+        def run(self, system, user):
+            if "## Часть" in user:
+                cap4.append(user)
+                i = len(cap4)
+                body = (f_a, f_b)[i - 1]
+                return (f"[[[SCOUT {i}]]]\n{body}\n[[[/SCOUT {i}]]]",
+                        {"model": self.model, "cost_usd": 0})
+            return ("[[[SCOUT 2]]]\n## VOICES — Слог\n\nсухой и быстрый\n"
+                    "[[[/SCOUT 2]]]", {"model": self.model, "cost_usd": 0})
+
+    blocks4 = [{"kind": "p", "text": "Skitter watched Brockton Bay. " * 40}
+               for _ in range(181)]
+    got4 = P.scout(os.path.join(md4, "w.work"), blocks4, TwoParts(), "",
+                   "задание", 1, hush)
+    ok("канон своей части едет в следующую",
+       len(cap4) == 2 and "| Скиттер (Skitter) |" in cap4[1]
+       and "| Скиттер (Skitter) |" not in cap4[0],
+       (len(cap4), cap4[1][:200] if len(cap4) > 1 else ""))
+    ok("строки частей дошли до справочника без пирамиды",
+       "Клокблокер" in got4 and "| Скиттер (Skitter) |" in got4, got4[:300])
+    ok("костяк пирамиды в справочнике",
+       "сухой и быстрый" in got4, got4[:200])
+    ok("шапка без прозы в костяк не идёт",
+       "## NAMES" not in P.split_ref(got4)[0], P.split_ref(got4)[0])
+    shutil.rmtree(md4, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0
