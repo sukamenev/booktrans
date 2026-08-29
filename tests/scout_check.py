@@ -638,6 +638,45 @@ def main():
     ok("шапка без прозы в костяк не идёт",
        "## NAMES" not in P.split_ref(got4)[0], P.split_ref(got4)[0])
     shutil.rmtree(md4, ignore_errors=True)
+
+    # Волны по --jobs: части одной волны идут параллельно и друг друга не
+    # видят, канон своих частей обновляется на границе волн.
+    import threading as _th
+    md5 = _tf.mkdtemp()
+    lock5, seen5 = _th.Lock(), {}
+
+    class Wavy:
+        model, kind = "волновой", "стенд"
+
+        def run(self, system, user):
+            m = re.search(r"## Часть (\d) из 4", user)
+            if not m:
+                return ("[[[SCOUT 4]]]\n## VOICES\n\nровный слог\n[[[/SCOUT 4]]]",
+                        {"model": self.model, "cost_usd": 0})
+            i = int(m.group(1))
+            with lock5:
+                seen5[i] = user
+            extra = "\n| Redmane | Красногрив |" if i == 1 else ""
+            return (f"[[[SCOUT {i}]]]\n## NAMES — Имена\n\n"
+                    f"| Hero{i} | Герой{i} |{extra}\n[[[/SCOUT {i}]]]",
+                    {"model": self.model, "cost_usd": 0})
+
+    blocks5 = [{"kind": "p", "text": "Redmane rode. " * 9050 + f"Hero{i} walked."}
+               for i in range(1, 5)]
+    got5 = P.scout(os.path.join(md5, "w.work"), blocks5, Wavy(), "",
+                   "задание", 1, hush, jobs=2)
+    ok("волны: все четыре части разобраны", sorted(seen5) == [1, 2, 3, 4],
+       sorted(seen5))
+    ok("волны: сосед по волне не виден",
+       "Красногрив" not in seen5.get(2, "") and "Красногрив" not in seen5.get(1, ""),
+       None)
+    ok("волны: следующая волна видит канон первой",
+       "| Redmane | Красногрив |" in seen5.get(3, "")
+       and "| Redmane | Красногрив |" in seen5.get(4, ""), seen5.get(3, "")[:200])
+    ok("волны: реестр собрал все части по порядку",
+       all(f"| Hero{i} | Герой{i} |" in got5 for i in range(1, 5))
+       and got5.index("Герой1") < got5.index("Герой3"), got5[-300:])
+    shutil.rmtree(md5, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0

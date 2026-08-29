@@ -59,7 +59,7 @@ What each part does:
 | `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, and `cmd` for a CLI of your own |
 | `--name-series` | include the cycle and book number in output file names: “Author. Cycle 02. Title” — a cycle's books line up in reading order; the number is zero-padded to two digits so plain alphabetical sorting keeps book 10 after book 9 |
 | `--like Book.work` | a book of the same cycle translated earlier: after reconnaissance its names are merged into the new reference — the spelling accepted there wins by force, so the cycle keeps one spelling. Repeat the key; the order is the order of publication |
-| `--jobs 5` | five threads for editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
+| `--jobs 5` | five threads for scouting, editing and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
 
 **`--agent` names a set of defaults**, not just a program: each agent carries
 which model runs which pass and what backs it up. The line above is therefore
@@ -415,7 +415,10 @@ on the previous one: the tail of the translated text, the plot digest, the
 accumulated terms. Translating in parallel would throw away the very
 machinery that keeps a book coherent.
 
-**Editing and footnotes parallelise**: `--jobs 3`.
+**Scouting, editing and footnotes parallelise**: `--jobs 3`. Scout parts
+run in waves of that size; names born in earlier waves still travel as
+canon into later ones, and rare disagreements inside a wave are settled
+by the registry merge.
 
 On a subscription the gain is limited: the quota is counted in tokens per
 window, so three threads simply exhaust it three times faster.
@@ -823,7 +826,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --scout / --translator / --editor / --verifier ID   model for one pass
 --agent claude|cmd    agent
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
---jobs N              threads for editing and footnotes
+--jobs N              threads for scouting, editing and footnotes
 --wait SEC            wait on rate limits (0 — fail at once)
 --force-translate     translate even if the book is already in the target language
 --no-headings         the book really has no chapters, do not stop

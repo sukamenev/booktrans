@@ -3016,7 +3016,7 @@ def _settle_rows(conflicts, total, who, system, retries, log):
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
-          hints=None, fallback=None, likes=None):
+          hints=None, fallback=None, likes=None, jobs=1):
     """Крупноблочный проход ДО перевода.
 
     Собирает голоса персонажей, имена собственные и повторяющиеся термины.
@@ -3097,9 +3097,14 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     # После рестарта разборы и сведение могут быть целиком в кэше — тогда
     # циклы ниже не делают ни одного запроса, и модели для scout.json нет.
     meta = {}
-    for i, part in enumerate(parts, 1):
-        if i <= len(findings):
-            continue
+    if len(findings) < len(parts):
+        findings += [None] * (len(parts) - len(findings))
+    pend = [i for i in range(1, len(parts) + 1) if not findings[i - 1]]
+    lock = threading.Lock()
+
+    def _ask(i):
+        nonlocal meta
+        part = parts[i - 1]
         text = "\n\n".join(strip(b["text"]) for b in part)
         # Имя исходного файла и метаданные книги — мощнейшие подсказки для старта.
         hint = ""
@@ -3107,7 +3112,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             if hints.get("filename"):
                 hint_filename, _ = lang.prompt("scout_hint_filename")
                 hint += "\n\n" + hint_filename.format(filename=hints["filename"])
-            
+
             meta_lines = []
             m = hints.get("meta") or {}
             if m.get("title"): meta_lines.append(f"title: {m['title']}")
@@ -3116,7 +3121,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             if m.get("genre"): meta_lines.append(f"genre: {m['genre']}")
             if m.get("series"): meta_lines.append(f"series: {m['series']}")
             if m.get("series_no"): meta_lines.append(f"series_no: {m['series_no']}")
-            
+
             if meta_lines:
                 hint += "\n\n## E-book metadata\n\n" + "\n".join(meta_lines)
                 hint_meta, _ = lang.prompt("scout_hint_meta")
@@ -3132,22 +3137,45 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                                                              at=at)
                        + f"\n\n{text}",
                        "SCOUT", lang.prompt("box_scout_part")[0])
-        log("  " + T("scout_block", i, len(parts),
-                     f"{sum(words(b['text']) for b in part):6d}"), end="")
-        (res, _), meta, dt = _chain_run(who, system, prompt, retries,
-                                        _parse_scout, log)
+        wc = f"{sum(words(b['text']) for b in part):6d}"
+        if jobs <= 1:
+            log("  " + T("scout_block", i, len(parts), wc), end="")
+        (res, _), m, dt = _chain_run(who, system, prompt, retries,
+                                     _parse_scout, log)
         # Подпись части остаётся в разборе до сведения: пачки пирамиды друг
         # друга не видят, и противоречие состояний («женщина» в части 1,
         # «мужчина» в части 5) сведение датирует именно этими подписями.
         if len(parts) > 1:
             res = (lang.prompt("scout_label")[0].format(i=i, n=len(parts))
                    + "\n\n" + res)
-        findings.append(res)
-        _learn(res)
-        json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
-                  ensure_ascii=False)
-        cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-        log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        cost = f", ${m['cost_usd']:.2f}" if m.get("cost_usd") else ""
+        with lock:
+            meta = m
+            findings[i - 1] = res
+            json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
+                      ensure_ascii=False)
+            took = T("took", f"{dt:.0f}", f"{m['model']}{cost}")
+            log(took if jobs <= 1
+                else "  " + T("scout_block", i, len(parts), wc) + took)
+
+    # Части почти независимы, и разбор идёт волнами по --jobs. Канон своих
+    # частей обновляется на границе волн: внутри волны части друг друга не
+    # видят, а редкую разноголосицу такой слепоты сводит _settle_rows.
+    step = max(jobs, 1)
+    for base in range(0, len(pend), step):
+        wave = pend[base:base + step]
+        if len(wave) == 1:
+            _ask(wave[0])
+        else:
+            with cf.ThreadPoolExecutor(max_workers=step) as ex:
+                err = None
+                for f in cf.as_completed([ex.submit(_ask, i) for i in wave]):
+                    err = err or f.exception()
+            if err:
+                raise err
+        for i in wave:
+            if findings[i - 1]:
+                _learn(findings[i - 1])
 
     # Реестр сводится кодом и без потерь — до пирамиды и по исходным
     # разборам. Моделью решается только разноголосица: одному ключу разные
