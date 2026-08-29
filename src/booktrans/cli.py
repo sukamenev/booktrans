@@ -319,6 +319,8 @@ def main():
     ap.add_argument("--max-wait", type=int, default=86400, help=T("h_maxwait"))
     ap.add_argument("--chunk-words", type=int, default=pipeline.TARGET_WORDS)
     ap.add_argument("--jobs", type=int, default=1, help=T("h_jobs"))
+    ap.add_argument("--scout-jobs", type=int, default=1,
+                    help=T("h_scout_jobs"))
     ap.add_argument("--to", default=os.environ.get("BT_TO", "en"), help=T("h_to"))
     ap.add_argument("--ui", default=ui, help=T("h_ui"))
     ap.add_argument("--force-translate", action="store_true", help=T("h_force_lang"))
@@ -732,7 +734,7 @@ def main():
         ref = pipeline.scout(work, blocks, agent_for("scout"), sysprompt(),
                              task("scout"), args.retries, log, args.to,
                              hints=hints, fallback=backup_for("scout"),
-                             likes=args.like, jobs=args.jobs)
+                             likes=args.like, jobs=args.scout_jobs)
         # Внедрённое обращение к машине — повод остановиться до перевода, а не
         # обнаружить его в готовой книге. Разведка отличает такое указание от
         # книги, которая об инъекциях рассказывает: вторую переводим молча.
