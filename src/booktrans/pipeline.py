@@ -3092,7 +3092,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 known.setdefault(gk, (key, line))
 
     for f in findings:
-        _learn(f)
+        if f:                 # в кэше волн место неразобранной части — null
+            _learn(f)
 
     # После рестарта разборы и сведение могут быть целиком в кэше — тогда
     # циклы ниже не делают ни одного запроса, и модели для scout.json нет.

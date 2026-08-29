@@ -674,8 +674,24 @@ def main():
        "| Redmane | Красногрив |" in seen5.get(3, "")
        and "| Redmane | Красногрив |" in seen5.get(4, ""), seen5.get(3, "")[:200])
     ok("волны: реестр собрал все части по порядку",
-       all(f"| Hero{i} | Герой{i} |" in got5 for i in range(1, 5))
+       all(f"| Hero{i} | Герой{i}" in got5 for i in range(1, 5))
        and got5.index("Герой1") < got5.index("Герой3"), got5[-300:])
+
+    # Обрыв волны оставляет в кэше пустышки на месте неразобранных частей —
+    # перезапуск обязан их доразобрать, а не упасть на накоплении канона.
+    md6 = _tf.mkdtemp()
+    half6 = os.path.join(md6, "w.work", "ru", "scout.part.json")
+    os.makedirs(os.path.dirname(half6), exist_ok=True)
+    json.dump(["## NAMES — Имена\n\n| Hero1 | Герой1 |", None, None, None],
+              open(half6, "w", encoding="utf-8"), ensure_ascii=False)
+    seen5.clear()
+    got6 = P.scout(os.path.join(md6, "w.work"), blocks5, Wavy(), "",
+                   "задание", 1, hush, jobs=2)
+    ok("перезапуск после обрыва волны доразобрал пустышки",
+       sorted(seen5) == [2, 3, 4]
+       and all(f"| Hero{i} | Герой{i}" in got6 for i in range(1, 5)),
+       (sorted(seen5), got6[-200:]))
+    shutil.rmtree(md6, ignore_errors=True)
     shutil.rmtree(md5, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
