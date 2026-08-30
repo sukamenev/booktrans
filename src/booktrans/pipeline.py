@@ -12,7 +12,7 @@ import time
 import urllib.parse
 
 from . import agent as agent_mod
-from .agent import AgentError, Fatal, RateLimited
+from .agent import AgentError, Blocked, Fatal, RateLimited
 
 # Прерывание с клавиатуры. При работе в несколько потоков одного Ctrl+C мало:
 # рабочие потоки не видят исключения главного, продолжают запросы, и человек
@@ -312,11 +312,12 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             last = e
             cur = prompt + "\n\n---\n\n" + \
                 lang.prompt("retry_reject")[0].format(err=e)
-        except (Fatal, RateLimited):
+        except (Fatal, RateLimited, Blocked):
             # Повторять нечего. У Fatal беда не в тексте, а лимит — вообще не
             # осечка запроса, а состояние времени: до срока модель ответит
-            # тем же самым, и пять попыток подряд отличаются только тем, что
-            # печатают о лимите пять раз.
+            # тем же самым. Blocked — фильтр на входе шлюза: тот же промпт
+            # бьётся о тот же фильтр слово в слово, пять попыток печатали
+            # одно и то же.
             raise
         except Exception as e:
             log("\n    " + T("retry", attempt, e))
@@ -1022,7 +1023,7 @@ def _chain_run(who, system, prompt, retries, parse, log):
                 return got, meta, dt
             except (Refused, RuntimeError, Fatal) as e:
                 m = getattr(a, "model", None)
-                if isinstance(e, Refused) and m and m not in refused:
+                if isinstance(e, (Refused, Blocked)) and m and m not in refused:
                     refused.append(m)
                 last = e
         pause = _hold(who, waited, log)
@@ -1201,7 +1202,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             backups = _backups(fallback)
             got, last = None, getattr(e, "first", "?")
             deniers = ([getattr(agent, "model", None)]
-                       if isinstance(e, Refused) else [])
+                       if isinstance(e, (Refused, Blocked)) else [])
             for fb in backups:
                 if agent_mod.limit_left(fb):
                     continue
@@ -1219,7 +1220,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                     break
                 except (Refused, RuntimeError, Fatal) as e2:
                     m2 = getattr(fb, "model", None)
-                    if isinstance(e2, Refused) and m2 and m2 not in deniers:
+                    if isinstance(e2, (Refused, Blocked)) and m2 and m2 not in deniers:
                         deniers.append(m2)
                     last = getattr(e2, "first", last)
             if got is None:

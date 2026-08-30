@@ -78,6 +78,23 @@ def main():
         A.subprocess.run = real
     ok("agy: пустой SUCCESS — пустой ответ, не ошибка", got == "", repr(got))
 
+    # Фильтр на входе шлюза: промпт до модели не дошёл, повтор бьётся о тот
+    # же фильтр. Приходит и с кодом 0 — сообщением вместо ответа.
+    spy = Ran(json.dumps({"status": "SUCCESS", "response":
+        "The prompt could not be submitted. The prompt contains sensitive "
+        "words that violate Google's [Generative AI Prohibited Use Policy]"}))
+    A.subprocess.run = spy
+    try:
+        a = A.make_agent("agy", model="проба-модель", timeout=60)
+        try:
+            a.run("система", "запрос")
+            got = "приняли"
+        except A.Blocked:
+            got = ""
+    finally:
+        A.subprocess.run = real
+    ok("agy: фильтр шлюза — Blocked, а не ответ", not got, got)
+
     # Наш срок в 1234 секунды должен дойти до agy: свой у него короче, и
     # обрыв по нему приходит как отказ модели, а не как исчерпанное время.
     spy = Ran(ANSWERS["agy"])

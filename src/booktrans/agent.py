@@ -37,6 +37,18 @@ class RateLimited(AgentError):
     """Кончились лимиты подписки. Не ошибка запроса — надо подождать."""
 
 
+# Фильтр на входе шлюза: промпт до модели не дошёл. Повтор того же промпта
+# в ту же дверь детерминированно бьётся о тот же фильтр — пять попыток
+# подряд печатали одно и то же слово в слово.
+BLOCKED_PAT = re.compile(
+    r"prompt could not be submitted|Prohibited Use Policy", re.I)
+
+
+class Blocked(AgentError):
+    """Промпт отвергнут фильтром поставщика до модели. Повторы бесполезны;
+    кусок — модели за другим шлюзом, как при содержательном отказе."""
+
+
 class Hushed(AgentError):
     """Агент умер, не объяснившись: ненулевой код возврата и ни слова по
     существу. Так гибнут внешние беды — лимит или давка сессий, пришедшие
@@ -488,6 +500,8 @@ class AgyAgent(Agent):
                 raise RateLimited((plain or CLI_NOISE.sub("", msg).strip())[:300])
             if FATAL_PAT.search(msg):
                 raise Fatal(msg[:300])
+            if BLOCKED_PAT.search(msg):
+                raise Blocked(CLI_NOISE.sub("", msg).strip()[:300])
             plain = bare_words(msg, payload)
             if not plain:
                 raise Hushed(f"agy вернул {r.returncode} без объяснения")
@@ -504,6 +518,9 @@ class AgyAgent(Agent):
             text = str(env.get("result") or env.get("response") or "")
         except json.JSONDecodeError:
             text = r.stdout
+        # Фильтр шлюза приходит и с кодом 0 — сообщением вместо ответа.
+        if BLOCKED_PAT.search(text[:400]):
+            raise Blocked(text.strip()[:300])
         return text, {"model": self.model, "cost_usd": None}
 
 

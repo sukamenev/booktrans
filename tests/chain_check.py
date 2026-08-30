@@ -192,6 +192,15 @@ def main():
     _, meta, _ = P._chain_run([first, second], "", "п", 1, plain, log)
     ok("после сбоя пометки нет", not meta.get("after_refusal"), meta)
 
+    # Фильтр шлюза: повторы бесполезны — одна попытка, имя записано,
+    # кусок уходит следующей модели.
+    first = Says("первая", boom=A.Blocked("prompt could not be submitted"))
+    second = Says("вторая")
+    _, meta, _ = P._chain_run([first, second], "", "п", 5, plain, log)
+    ok("фильтр шлюза: без повторов и с именем",
+       first.calls == 1 and meta.get("refused_by") == ["первая"]
+       and meta["model"] == "вторая", (first.calls, meta))
+
     # Имена отказавшихся доезжают до ФАЙЛА куска: пометку с именами ставила
     # цепочка в памяти, а запись на диск несла один флаг — и редактура, не
     # видя имён, отдавала кусок переведшей модели: самоправка.
