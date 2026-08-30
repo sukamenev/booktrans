@@ -130,6 +130,49 @@ def main():
         ok("запечённая сноска сохраняет голос редактора",
            notes["c"]["editor"] is True, notes["c"])
 
+    # Сверка параллелится: куски независимы, а исправления и счётчики — под
+    # замком. Два куска с замечаниями, два потока — оба файла сверки на месте.
+    import re as _re
+    import shutil as _sh
+
+    class Judge:
+        model, kind = "судья", "стенд"
+
+        def run(self, system, user):
+            ids = sorted(set(_re.findall(r"### (s\d+\.b\d+)", user)))
+            out = "\n\n".join(f"[[[VERDICT {i} dismiss]]]\nПусто, так и в "
+                              "оригинале." for i in ids)
+            return out, {"model": self.model, "cost_usd": 0}
+
+    d = tempfile.mkdtemp()
+    chunks2 = []
+    for i in (1, 2):
+        bid = f"s{i:02d}.b0001"
+        chunks2.append({"index": i, "label": f"гл{i}",
+                        "blocks": [{"id": bid, "kind": "p",
+                                    "text": f"Original {i}."}]})
+        os.makedirs(f"{d}/tr", exist_ok=True)
+        json.dump({"index": i, "model": "стенд", "cost_usd": 0,
+                   "tr": {bid: f"Перевод {i}."}},
+                  open(f"{d}/tr/{i:04d}.json", "w", encoding="utf-8"),
+                  ensure_ascii=False)
+        os.makedirs(f"{d}/ed", exist_ok=True)
+        json.dump({"index": i, "model": "правщик", "blocks": [bid],
+                   "notes": f"Сомнение в блоке {bid}: сверить с оригиналом.",
+                   "edits": {}},
+                  open(f"{d}/ed/{i:04d}.json", "w", encoding="utf-8"),
+                  ensure_ascii=False)
+    done, skipped, fn, fx = P.verify(d, chunks2, Judge(), "", "задание", 1,
+                                     lambda *a, **k: None, jobs=2)
+    got_files = sorted(os.listdir(f"{d}/vf")) if os.path.isdir(f"{d}/vf") else []
+    ok("параллельная сверка: оба куска сверены",
+       done == 2 and got_files == ["0001.json", "0002.json"],
+       (done, got_files))
+    done2 = P.verify(d, chunks2, Judge(), "", "задание", 1,
+                     lambda *a, **k: None, jobs=2)[0]
+    ok("повторная сверка пропущена по отпечаткам", done2 == 0, done2)
+    _sh.rmtree(d, ignore_errors=True)
+
     print(f"\nПроверок: {seen}, расхождений: {bad}")
     return 1 if bad else 0
 

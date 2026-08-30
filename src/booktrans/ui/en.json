@@ -209,7 +209,7 @@
  "and_more": " and {0} more",
  "h_wait": "seconds to wait when rate-limited, 0 to fail instead (900 by default)",
  "h_maxwait": "waiting limit, seconds",
- "h_jobs": "threads for editing and notes (translation is always sequential: each chunk builds on the previous one)",
+ "h_jobs": "threads for editing, verification and notes (translation is always sequential: each chunk builds on the previous one)",
  "h_scout_jobs": "threads for scouting parts (default 1: parts of a wave are blind to each other, and a name first met by two parts at once may be recorded twice when its forms differ)",
  "h_self_edit": "self-editing: allow — editor queue as given, last — the translating model moves to the end, never — struck out entirely (a chunk with no other editor stays unedited)",
  "h_to": "target language, file langs/CODE.md (default: %(default)s)",

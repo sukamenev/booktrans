@@ -816,7 +816,7 @@ def main():
         d, s, fn, fx = pipeline.verify(
             work, chunks, agent_for("verifier"), sysprompt(lean=True), task("verify"),
             args.retries, log, only_chunks,
-            fallback=backup_for("verifier"), to=args.to)
+            fallback=backup_for("verifier"), to=args.to, jobs=args.jobs)
         log("  " + (T("done_verify", d, s, fn, fx) if d or s
                     else T("nothing_verify")))
 

@@ -1766,7 +1766,7 @@ def _parse_verify(out, want):
 
 
 def verify(work, chunks, agent, system, task, retries, log, only=None,
-           fallback=None, to=""):
+           fallback=None, to="", jobs=1):
     """Сверка замечаний редактора с оригиналом.
 
     Редактор работает без оригинала: спорное по существу место он не правит,
@@ -1779,6 +1779,10 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
     вердикт «ошибся перевод» выносится его собственной работе, и ему выгодно
     винить автора. Редактор к спорным блокам непричастен: он их сознательно
     не правил.
+
+    Куски сверяются независимо и потому параллелятся (`--jobs`): замечание
+    живёт в границах своего куска, а общий словарь текущих переводов — под
+    замком, со снимком спорных блоков на время запроса.
     """
     orig = {}
     for c in chunks:
@@ -1793,30 +1797,41 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
     os.makedirs(lpath(work, "vf", to), exist_ok=True)
     done = skipped = added = fixed = 0
     n_all = len(chunks)
-    for n, ep in chunk_files(lpath(work, "ed", to)):
-        idx = int(n.split(".")[0])
-        if only and idx not in only:
-            continue
+    lock = threading.Lock()
+    pair_tpl = lang.prompt("verify_pair")[0]
+
+    todo = [(int(n.split(".")[0]), ep)
+            for n, ep in chunk_files(lpath(work, "ed", to))
+            if not only or int(n.split(".")[0]) in only]
+
+    def one(item):
+        nonlocal done, skipped, added, fixed
+        if STOP.is_set():
+            return
+        idx, ep = item
         remark = (json.load(open(ep, encoding="utf-8")).get("notes") or "").strip()
         if not has_notes(remark):
-            continue
+            return
         # Адреса блоков — прямо из текста замечания: редактор помечает их
         # идентификаторами. Замечание без адреса сверять не по чему — оно
         # остаётся человеку, как и раньше.
-        ids = sorted((i for i in orig if i in remark and i in cur), key=_id_key)
-        if not ids:
-            continue
         out_path = f'{lpath(work, "vf", to)}/{idx:04d}.json'
-        # Сверка сделана по замечанию и по тексту; изменилось любое — снова.
-        if os.path.exists(out_path) and not only:
-            old = json.load(open(out_path, encoding="utf-8"))
-            if old.get("remark") == fingerprint(remark) and all(
-                    old.get("src", {}).get(i) == fingerprint(cur[i]) for i in ids):
-                skipped += 1
-                continue
+        with lock:
+            ids = sorted((i for i in orig if i in remark and i in cur),
+                         key=_id_key)
+            if not ids:
+                return
+            # Сверка сделана по замечанию и по тексту; изменилось любое — снова.
+            if os.path.exists(out_path) and not only:
+                old = json.load(open(out_path, encoding="utf-8"))
+                if old.get("remark") == fingerprint(remark) and all(
+                        old.get("src", {}).get(i) == fingerprint(cur[i])
+                        for i in ids):
+                    skipped += 1
+                    return
+            snap = {i: cur[i] for i in ids}
         who = ((by_index.get(idx) or {}).get("label") or "—")[:24]
-        pair_tpl = lang.prompt("verify_pair")[0]
-        rows = [pair_tpl.format(id=i, orig=orig[i], tr=cur[i]) for i in ids]
+        rows = [pair_tpl.format(id=i, orig=orig[i], tr=snap[i]) for i in ids]
         pieces = [task, lang.prompt("verify_remarks")[0] + "\n\n" + remark]
         refs = ref_rows_for(ref_rows, " ".join(orig[i] for i in ids))
         if refs:
@@ -1825,7 +1840,8 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         prompt = "\n\n---\n\n".join(pieces)
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.verify.txt'), "w",
              encoding="utf-8").write(prompt)
-        log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
+        with lock:
+            log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
         want = set(ids)
         res = None
         for m in [agent] + [f for f in _backups(fallback) if f is not agent]:
@@ -1834,10 +1850,11 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                                      lambda o: _parse_verify(o, want), log)
                 break
             except (Refused, RuntimeError, Fatal, ValueError) as e:
-                log("    " + T("chunk_failed", e))
+                with lock:
+                    log("    " + T("chunk_failed", e))
         if res is None:
-            continue
-        verdicts, notes, fixes = res
+            return
+        verdicts, notes_, fixes = res
         kinds = {"author": T("vf_author"), "translation": T("vf_fixed"),
                  "dismiss": T("vf_dismissed"), "unsure": T("vf_unsure")}
         lines = [f"{i}: {kinds[verdicts[i][0]]} {verdicts[i][1]}".strip()
@@ -1847,22 +1864,36 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                # Отпечаток — от текста ПОСЛЕ исправления: следующий запуск
                # увидит его же и сочтёт сверенным. По досверочному сверка
                # зацикливалась бы на каждом исправленном блоке.
-               "src": {i: fingerprint(fixes.get(i, cur[i])) for i in ids},
+               "src": {i: fingerprint(fixes.get(i, snap[i])) for i in ids},
                "notes": "\n".join(lines),
-               "footnotes": notes,
-               "edits": {i: {"old": cur[i], "new": v} for i, v in fixes.items()}}
+               "footnotes": notes_,
+               "edits": {i: {"old": snap[i], "new": v} for i, v in fixes.items()}}
         _save(out_path, out)
-        # Дальше по книге сверка идёт уже по исправленному тексту.
-        cur.update(fixes)
-        done += 1
-        added += len(notes)
-        fixed += len(fixes)
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         counts = collections.Counter(k for k, _ in verdicts.values())
-        log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
-            + T("vf_done", counts["author"], counts["translation"],
-                counts["dismiss"], counts["unsure"], f"{dt:.0f}",
-                f"{meta['model']}{cost}"))
+        with lock:
+            # Дальше по книге сверка идёт уже по исправленному тексту.
+            cur.update(fixes)
+            done += 1
+            added += len(notes_)
+            fixed += len(fixes)
+            log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
+                + T("vf_done", counts["author"], counts["translation"],
+                    counts["dismiss"], counts["unsure"], f"{dt:.0f}",
+                    f"{meta['model']}{cost}"))
+
+    if jobs > 1 and len(todo) > 1:
+        log("  " + T("in_threads", jobs))
+        # Не `with`: см. редактуру — при выходе он ждал бы все запущенные
+        # задачи, и Ctrl+C не доходил до обработчика.
+        ex = cf.ThreadPoolExecutor(max_workers=jobs)
+        try:
+            list(ex.map(one, todo))
+        finally:
+            ex.shutdown(wait=False, cancel_futures=True)
+    else:
+        for it in todo:
+            one(it)
     return done, skipped, added, fixed
 
 
