@@ -30,6 +30,7 @@ PAGE = """<html><head><title>Со ссылками</title></head><body>
 <p><a href="%(site)s#Intro">Введение</a></p>
 <p><a href="#Later">Дальше</a></p>
 <p><a href="https://other.example/page">Наружу</a></p>
+<p><a href="https://dict.example/define.php?term=Trigger%%20warning&amp;defid=6195009">словарь</a></p>
 <p><a href="%(site)s#Missing">В никуда</a></p>
 <h2><a name="RTFToC1"> </a><a name="Intro">Введение</a></h2>
 <p>Текст введения.</p>
@@ -68,6 +69,11 @@ def main():
     # Якоря нет в книге — значит ссылка и правда наружу, оставляем как была.
     ok("несуществующий якорь не тронут",
        f"{SITE}#Missing" in urls, urls)
+    # Query-строка внешней ссылки — часть адреса: обрезанная, она вела на
+    # голый define.php вместо словарной статьи.
+    ok("query-строка внешней ссылки цела",
+       "https://dict.example/define.php?term=Trigger%20warning&defid=6195009"
+       in urls, urls)
 
     tgt = [by.get(u[1:]) for u in inside]
     ok("цели найдены", all(tgt), inside)
@@ -145,7 +151,7 @@ def main():
         got = _O._inline(src, _O.FB2_INLINE)
         ok(name, want in got, got[:120])
 
-    print(f"\nслучаев: 16   с расхождениями: {bad}")
+    print(f"\nслучаев: 17   с расхождениями: {bad}")
     return 1 if bad else 0
 
 

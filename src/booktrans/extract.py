@@ -221,7 +221,12 @@ def _inner(el, keep=KEEP_INLINE, note=False):
             elif tag == "a" and _href(ch) and (
                     _keep_link(_href(ch)) or _epub_type(ch) == "noteref"
                     or "#" in _href(ch)):
-                links.append(_href(ch).split("?")[0])
+                href = _href(ch)
+                # Query-строка внешней ссылки — часть адреса: без неё ссылка
+                # на словарную статью вела на голый define.php. У внутренних
+                # ссылок query — мусор вёрстки, режется как раньше.
+                links.append(href if _keep_link(href)
+                             else href.split("?")[0])
                 k = len(links)
                 out.append(f"<a{k}>")
                 if ch.text:
