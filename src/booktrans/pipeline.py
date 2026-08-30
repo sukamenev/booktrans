@@ -886,32 +886,29 @@ def _backups(fallback):
 
 
 def _edit_row(primary, spares, by, ban):
-    """Очередь редакторов для куска.
+    """Очередь редакторов для куска. `by` — модель, переведшая кусок.
 
-    Обычный кусок правит заданная цепочка. Кусок, переведённый запасной
-    моделью после отказа (`by` — её имя), идёт той же цепочке за вычетом
-    записанных отказавшихся (`ban`): отказ вызван содержанием, и на правке
-    он повторится — причём тихо, обрывом в начале, который не всегда отличим
-    от «править нечего». Переведшая модель ставится дном очереди: содержание
-    она заведомо приняла. Первой её ставить нельзя — это самоправка, слепая
-    к своим калькам.
+    Переведшая модель всегда встаёт в конец очереди, даже когда она —
+    главный редактор: самоправка слепа к своим калькам. Кусок, переведённый
+    после отказа с записанными именами (`ban` — список), идёт цепочке ещё и
+    за вычетом отказавшихся: отказ вызван содержанием, и на правке он
+    повторится — причём тихо, обрывом в начале, который не всегда отличим
+    от «править нечего». Обычный кусок — `ban is False`.
 
     В старых файлах имён отказавшихся нет (`ban is None`): кто именно
     отказался, уже не восстановить, а угадать редактора, который откажется
     тихо, дороже самоправки — такой кусок по-старому правит переведшая.
     """
-    if not by:
-        return [primary] + spares
-    translator = next((f for f in spares if by == getattr(f, "model", None)),
-                      None)
-    if ban is None:
+    if ban is None and by:
+        translator = next((f for f in spares
+                           if by == getattr(f, "model", None)), None)
         if translator is None:
             return [primary] + spares
         return [translator] + [a for a in spares if a is not translator]
     row = [a for a in [primary] + spares
-           if getattr(a, "model", None) not in ban]
-    if translator is not None and translator not in row:
-        row.append(translator)
+           if getattr(a, "model", None) not in (ban or ())]
+    mine = [a for a in row if by and getattr(a, "model", None) == by]
+    row = [a for a in row if a not in mine] + mine
     # Отказали всем, а переведшей модели в цепочке нет: кто-то должен
     # попробовать, и пусть это будет заданный редактор.
     return row or [primary]
@@ -1404,11 +1401,10 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         x = json.load(open(p_, encoding="utf-8"))
         for k, v in x["tr"].items():
             raw[k] = v
-            # Переводчик куска важен редактуре только когда перевод сделан
-            # запасным ПОСЛЕ ОТКАЗА основного: без пометки правило уводило
-            # редактуру к переводчику на всяком совпадении моделей — и в
-            # best-профилях гемини-куски получали самоправку гемини.
-            whose[k] = (x.get("model") or "") if x.get("after_refusal") else ""
+            # Переводчик куска: правка никогда не начинается с него —
+            # переведшая модель встаёт в конец очереди, даже когда она же
+            # главный редактор (см. _edit_row).
+            whose[k] = x.get("model") or ""
             if x.get("after_refusal"):
                 banned[k] = x.get("refused_by")
 
@@ -1483,7 +1479,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # повторится (замерено: 2 правки из 41, обе в первых двух абзацах).
         # Очередь и судьба старых файлов без имён — в _edit_row.
         row = _edit_row(agent, _backups(fallback), whose.get(ids[0], ""),
-                        banned.get(ids[0]))
+                        banned.get(ids[0], False))
         mine, spares = row[0], row[1:]
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_start", f"{len(draft):3d}"))
