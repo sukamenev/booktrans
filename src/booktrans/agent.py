@@ -494,12 +494,14 @@ class AgyAgent(Agent):
             raise AgentError(f"agy вернул {r.returncode}: {plain[:400]}")
         try:
             env = json.loads(r.stdout)
-            text = env.get("result") or env.get("response")
-            if not str(text or "").strip():
-                # SUCCESS с пустым текстом — не ответ. Прежний код подставлял
-                # сюда весь json-конверт, и разбор жаловался на «ответ без
-                # маркеров» с конвертом вместо текста в сообщении.
-                raise AgentError("agy вернул SUCCESS без текста")
+            # SUCCESS с пустым текстом — пустой ответ, а не сбой: перевод
+            # разберёт его как «оборван на первом блоке», и два таких подряд
+            # честно станут отказом с именем модели. Ошибкой это считалось
+            # раньше — и тихая цензура жгла повторы той же модели с паузами
+            # сбоя связи, без пометки отказа и смены модели. Конверт целиком
+            # не подставляется: разбор жаловался бы «ответ без маркеров» с
+            # json вместо текста в сообщении.
+            text = str(env.get("result") or env.get("response") or "")
         except json.JSONDecodeError:
             text = r.stdout
         return text, {"model": self.model, "cost_usd": None}

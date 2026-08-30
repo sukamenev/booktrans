@@ -508,6 +508,15 @@ def _parse_scout(out):
                 got = open(p, encoding="utf-8", errors="replace").read().strip()
                 if _heads(got) >= SCOUT_HEADS:
                     return got, ""
+        # Справочник без конверта: модель сделала работу, но маркеры не
+        # поставила — на живой книге flash упирался так две попытки подряд.
+        # Принимаем по той же мере, что и файл: есть разделы. Эхо промпта
+        # сюда не пройдёт — в нём остаётся образец маркера «[[[…]]]» из
+        # конверта, — а приписка до первого раздела отрезается, как у
+        # пересжатия.
+        if "[[[" not in out and _heads(out) >= SCOUT_HEADS:
+            m = re.search(r"(?m)^#{1,4}\s", out)
+            return out[m.start():].strip(), ""
         raise
 
 
