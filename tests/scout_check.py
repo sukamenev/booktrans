@@ -489,7 +489,8 @@ def main():
     os.makedirs(os.path.join(prev, "ru"), exist_ok=True)
     open(os.path.join(prev, "ru", "scout.md"), "w", encoding="utf-8").write(
         "## NAMES — Имена\n\n| the Qax | хаксы | раса |\n"
-        "| Poole | Пул | человек |\n")
+        "| Poole | Пул | человек |\n"
+        "- **Skitter (Weaver):** Рой — псевдоним героини.\n")
     seen = []
 
     class Spy:
@@ -499,7 +500,7 @@ def main():
             seen.append(user)
             raise P.agent_mod.Fatal("хватит")
 
-    blocks2 = [{"kind": "p", "text": "The Qax ruled Earth. " * 40}]
+    blocks2 = [{"kind": "p", "text": "The Qax ruled Earth. Skitter fought. " * 30}]
     try:
         P.scout(os.path.join(md2, "new.work"), blocks2, Spy(), "", "задание",
                 1, hush, likes=[prev])
@@ -508,6 +509,11 @@ def main():
     ok("канон цикла в части: упомянутое есть, лишнего нет",
        bool(seen) and "| the Qax | хаксы" in seen[0] and "Пул" not in seen[0],
        (seen[0][:160] if seen else "запроса не было"))
+    # Карточка-маркер прежней книги — тоже канон: после двухъярусного
+    # справочника NAMES пишется и так, и канон молча пустел.
+    ok("канон цикла читает карточки-маркеры",
+       bool(seen) and "**Skitter (Weaver):** Рой" in seen[0],
+       (seen[0][-200:] if seen else "запроса не было"))
 
     # Часть, начавшаяся посреди главы, знает эту главу, а разборы приходят
     # на сведение подписанными: пачки пирамиды друг друга не видят, и

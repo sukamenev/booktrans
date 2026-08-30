@@ -2735,10 +2735,18 @@ def reanchor(work, blocks, to, log):
 
 def _name_key(line):
     """Ключ строки раздела NAMES/TERMS: имя на языке оригинала."""
-    m = re.match(r"\s*\|?\s*([^|=]+?)\s*[|=]", line)
-    if not m:
-        return ""
-    k = re.sub(r"[\s*_`]+", " ", m.group(1)).strip().lower()
+    mb = _BULLET_KEY.match(line)
+    if mb:
+        # Карточка-маркер «- **Skitter:** Рой — …»: после двухъярусного
+        # справочника NAMES часто пишется так, и канон цикла молча пустел —
+        # имя главной героини уехало в чужую транслитерацию.
+        raw = _unbracket(mb.group(1).strip())
+    else:
+        m = re.match(r"\s*\|?\s*([^|=]+?)\s*[|=]", line)
+        if not m:
+            return ""
+        raw = m.group(1)
+    k = re.sub(r"[\s*_`]+", " ", raw).strip().lower()
     # Артикль не рознит ключи: «the Qax» прежней книги и «Qax» новой — одно
     # имя, а без этого канон не принуждался и раса уехала в другой перевод.
     k = re.sub(r"^(?:the|a|an)\s+", "", k)
