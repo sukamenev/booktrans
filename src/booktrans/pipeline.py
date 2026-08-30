@@ -1189,6 +1189,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             # не быть. Идём по цепочке до первой, которая возьмётся.
             backups = _backups(fallback)
             got, last = None, getattr(e, "first", "?")
+            deniers = ([getattr(agent, "model", None)]
+                       if isinstance(e, Refused) else [])
             for fb in backups:
                 if agent_mod.limit_left(fb):
                     continue
@@ -1197,13 +1199,17 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                     got = _run(fb, system, prompt, retries,
                                lambda o: _parse_translate(o, expected, srcs), log)
                     # У перевода свой обход цепочки, мимо _chain_run, и
-                    # пометка «после отказа» здесь терялась: кусок, спасённый
-                    # запасной моделью, редактура отдавала основному
-                    # редактору — под тот же отказ.
-                    if isinstance(e, Refused):
-                        got = (got[0], dict(got[1], after_refusal=True), got[2])
+                    # пометка «после отказа» здесь терялась — вместе с
+                    # именами отказавшихся, без которых редактура умеет
+                    # только отдать кусок переведшей модели: самоправка.
+                    if deniers:
+                        got = (got[0], dict(got[1], after_refusal=True,
+                                            refused_by=deniers), got[2])
                     break
                 except (Refused, RuntimeError, Fatal) as e2:
+                    m2 = getattr(fb, "model", None)
+                    if isinstance(e2, Refused) and m2 and m2 not in deniers:
+                        deniers.append(m2)
                     last = getattr(e2, "first", last)
             if got is None:
                 log("    " + (T("refused_both", last) if backups
@@ -1229,8 +1235,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         summ, terms = _split_meta(extra)
         _save(out_path, {"index": idx, "model": meta["model"],
                          "cost_usd": meta["cost_usd"], "footnotes": found,
-                         **({"after_refusal": True}
-                            if meta.get("after_refusal") else {}),
+                         **{k: meta[k] for k in ("after_refusal", "refused_by")
+                            if meta.get(k)},
                          "tr": res,
                          "src": {b["id"]: fingerprint(b["text"])
                                  for b in translatable(c["blocks"])}})

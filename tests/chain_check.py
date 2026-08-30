@@ -192,6 +192,34 @@ def main():
     _, meta, _ = P._chain_run([first, second], "", "п", 1, plain, log)
     ok("после сбоя пометки нет", not meta.get("after_refusal"), meta)
 
+    # Имена отказавшихся доезжают до ФАЙЛА куска: пометку с именами ставила
+    # цепочка в памяти, а запись на диск несла один флаг — и редактура, не
+    # видя имён, отдавала кусок переведшей модели: самоправка.
+    real_rp = P._run_patient
+
+    def fake_rp(agent, backups, system, prompt, retries, parse, log_):
+        res = {b["id"]: "долгий перевод, длиной с оригинал" for b in BLOCKS}
+        return ((res, ("SUMMARY: было дело", [])),
+                {"model": "вторая", "cost_usd": 0,
+                 "after_refusal": True, "refused_by": ["первая"]}, 0.1)
+
+    P._run_patient = fake_rp
+    d = tempfile.mkdtemp()
+    try:
+        P.translate(d, [{"index": 1, "label": "", "words": 3,
+                         "blocks": BLOCKS}], Says("вторая"), "", "", 1, hush)
+        import glob as _gl
+        tr_file = _gl.glob(os.path.join(d, "**", "0001.json"),
+                           recursive=True)[0]
+        saved = json.load(open(tr_file, encoding="utf-8"))
+    finally:
+        P._run_patient = real_rp
+        shutil.rmtree(d, ignore_errors=True)
+    ok("имена отказавшихся в файле куска",
+       saved.get("after_refusal") is True
+       and saved.get("refused_by") == ["первая"],
+       {k: saved.get(k) for k in ("after_refusal", "refused_by")})
+
     # Порядок значим: первая делает работу, остальные подхватывают.
     who = [Says("а", boom=AgentError("502")), Says("б", boom=AgentError("502")),
            Says("в")]
