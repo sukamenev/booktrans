@@ -885,21 +885,27 @@ def _backups(fallback):
     return list(fallback) if isinstance(fallback, (list, tuple)) else [fallback]
 
 
-def _edit_row(primary, spares, by, ban):
+def _edit_row(primary, spares, by, ban, self_edit="allow"):
     """Очередь редакторов для куска. `by` — модель, переведшая кусок.
 
-    Переведшая модель всегда встаёт в конец очереди, даже когда она —
-    главный редактор: самоправка слепа к своим калькам. Кусок, переведённый
-    после отказа с записанными именами (`ban` — список), идёт цепочке ещё и
-    за вычетом отказавшихся: отказ вызван содержанием, и на правке он
-    повторится — причём тихо, обрывом в начале, который не всегда отличим
-    от «править нечего». Обычный кусок — `ban is False`.
+    `self_edit` — судьба переведшей модели в очереди (ключ `--self-edit`):
+    `allow` — очередь как задана; `last` — переведшая встаёт в конец,
+    даже когда она главный редактор; `never` — вычёркивается совсем, и
+    пустая очередь значит «кусок не правится»: самоправка слепа к своим
+    калькам, и запрет дороже пропуска.
+
+    Кусок, переведённый после отказа с записанными именами (`ban` —
+    список), идёт цепочке ещё и за вычетом отказавшихся: отказ вызван
+    содержанием, и на правке он повторится — причём тихо, обрывом в начале,
+    который не всегда отличим от «править нечего». Обычный кусок —
+    `ban is False`.
 
     В старых файлах имён отказавшихся нет (`ban is None`): кто именно
     отказался, уже не восстановить, а угадать редактора, который откажется
-    тихо, дороже самоправки — такой кусок по-старому правит переведшая.
+    тихо, дороже самоправки — такой кусок по-старому правит переведшая
+    (кроме `never`: там запрет главнее).
     """
-    if ban is None and by:
+    if ban is None and by and self_edit != "never":
         translator = next((f for f in spares
                            if by == getattr(f, "model", None)), None)
         if translator is None:
@@ -908,7 +914,10 @@ def _edit_row(primary, spares, by, ban):
     row = [a for a in [primary] + spares
            if getattr(a, "model", None) not in (ban or ())]
     mine = [a for a in row if by and getattr(a, "model", None) == by]
-    row = [a for a in row if a not in mine] + mine
+    if self_edit == "never":
+        return [a for a in row if a not in mine]
+    if self_edit == "last":
+        row = [a for a in row if a not in mine] + mine
     # Отказали всем, а переведшей модели в цепочке нет: кто-то должен
     # попробовать, и пусть это будет заданный редактор.
     return row or [primary]
@@ -1379,7 +1388,7 @@ def _swap_edit(res, draft):
 
 
 def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
-         fallback=None, force=False, to=""):
+         fallback=None, force=False, to="", self_edit="allow"):
     os.makedirs(lpath(work, "ed", to), exist_ok=True)
     now = getattr(agent, "model", None) or ""
 
@@ -1479,7 +1488,13 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # повторится (замерено: 2 правки из 41, обе в первых двух абзацах).
         # Очередь и судьба старых файлов без имён — в _edit_row.
         row = _edit_row(agent, _backups(fallback), whose.get(ids[0], ""),
-                        banned.get(ids[0], False))
+                        banned.get(ids[0], False), self_edit)
+        if not row:
+            # --self-edit never: в очереди остался один переводчик —
+            # кусок остаётся без правки, о чём говорим вслух.
+            with lock:
+                log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_self_only"))
+            return
         mine, spares = row[0], row[1:]
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("ed_start", f"{len(draft):3d}"))

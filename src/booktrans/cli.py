@@ -321,6 +321,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=1, help=T("h_jobs"))
     ap.add_argument("--scout-jobs", type=int, default=1,
                     help=T("h_scout_jobs"))
+    ap.add_argument("--self-edit", choices=["allow", "last", "never"],
+                    default="allow", help=T("h_self_edit"))
     ap.add_argument("--to", default=os.environ.get("BT_TO", "en"), help=T("h_to"))
     ap.add_argument("--ui", default=ui, help=T("h_ui"))
     ap.add_argument("--force-translate", action="store_true", help=T("h_force_lang"))
@@ -799,7 +801,7 @@ def main():
         d, s, t, halted = pipeline.edit(
             work, chunks, agent_for("editor"), sysprompt(lean=True), task("edit"),
             args.retries, log, only_chunks, args.jobs,
-            fallback=backup_for("editor"), force=args.force_editing, to=args.to)
+            fallback=backup_for("editor"), force=args.force_editing, to=args.to, self_edit=args.self_edit)
         if d or not halted:
             log("  " + (T("done_edit", d, s, t) if d else T("nothing_edit", s)))
         if halted:
