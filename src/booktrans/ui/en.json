@@ -234,6 +234,7 @@
  "refused_both": "the fallback models refused as well at block {0}; chunk skipped",
  "bad_agent": "STOP: unknown agent \"{0}\". Available: {1}.\n  Inside a model chain the agent goes before a colon: --editor model,claude:other-model",
  "effort_clash": "STOP: agy takes the effort either as a model suffix or as --effort, never both.\n  You gave: --model {0} and --effort {1}.\n  Keep one: either «{0}», or the model without the suffix plus --effort {1}.",
+ "lim_switch": "rate limit — taking the next model: {0}",
  "chunk_failed": "failed: {0}",
  "edit_failed": "chunk {0} left unedited: no model of the chain took it",
  "edit_stopped": "WARNING: the edits stop at block {0} of {1}, with none after that. It looks like the editor did not finish the chunk — usually a sign of content the model will not handle. Worth re-editing with another model.",

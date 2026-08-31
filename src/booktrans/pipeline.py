@@ -1195,7 +1195,8 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 log("    " + T("refused", e.first, e.n, e.total))
                 log(f"      {src}…")
             else:
-                log("    " + T("chunk_failed", e))
+                log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                              else T("chunk_failed", e)))
             # Подстраховка: то же задание следующей модели цепочки. Отказ —
             # свойство модели, а не текста, и у следующей такого запрета может
             # не быть. Идём по цепочке до первой, которая возьмётся.
@@ -1597,7 +1598,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             # записать как готовый кусок, иначе следующий запуск сочтёт его
             # сделанным. Идём по цепочке, как и при обрыве.
             with lock:
-                log("    " + T("chunk_failed", e))
+                log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                              else T("chunk_failed", e)))
             (res, notes), dt = ({}, []), 0.0
             meta = {"model": getattr(mine, "model", "?"), "cost_usd": 0}
             failed = True
@@ -1624,7 +1626,8 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                                                   parse, log)
             except (Refused, RuntimeError, Fatal) as e:
                 with lock:
-                    log("    " + T("chunk_failed", e))
+                    log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                              else T("chunk_failed", e)))
                 continue
             if len(res2) > len(res) or failed:
                 res, notes, meta, dt = res2, notes2, meta2, dt2
@@ -1857,7 +1860,8 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                 break
             except (Refused, RuntimeError, Fatal, ValueError) as e:
                 with lock:
-                    log("    " + T("chunk_failed", e))
+                    log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                              else T("chunk_failed", e)))
         if res is None:
             return
         verdicts, notes_, fixes = res
