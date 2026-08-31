@@ -723,6 +723,70 @@ def ref_rows_for(rows, text):
     return got
 
 
+def refresh(work, log, to=""):
+    """Пересчитать отпечатки готовности после ручной правки переводов.
+
+    Точечная замена в tr (имя, термин), внесённая синхронно в пары правок,
+    сделанности работы не меняет — но отпечатки расходятся, и редактура со
+    сверкой честно перечитали бы всю книгу. Блок, чья правка по-прежнему
+    чисто накладывается (или правки не было), признаётся сделанным; блок с
+    осиротевшей правкой остаётся честно несделанным. Сверка меряется по
+    тексту с наложенными правками, редактура — по черновику.
+    """
+    tr = {}
+    for _, p in chunk_files(lpath(work, "tr", to)):
+        tr.update(json.load(open(p, encoding="utf-8")).get("tr", {}))
+    if not tr:
+        log("  " + T("refresh_none"))
+        return
+    stale = orphan = 0
+    for _, p in chunk_files(lpath(work, "ed", to)):
+        d = json.load(open(p, encoding="utf-8"))
+        src, edits = d.get("src") or {}, d.get("edits") or {}
+        ch = False
+        for k, h in list(src.items()):
+            if k not in tr:
+                continue
+            now = fingerprint(tr[k])
+            if h == now:
+                continue
+            e = edits.get(k)
+            if e is None or e.get("old") == tr[k]:
+                src[k] = now
+                ch = True
+                stale += 1
+            else:
+                orphan += 1
+        if ch:
+            json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    log("  " + T("refresh_done", "ed", stale, orphan))
+    cur = dict(tr)
+    for _, p in chunk_files(lpath(work, "ed", to)):
+        for k, e in (json.load(open(p, encoding="utf-8")).get("edits") or {}).items():
+            if k in cur and cur[k] == e.get("old", cur[k]):
+                cur[k] = e["new"]
+    stale = orphan = 0
+    for _, p in chunk_files(lpath(work, "vf", to)):
+        d = json.load(open(p, encoding="utf-8"))
+        src, edits = d.get("src") or {}, d.get("edits") or {}
+        ch = False
+        for k, h in list(src.items()):
+            if k not in cur:
+                continue
+            e = edits.get(k)
+            if e is not None and e.get("old") != cur[k]:
+                orphan += 1
+                continue
+            target = fingerprint(e["new"] if e else cur[k])
+            if h != target:
+                src[k] = target
+                ch = True
+                stale += 1
+        if ch:
+            json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    log("  " + T("refresh_done", "vf", stale, orphan))
+
+
 def _chunk_head(index, label):
     """Первая строка запроса куска. Раздел упоминается, только когда он есть:
     файл-вариант вместо склейки строк, чтобы шов не жил в коде."""

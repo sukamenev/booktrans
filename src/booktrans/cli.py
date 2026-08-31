@@ -321,6 +321,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=1, help=T("h_jobs"))
     ap.add_argument("--scout-jobs", type=int, default=1,
                     help=T("h_scout_jobs"))
+    ap.add_argument("--refresh", action="store_true", help=T("h_refresh"))
     ap.add_argument("--self-edit", choices=["allow", "last", "never"],
                     default="allow", help=T("h_self_edit"))
     ap.add_argument("--to", default=os.environ.get("BT_TO", "en"), help=T("h_to"))
@@ -380,6 +381,10 @@ def main():
 
     base = os.path.splitext(args.book)[0]
     work = args.work or base + ".work"
+    if args.refresh:
+        # Обслуживание, не этап: пересчитать отпечатки и выйти.
+        pipeline.refresh(work, log, args.to)
+        return
     os.makedirs(work, exist_ok=True)
 
     # Замок на рабочую папку. Два прогона по одной книге затирают друг другу

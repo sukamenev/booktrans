@@ -834,6 +834,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --jobs N              threads for editing, verification and footnotes
 --scout-jobs N        threads for scouting parts (off by default — see "Scouting can too")
 --self-edit X         the chunk's translator in the editor queue: allow — as given, last — moves to the end, never — struck out (chunk may stay unedited)
+--refresh             after hand-editing translations, recompute edit/verify readiness fingerprints and exit: cleanly applying work stays done, orphans honestly redo
 --wait SEC            wait on rate limits (0 — fail at once)
 --force-translate     translate even if the book is already in the target language
 --no-headings         the book really has no chapters, do not stop
