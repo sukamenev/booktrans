@@ -3003,11 +3003,15 @@ def _registry(findings):
     # Совпавшая часть ключа — тот же псевдоним, то есть тот же герой:
     # группы сливаются в раннюю, разноголосицу сведёт _settle_rows.
     # Только персонажи: у терминов общая часть законна («duo / trio»).
+    # И только по частям с буквами оригинала: переводное имя-одиночка
+    # («Сара») совпадает у разных людей — на живой книге правило без этой
+    # оговорки склеило героиню с тёзкой из другой семьи.
     owner = {}
     for gk, key, _ in order:
         if gk[0] != "CHARACTERS" or not groups[gk]:
             continue
-        parts = [p for p in gk[1].split(" / ") if len(p) >= 3]
+        parts = [p for p in gk[1].split(" / ")
+                 if len(p) >= 3 and re.search(r"[a-z]", p)]
         dst = next((owner[p] for p in parts if p in owner), None)
         if dst is not None and dst != gk:
             for var in groups[gk]:
