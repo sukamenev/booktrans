@@ -2998,6 +2998,25 @@ def _registry(findings):
             var = " ".join(line.split())
             if all(var != v for _, v in groups[gk]):
                 groups[gk].append((i, var))
+    # Двойники персонажей: один герой под двумя ключами — «Рой; Тейлор» и
+    # «Рой; Тейлор Эберт», — и обе карточки ехали в каждый его кусок.
+    # Совпавшая часть ключа — тот же псевдоним, то есть тот же герой:
+    # группы сливаются в раннюю, разноголосицу сведёт _settle_rows.
+    # Только персонажи: у терминов общая часть законна («duo / trio»).
+    owner = {}
+    for gk, key, _ in order:
+        if gk[0] != "CHARACTERS" or not groups[gk]:
+            continue
+        parts = [p for p in gk[1].split(" / ") if len(p) >= 3]
+        dst = next((owner[p] for p in parts if p in owner), None)
+        if dst is not None and dst != gk:
+            for var in groups[gk]:
+                if all(var[1] != v for _, v in groups[dst]):
+                    groups[dst].append(var)
+            groups[gk] = []
+            gk = dst
+        for p in parts:
+            owner[p] = gk
     return order, groups, heads
 
 
