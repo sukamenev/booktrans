@@ -334,13 +334,14 @@ in `work/structure.json`. If the book genuinely has no chapters, use
 | **assembly** | book with footnotes, images, structure | |
 | **checks** | completeness, numbers, lengths, stray source text, footnote references, terminology | |
 
-The `--full-verify` key widens verification to the whole text: the verifier
-receives every original–translation pair and, beyond the remarks, sweeps
-them for gross meaning errors — omissions, inverted sense, foreign numbers
-and measures, softening. Without it a smooth but wrong sentence is caught by
-nobody: the editor works blind to the original, and verification only comes
-where the editor left a remark. Only the input grows — the output stays
-short; an empty sweep is the norm.
+Verification is full-text by default: the verifier receives every
+original–translation pair and, beyond the remarks, sweeps them for gross
+meaning errors — omissions, inverted sense, foreign numbers and measures,
+softening. Otherwise a smooth but wrong sentence is caught by nobody: the
+editor works blind to the original, and remarks do not cover everything.
+Only the input grows — the output stays short; an empty sweep is the norm.
+The `--no-full-verify` key restores the narrow mode: only the paragraphs
+named in editor remarks are verified.
 
 The reconnaissance reference goes into the system prompt of **every** request,
 together with a rolling context: the plot digest, the tail of the already
@@ -851,7 +852,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --jobs N              threads for editing, verification and footnotes
 --scout-jobs N        threads for scouting parts (off by default — see "Scouting can too")
 --self-edit X         the chunk's translator in the editor queue: allow — as given, last — moves to the end, never — struck out (chunk may stay unedited)
---full-verify         verify the whole text: besides editor remarks, sweep every paragraph pair for gross meaning errors
+--no-full-verify      narrow verification: only the paragraphs named in editor remarks, no sweep of every pair for gross meaning errors
 --refresh             after hand-editing translations, recompute edit/verify readiness fingerprints and exit: cleanly applying work stays done, orphans honestly redo
 --wait SEC            wait on rate limits (0 — fail at once)
 --force-translate     translate even if the book is already in the target language

@@ -311,7 +311,8 @@ def main():
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
     ap.add_argument("--verifier", help=T("h_verifier"))
-    ap.add_argument("--full-verify", action="store_true", help=T("h_full_verify"))
+    ap.add_argument("--full-verify", action=argparse.BooleanOptionalAction,
+                    default=True, help=T("h_full_verify"))
     ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
     ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
                     help=T("h_formatter"))
