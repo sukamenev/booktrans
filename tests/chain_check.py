@@ -353,7 +353,9 @@ def main():
             h, mi = {"resets 12:50am": (0, 50), "resets at 3pm": (15, 0),
                      "resets 23:15": (23, 15), "resets 12pm": (12, 0)}[msg]
             want = (h - now.tm_hour) * 3600 + (mi - now.tm_min) * 60 - now.tm_sec
-            want += 0 if want > 0 else 86400
+            # Свежепрошедший срок код заменяет короткой паузой — тест обязан
+            # ждать того же, иначе он падает десять минут в сутки.
+            want = 120 if -600 < want <= 0 else want if want > 0 else want + 86400
         ok(f"срок снятия: {msg}", abs(got - want) <= 1, f"{got} вместо {want}")
 
     # Сбой у поставщика проходит сам, но не за секунду: три куска подряд без
