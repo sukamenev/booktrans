@@ -436,9 +436,15 @@ def boxed(prompt, name, what):
 
     Конверт разбирает все эти случаи разом: работа лежит между маркерами,
     остальное отброшено, ответа без маркеров нет вовсе.
+
+    Требование стоит дважды: строкой в начале и полностью в конце. На
+    больших запросах разведки модель, прочитав тысячи слов текста, писала
+    отчёт сразу, без конверта, — одиночное требование в хвосте тонуло.
     """
+    head, _ = lang.prompt("envelope_head")
     tpl, _ = lang.prompt("envelope")
-    return prompt + "\n\n---\n\n" + tpl.format(name=name, what=what)
+    return head.format(name=name) + "\n\n" + prompt \
+        + "\n\n---\n\n" + tpl.format(name=name, what=what)
 
 
 def unbox(out, name):
@@ -3307,9 +3313,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             if m.get("series_no"): meta_lines.append(f"series_no: {m['series_no']}")
 
             if meta_lines:
-                hint += "\n\n## E-book metadata\n\n" + "\n".join(meta_lines)
                 hint_meta, _ = lang.prompt("scout_hint_meta")
-                hint += "\n\n" + hint_meta
+                hint += "\n\n" + hint_meta.format(meta="\n".join(meta_lines))
 
         crows = ref_rows_for(canon_rows + list(known.values()), text)
         canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
