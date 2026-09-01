@@ -562,6 +562,15 @@ the second picking up what the first refuses. That is why there is no
 `--translator-fallback` and never will be: there are five passes, and a second
 key for each would double their number.
 
+An agent other than `--agent` is named before the model with a colon
+(`claude:claude-opus-5`), and a third part sets the reasoning depth — `low`,
+`medium`, `high`, plus `xhigh` and `max` where the agent supports them
+(Claude Code does):
+
+```bash
+./booktrans book.epub --translator claude:claude-sonnet-5:max
+```
+
 | key | pass |
 |---|---|
 | `--scout` | reconnaissance: the reference about the book |

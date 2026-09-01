@@ -514,6 +514,14 @@ Thoat — тоат, восьминогое ездовое животное; не
 ./booktrans книга.epub --agent agy --editor gemini-3.1-pro-high,claude:claude-opus-5
 ```
 
+Третьей частью через двоеточие задаётся глубина размышлений — `low`,
+`medium`, `high`, а у агентов, которые это умеют (Claude Code), ещё
+`xhigh` и `max`:
+
+```bash
+./booktrans книга.epub --translator claude:claude-sonnet-5:max
+```
+
 | ключ | проход |
 |---|---|
 | `--scout` | разведка: справочник по книге |

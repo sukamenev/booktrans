@@ -232,7 +232,8 @@ def _chain(s, agent=None):
 
         --editor gemini-3.1-pro-high,claude:claude-opus-5
         
-    Третьей частью через двоеточие можно указать глубину размышлений (low/medium/high):
+    Третьей частью через двоеточие можно указать глубину размышлений
+    (low/medium/high, а где агент умеет — xhigh и max):
         --editor gemini-pro:high,claude:claude-opus-5:low
     """
     out = []
@@ -245,7 +246,7 @@ def _chain(s, agent=None):
         model = None
         effort = None
         
-        if parts[-1] in ("low", "medium", "high"):
+        if parts[-1] in ("low", "medium", "high", "xhigh", "max"):
             effort = parts.pop()
             
         if len(parts) == 2:
@@ -302,7 +303,8 @@ def main():
                     choices=AGENTS)
     ap.add_argument("--agent-cmd", help=T("h_agentcmd"))
     ap.add_argument("--model", default=os.environ.get("BT_MODEL"), help=T("h_model"))
-    ap.add_argument("--effort", choices=("low", "medium", "high"), help="Effort level (low, medium, high)")
+    ap.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"),
+                    help="Effort level (low, medium, high; xhigh/max where supported)")
     ap.add_argument("--scout", help=T("h_scout"))
     ap.add_argument("--like", action="append", help=T("h_like"))
     ap.add_argument("--name-series", action="store_true", help=T("h_name_series"))
@@ -370,7 +372,7 @@ def main():
             if name not in AGENTS:
                 sys.exit(T("bad_agent", name, ", ".join(AGENTS)))
             if name == "agy" and args.effort \
-                    and m and re.search(r"-(low|medium|high)$", m):
+                    and m and re.search(r"-(low|medium|high|xhigh|max)$", m):
                 sys.exit(T("effort_clash", m, args.effort))
     T = lang.set_ui(args.ui)
     if args.to not in lang.available_langs():
