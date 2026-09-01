@@ -337,7 +337,8 @@ in `work/structure.json`. If the book genuinely has no chapters, use
 Verification is full-text by default: the verifier receives every
 original–translation pair and, beyond the remarks, sweeps them for gross
 meaning errors — omissions, inverted sense, foreign numbers and measures,
-softening. Otherwise a smooth but wrong sentence is caught by nobody: the
+softening — and outright language errors: broken grammar, typos. Otherwise
+a smooth but wrong sentence is caught by nobody: the
 editor works blind to the original, and remarks do not cover everything.
 Only the input grows — the output stays short; an empty sweep is the norm.
 The `--no-full-verify` key restores the narrow mode: only the paragraphs
@@ -852,7 +853,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --jobs N              threads for editing, verification and footnotes
 --scout-jobs N        threads for scouting parts (off by default — see "Scouting can too")
 --self-edit X         the chunk's translator in the editor queue: allow — as given, last — moves to the end, never — struck out (chunk may stay unedited)
---no-full-verify      narrow verification: only the paragraphs named in editor remarks, no sweep of every pair for gross meaning errors
+--no-full-verify      narrow verification: only the paragraphs named in editor remarks, no sweep of every pair for gross meaning and language errors
 --refresh             after hand-editing translations, recompute edit/verify readiness fingerprints and exit: cleanly applying work stays done, orphans honestly redo
 --wait SEC            wait on rate limits (0 — fail at once)
 --force-translate     translate even if the book is already in the target language
