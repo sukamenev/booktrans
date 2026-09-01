@@ -433,6 +433,31 @@ def main():
         ok(f"работа запасной доехала: {name}", done, why)
         shutil.rmtree(d, ignore_errors=True)
 
+    # Отвергнутый разбором ответ (без конверта, без вердикта): повтор несёт
+    # причину отказа, а не бьётся тем же промптом о то же место.
+    asked = []
+
+    class Echo:
+        model, kind = "эхо", "стенд"
+
+        def run(self, system, user):
+            asked.append(user)
+            return "работа", {"model": self.model, "cost_usd": 0}
+
+    tries = [0]
+
+    def picky(out):
+        tries[0] += 1
+        if tries[0] == 1:
+            raise ValueError("ответ без маркеров SCOUT")
+        return out
+
+    res, _, _ = P._run(Echo(), "", "промпт", 3, picky, hush)
+    ok("после отказа разбора повтор несёт причину",
+       res == "работа" and len(asked) == 2
+       and asked[1].startswith("промпт") and "маркеров SCOUT" in asked[1],
+       [a[:60] for a in asked])
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 

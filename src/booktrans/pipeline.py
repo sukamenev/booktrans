@@ -319,6 +319,14 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             # бьётся о тот же фильтр слово в слово, пять попыток печатали
             # одно и то же.
             raise
+        except ValueError as e:
+            # Разбор отверг ответ: без конверта, без вердикта. Слепой повтор
+            # того же промпта бился о то же место пять раз подряд — модель
+            # не знала, что чинить. Причина отказа едет в повтор.
+            log("\n    " + T("retry", attempt, e))
+            cur = prompt + "\n\n---\n\n" + \
+                lang.prompt("retry_parse")[0].format(err=e)
+            err = e
         except Exception as e:
             log("\n    " + T("retry", attempt, e))
             # Сбой на стороне поставщика — переждать. «Please try again in a
