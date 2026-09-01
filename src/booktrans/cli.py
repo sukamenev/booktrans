@@ -311,6 +311,7 @@ def main():
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
     ap.add_argument("--verifier", help=T("h_verifier"))
+    ap.add_argument("--full-verify", action="store_true", help=T("h_full_verify"))
     ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
     ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
                     help=T("h_formatter"))
@@ -823,7 +824,8 @@ def main():
         d, s, fn, fx = pipeline.verify(
             work, chunks, agent_for("verifier"), sysprompt(lean=True), task("verify"),
             args.retries, log, only_chunks,
-            fallback=backup_for("verifier"), to=args.to, jobs=args.jobs)
+            fallback=backup_for("verifier"), to=args.to, jobs=args.jobs,
+            full=args.full_verify)
         log("  " + (T("done_verify", d, s, fn, fx) if d or s
                     else T("nothing_verify")))
 

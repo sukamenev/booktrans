@@ -1807,8 +1807,12 @@ def has_notes(t):
     return bool(t) and len(t) > 12 and t.lower().rstrip(".") not in NO_NOTES
 
 
-def _parse_verify(out, want):
-    """Вердикты сверщика + сноски и исправления, каждое при своём вердикте."""
+def _parse_verify(out, want, must=None):
+    """Вердикты сверщика + сноски и исправления, каждое при своём вердикте.
+
+    `must` — блоки, по которым вердикт обязателен (замечания редактора);
+    остальные из `want` даны на сквозной прочёс, и молчание по ним — норма.
+    """
     verdicts = {}
     for m in re.finditer(r"\[\[\[VERDICT\s+(\S+?)\s+"
                          r"(author|translation|dismiss|unsure)\]\]\]"
@@ -1816,7 +1820,7 @@ def _parse_verify(out, want):
         bid, kind, why = m.groups()
         if bid in want:
             verdicts[bid] = (kind, " ".join(why.split()))
-    missing = [i for i in want if i not in verdicts]
+    missing = [i for i in (want if must is None else must) if i not in verdicts]
     if missing:
         raise ValueError(f"нет вердикта по блокам {missing[:4]} ({len(missing)})")
     notes = parse_notes_blocks(out, want)
@@ -1833,14 +1837,21 @@ def _parse_verify(out, want):
     if bad:
         raise ValueError(f"вердикт translation без исправления: {bad[:4]}")
     # Сноска или правка вопреки вердикту — рассинхрон ответа, а не довесок.
-    notes = [n for n in notes if verdicts[n["block"]][0] == "author"]
-    fixes = {i: v for i, v in fixes.items() if verdicts[i][0] == "translation"}
+    notes = [n for n in notes if verdicts.get(n["block"], ("",))[0] == "author"]
+    fixes = {i: v for i, v in fixes.items()
+             if verdicts.get(i, ("",))[0] == "translation"}
     return verdicts, notes, fixes
 
 
 def verify(work, chunks, agent, system, task, retries, log, only=None,
-           fallback=None, to="", jobs=1):
+           fallback=None, to="", jobs=1, full=False):
     """Сверка замечаний редактора с оригиналом.
+
+    С `full` кусок сверяется целиком: сверщику идут все пары «оригинал —
+    перевод», и помимо замечаний он прочёсывает текст на грубые смысловые
+    расхождения. Вердикты обязательны только по замечаниям; молчание по
+    остальным абзацам — норма. Вход дорожает, но выход остаётся коротким,
+    а гладкая неверная фраза перестаёт быть невидимой для конвейера.
 
     Редактор работает без оригинала: спорное по существу место он не правит,
     а выписывает замечанием. Сверщик — единственный, кто видит обе стороны.
@@ -1884,14 +1895,21 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         idx, ep = item
         remark = (json.load(open(ep, encoding="utf-8")).get("notes") or "").strip()
         if not has_notes(remark):
-            return
+            if not full:
+                return
+            remark = ""
         # Адреса блоков — прямо из текста замечания: редактор помечает их
         # идентификаторами. Замечание без адреса сверять не по чему — оно
         # остаётся человеку, как и раньше.
         out_path = f'{lpath(work, "vf", to)}/{idx:04d}.json'
         with lock:
-            ids = sorted((i for i in orig if i in remark and i in cur),
-                         key=_id_key)
+            must = sorted((i for i in orig if i in remark and i in cur),
+                          key=_id_key)
+            ids = must
+            if full:
+                blocks = (by_index.get(idx) or {}).get("blocks") or []
+                ids = sorted((b["id"] for b in blocks if b["id"] in cur),
+                             key=_id_key)
             if not ids:
                 return
             # Сверка сделана по замечанию и по тексту; изменилось любое — снова.
@@ -1905,7 +1923,11 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             snap = {i: cur[i] for i in ids}
         who = ((by_index.get(idx) or {}).get("label") or "—")[:24]
         rows = [pair_tpl.format(id=i, orig=orig[i], tr=snap[i]) for i in ids]
-        pieces = [task, lang.prompt("verify_remarks")[0] + "\n\n" + remark]
+        pieces = [task]
+        if full:
+            pieces.append(lang.prompt("verify_sweep")[0])
+        if remark:
+            pieces.append(lang.prompt("verify_remarks")[0] + "\n\n" + remark)
         refs = ref_rows_for(ref_rows, " ".join(orig[i] for i in ids))
         if refs:
             pieces.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
@@ -1915,12 +1937,12 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
              encoding="utf-8").write(prompt)
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
-        want = set(ids)
+        want, need = set(ids), set(must)
         res = None
         for m in [agent] + [f for f in _backups(fallback) if f is not agent]:
             try:
                 res, meta, dt = _run(m, system, prompt, retries,
-                                     lambda o: _parse_verify(o, want), log)
+                                     lambda o: _parse_verify(o, want, need), log)
                 break
             except (Refused, RuntimeError, Fatal, ValueError) as e:
                 with lock:
@@ -1932,7 +1954,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         kinds = {"author": T("vf_author"), "translation": T("vf_fixed"),
                  "dismiss": T("vf_dismissed"), "unsure": T("vf_unsure")}
         lines = [f"{i}: {kinds[verdicts[i][0]]} {verdicts[i][1]}".strip()
-                 for i in ids]
+                 for i in ids if i in verdicts]
         out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
                "remark": fingerprint(remark),
                # Отпечаток — от текста ПОСЛЕ исправления: следующий запуск

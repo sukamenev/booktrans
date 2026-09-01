@@ -173,6 +173,64 @@ def main():
     ok("повторная сверка пропущена по отпечаткам", done2 == 0, done2)
     _sh.rmtree(d, ignore_errors=True)
 
+    # Полнотекстовый прочёс: вердикты обязательны только по замечаниям,
+    # молчание по остальным парам — норма, находка идёт тем же форматом.
+    sweep = WANT | {"s40.b0001", "s40.b0002", "s40.b0003"}
+    v, n, f = P._parse_verify(
+        OUT + "\n[[[VERDICT s40.b0002 translation]]]\nМера подменена.\n"
+              "\n[[[P s40.b0002]]]\nшириной в милю\n", sweep, WANT)
+    ok("молчание по чистым парам — норма",
+       "s40.b0001" not in v and "s40.b0003" not in v, v)
+    ok("находка прочёса принята", f.get("s40.b0002") == "шириной в милю", f)
+    v, n, f = P._parse_verify(OUT + "\n[[[P s40.b0003]]]\nбез вердикта\n",
+                              sweep, WANT)
+    ok("правка прочёса без вердикта отброшена", "s40.b0003" not in f, f)
+    try:
+        P._parse_verify(OUT.replace("[[[VERDICT s23.b0097 unsure]]]",
+                                    "[[[VERDICT s40.b0001 dismiss]]]"),
+                        sweep, WANT)
+        ok("замечание без вердикта отвергается и в прочёсе", False)
+    except ValueError:
+        ok("замечание без вердикта отвергается и в прочёсе", True)
+
+    # Кусок без замечаний: обычная сверка его пропускает, полнотекстовая
+    # прочёсывает целиком и кладёт отпечатки на все блоки.
+    class Sees:
+        def run(self, system, user):
+            if "three apples" not in user or "ясным" not in user:
+                raise AssertionError("в промпте нет всех пар")
+            return ("[[[VERDICT c1.b0001 translation]]]\nЧисло подменено.\n"
+                    "[[[P c1.b0001]]]\nу меня три яблока\n",
+                    {"model": "стенд", "cost_usd": 0})
+
+    d = tempfile.mkdtemp()
+    chunks3 = [{"index": 1, "label": "гл1", "blocks": [
+        {"id": "c1.b0001", "kind": "p", "text": "I have three apples."},
+        {"id": "c1.b0002", "kind": "p", "text": "The day was clear."}]}]
+    os.makedirs(f"{d}/tr"); os.makedirs(f"{d}/ed")
+    json.dump({"index": 1, "model": "стенд", "cost_usd": 0,
+               "tr": {"c1.b0001": "у меня пять яблок",
+                      "c1.b0002": "день был ясным"}},
+              open(f"{d}/tr/0001.json", "w", encoding="utf-8"),
+              ensure_ascii=False)
+    json.dump({"index": 1, "model": "правщик", "notes": "", "edits": {}},
+              open(f"{d}/ed/0001.json", "w", encoding="utf-8"),
+              ensure_ascii=False)
+    hush = lambda *a, **k: None
+    ok("обычная сверка кусок без замечаний пропускает",
+       P.verify(d, chunks3, Sees(), "", "задание", 1, hush)[0] == 0)
+    done, _, fn, fx = P.verify(d, chunks3, Sees(), "", "задание", 1, hush,
+                               full=True)
+    vf = json.load(open(f"{d}/vf/0001.json", encoding="utf-8"))
+    ok("прочёс без замечаний состоялся", done == 1 and fx == 1, (done, fx))
+    ok("находка легла правкой",
+       vf["edits"]["c1.b0001"]["new"] == "у меня три яблока", vf["edits"])
+    ok("отпечатки на весь кусок",
+       set(vf["src"]) == {"c1.b0001", "c1.b0002"}, vf["src"])
+    ok("повторный прочёс пропущен по отпечаткам",
+       P.verify(d, chunks3, Sees(), "", "задание", 1, hush, full=True)[1] == 1)
+    _sh.rmtree(d, ignore_errors=True)
+
     print(f"\nПроверок: {seen}, расхождений: {bad}")
     return 1 if bad else 0
 

@@ -265,5 +265,6 @@
  "vf_unsure": "left to a human.",
  "pass_vf": "verifying",
  "h_verifier": "model chain for verifying editor remarks against the original (defaults to --editor)",
+ "h_full_verify": "verify whole chunks against the original: besides editor remarks, sweep every paragraph pair for gross meaning errors",
  "cycle_merged": "cycle names: {} aligned, {} added"
 }
