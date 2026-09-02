@@ -95,6 +95,7 @@ str.details_title: Детали перевода
 str.details_scout: Сбор данных о книге для перевода: {models}.
 str.details_translate: Перевод: {models}.
 str.details_edit: Литературная редактура: {models}.
+str.details_verify: Сверка с оригиналом: {models}.
 str.details_all: вся книга
 str.details_chapters: главы {chapters}
 str.details_partly: частично {chapters}

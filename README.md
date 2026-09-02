@@ -619,7 +619,8 @@ reversible. That is where a cheaper model is worth trying first.
 - **an "About this translation" section** at the front: which pipeline, which
   build of it, on what date;
 - **a "Translation details" section** at the back: which model did the
-  reconnaissance, the translation and the editing, and over which chapters —
+  reconnaissance, the translation, the editing and the verification against
+  the original, and over which chapters —
   in ranges, and only when more than one model was involved.
 
 What does not: tables of contents, newsletter advertising, watermarks from

@@ -71,6 +71,7 @@ str.details_title: Translation details
 str.details_scout: Reconnaissance pass: {models}.
 str.details_translate: Translation: {models}.
 str.details_edit: Literary editing: {models}.
+str.details_verify: Verification against the original: {models}.
 str.details_all: the whole book
 str.details_chapters: chapters {chapters}
 str.details_partly: in part {chapters}

@@ -76,6 +76,7 @@ str.details_title: अनुवाद का विवरण
 str.details_scout: पुस्तक की जानकारी जुटाना: {models}।
 str.details_translate: अनुवाद: {models}।
 str.details_edit: भाषा-संपादन: {models}।
+str.details_verify: मूल से मिलान: {models}।
 str.details_all: पूरी पुस्तक
 str.details_chapters: अध्याय {chapters}
 str.details_partly: आंशिक रूप से {chapters}

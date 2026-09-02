@@ -51,6 +51,7 @@ str.details_title: Angaben zur Übersetzung
 str.details_scout: Erkundungsdurchgang: {models}.
 str.details_translate: Übersetzung: {models}.
 str.details_edit: Literarische Redaktion: {models}.
+str.details_verify: Abgleich mit dem Original: {models}.
 str.details_all: das ganze Buch
 str.details_chapters: Kapitel {chapters}
 str.details_partly: teilweise {chapters}

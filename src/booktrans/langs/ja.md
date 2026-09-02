@@ -50,6 +50,7 @@ str.details_title: 翻訳の詳細
 str.details_scout: 下読み: {models}。
 str.details_translate: 翻訳: {models}。
 str.details_edit: 文章の推敲: {models}。
+str.details_verify: 原文との照合: {models}。
 str.details_all: 全篇
 str.details_chapters: 第{chapters}章
 str.details_partly: 一部: 第{chapters}章

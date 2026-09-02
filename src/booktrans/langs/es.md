@@ -69,6 +69,7 @@ str.details_title: Detalles de la traducción
 str.details_scout: Pasada de reconocimiento: {models}.
 str.details_translate: Traducción: {models}.
 str.details_edit: Revisión literaria: {models}.
+str.details_verify: Cotejo con el original: {models}.
 str.details_all: el libro entero
 str.details_chapters: capítulos {chapters}
 str.details_partly: en parte {chapters}

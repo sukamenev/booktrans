@@ -246,7 +246,8 @@ def details_lines(work, st, blocks, to=""):
         if m:
             body.append(st["details_scout"].format(models=m))
     for sub, key, name in (("tr", "tr", "details_translate"),
-                           ("ed", "blocks", "details_edit")):
+                           ("ed", "blocks", "details_edit"),
+                           ("vf", "src", "details_verify")):
         line = _pass_line(work, sub, key, chapter, st, st[name], to)
         if line:
             body.append(line)
@@ -298,6 +299,7 @@ def about_lines(work, st, code, to=""):
         [st.get("about_community", "")],
         [_models_line(work, "tr", "tr", st, st["details_translate"], to),
          _models_line(work, "ed", "blocks", st, st["details_edit"], to),
+         _models_line(work, "vf", "src", st, st["details_verify"], to),
          st["about_date"].format(date=span) if span else ""],
         [st["about_quality"], st["about_caveat"], st.get("about_notes", "")],
         # Отказ от ответственности — своим куском: он не про качество

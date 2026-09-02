@@ -49,6 +49,7 @@ str.details_title: 翻译详情
 str.details_scout: 通读侦查：{models}。
 str.details_translate: 翻译：{models}。
 str.details_edit: 文字润色：{models}。
+str.details_verify: 与原文核对：{models}。
 str.details_all: 全书
 str.details_chapters: 第 {chapters} 章
 str.details_partly: 部分：第 {chapters} 章
