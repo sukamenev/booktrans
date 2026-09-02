@@ -56,6 +56,7 @@
  "in_threads": "running {0} in parallel",
  "scout_done_already": "scouting already done (delete work/scout.md to redo it)",
  "scout_block": "block {0}/{1}  {2} words ... ",
+ "canon_trim": "canon trimmed to the request budget: {0} of {1} matched rows kept, the most-mentioned first",
  "scout_merge": "merging ... ",
  "scout_merge_part": "merging batch {0}/{1} ... ",
  "scout_rows": "registry disagreements: {0} keys — settling ... ",

@@ -26,7 +26,7 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    HUSH_MAX, HUSH_PAUSE,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
                    REFUSE_ROW,
-                   RETRY_PAUSE, SCOUT_BUDGET, SCOUT_HEADS,
+                   RETRY_PAUSE, SCOUT_BUDGET, SCOUT_CANON_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
                    SCOUT_WORDS, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
                    STUB_MIN, STUB_SHARE,
@@ -719,22 +719,38 @@ def split_ref(text):
     return re.sub(r"\n{3,}", "\n\n", frame), rows
 
 
-def ref_rows_for(rows, text):
+def ref_rows_for(rows, text, budget=0):
     """Строки справочника, чьи ключи встречаются в этом тексте.
 
     Ключ — первая ячейка; составной («duo / trio») ловится любой частью.
     Совпадение — полной фразой в границах слова, как у сведения имён цикла,
     но без оглядки на регистр: пропущенная строка стоит разнобоя в имени,
     лишняя — сотни знаков.
+
+    `budget` — предел в знаках. У сиквела к середине книги совпадает
+    полтысячи строк на сотню тысяч знаков, и запрос перерастает
+    переносимость шлюза: модель молча возвращает пустоту. Первыми выживают
+    строки, чаще упомянутые в тексте; порядок уцелевших — прежний.
     """
     got = []
     for key, line in rows:
+        hits = 0
         for part in re.split(r"\s*[/,;]\s*", key):
-            if len(part) > 1 and re.search(
-                    rf"(?<![^\W\d_]){re.escape(part)}(?![^\W\d_])", text, re.I):
-                got.append(line)
-                break
-    return got
+            if len(part) > 1:
+                hits += len(re.findall(
+                    rf"(?<![^\W\d_]){re.escape(part)}(?![^\W\d_])", text, re.I))
+        if hits:
+            got.append((hits, line))
+    if budget and sum(len(l) + 1 for _, l in got) > budget:
+        keep, size = set(), 0
+        for i in sorted(range(len(got)), key=lambda j: -got[j][0]):
+            need = len(got[i][1]) + 1
+            # Не break: после длинной строки короткая ещё может влезть.
+            if size + need <= budget:
+                keep.add(i)
+                size += need
+        got = [g for i, g in enumerate(got) if i in keep]
+    return [l for _, l in got]
 
 
 def refresh(work, log, to=""):
@@ -3316,7 +3332,13 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint_meta, _ = lang.prompt("scout_hint_meta")
                 hint += "\n\n" + hint_meta.format(meta="\n".join(meta_lines))
 
-        crows = ref_rows_for(canon_rows + list(known.values()), text)
+        pairs = canon_rows + list(known.values())
+        crows = ref_rows_for(pairs, text)
+        if sum(len(c) + 1 for c in crows) > SCOUT_CANON_BUDGET:
+            cut = ref_rows_for(pairs, text, SCOUT_CANON_BUDGET)
+            with lock:
+                log("    " + T("canon_trim", len(cut), len(crows)))
+            crows = cut
         canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
                  + "\n".join(crows)) if crows else ""
         at = (lang.prompt("scout_part_at")[0].format(chapter=starts[i - 1])
