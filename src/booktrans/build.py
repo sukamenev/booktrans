@@ -1209,14 +1209,31 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
                        or []):
                 if svc.search(fn.get("text", "") + fn.get("term", "")):
                     ndirty.append(fn.get("block"))
-    if dirty or ndirty:
-        problems += len(dirty) + len(ndirty)
+    # Задвоенный абзац: сверка промахнулась идентификатором — и соседний
+    # блок стал копией. Авторские рефрены короче и не идут стеной подряд.
+    dup, prev = [], ("", None)
+    for b in blocks:
+        i = b["id"]
+        if i not in tr or i not in src:
+            continue
+        cur_ = " ".join(tr[i].split()).casefold()
+        if len(cur_) > 80 and cur_ == prev[0] \
+                and " ".join(src[i].split()).casefold() != \
+                    " ".join(src.get(prev[1], "").split()).casefold():
+            dup.append((prev[1], i))
+        prev = (cur_, i)
+    if dirty or ndirty or dup:
+        problems += len(dirty) + len(ndirty) + len(dup)
         if dirty:
             log("   " + T("qa7_bad", len(dirty)))
             for i in dirty[:6]:
                 log(f"     {i}: {strip(tr[i])[:90]}")
         if ndirty:
             log("   " + T("qa7_note", len(ndirty)))
+        if dup:
+            log("   " + T("qa7_dup", len(dup)))
+            for a, b_ in dup[:6]:
+                log(f"     {a} = {b_}")
     else:
         log("   " + T("qa7_ok"))
 

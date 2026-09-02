@@ -1864,7 +1864,7 @@ def has_notes(t):
 _SERVICE = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b")
 
 
-def _parse_verify(out, want, must=None, size=None):
+def _parse_verify(out, want, must=None, size=None, snap=None):
     """Вердикты сверщика + сноски и исправления, каждое при своём вердикте.
 
     `must` — блоки, по которым вердикт обязателен (замечания редактора);
@@ -1916,6 +1916,21 @@ def _parse_verify(out, want, must=None, size=None):
         if fat:
             raise ValueError(f"исправление {fat[:3]} вдвое длиннее оригинала —"
                              " убери из него всё, кроме самого абзаца")
+    if snap:
+        # Промах идентификатором: под чужим номером приходит текст соседнего
+        # абзаца — свой абзац книга теряет, чужой получает дважды. Законный
+        # авторский рефрен так не выглядит: он совпал бы и с прежним текстом
+        # своего абзаца.
+        norm = {j: " ".join(t.split()).casefold() for j, t in snap.items()}
+        for i, v in fixes.items():
+            nv = " ".join(v.split()).casefold()
+            if len(nv) < 80 or difflib.SequenceMatcher(
+                    None, nv, norm.get(i, "")).ratio() > 0.5:
+                continue
+            twin = [j for j, s in norm.items() if j != i and s == nv]
+            if twin:
+                raise ValueError(f"исправление {i} повторяет абзац {twin[0]}"
+                                 f" — верни текст самого абзаца {i}")
     return verdicts, notes, fixes
 
 
@@ -2054,7 +2069,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             try:
                 res, meta, dt = _run(m, system, prompt, retries,
                                      lambda o: _parse_verify(o, want, need,
-                                                             size), log)
+                                                             size, snap), log)
                 break
             except (Refused, RuntimeError, Fatal, ValueError) as e:
                 with lock:
