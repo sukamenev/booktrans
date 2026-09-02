@@ -1864,11 +1864,13 @@ def has_notes(t):
 _SERVICE = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b")
 
 
-def _parse_verify(out, want, must=None):
+def _parse_verify(out, want, must=None, size=None):
     """Вердикты сверщика + сноски и исправления, каждое при своём вердикте.
 
     `must` — блоки, по которым вердикт обязателен (замечания редактора);
     остальные из `want` даны на сквозной прочёс, и молчание по ним — норма.
+    `size` — длины оригиналов: исправление, вдвое переросшее оригинал, несёт
+    лишнюю речь вокруг абзаца, и её не выдаёт ни идентификатор, ни язык.
     """
     verdicts = {}
     for m in re.finditer(r"\[\[\[VERDICT\s+(\S+?)\s+"
@@ -1908,6 +1910,12 @@ def _parse_verify(out, want, must=None):
     if dirty:
         raise ValueError(f"служебный отчёт внутри текста для книги: {dirty[:4]}"
                          " — верни только сам абзац или сноску")
+    if size:
+        fat = [i for i, v in fixes.items()
+               if size.get(i) and len(v) > 2 * size[i] + 120]
+        if fat:
+            raise ValueError(f"исправление {fat[:3]} вдвое длиннее оригинала —"
+                             " убери из него всё, кроме самого абзаца")
     return verdicts, notes, fixes
 
 
@@ -2040,11 +2048,13 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
         want, need = set(ids), set(must)
+        size = {i: len(orig[i]) for i in ids if i in orig}
         res = None
         for m in [agent] + [f for f in _backups(fallback) if f is not agent]:
             try:
                 res, meta, dt = _run(m, system, prompt, retries,
-                                     lambda o: _parse_verify(o, want, need), log)
+                                     lambda o: _parse_verify(o, want, need,
+                                                             size), log)
                 break
             except (Refused, RuntimeError, Fatal, ValueError) as e:
                 with lock:
