@@ -958,6 +958,16 @@ def _save(path, obj, keep=True, stamp=True):
             was = {}
         for k in BY_BLOCK:
             if isinstance(was.get(k), dict) and isinstance(obj.get(k), dict):
+                if k == "edits":
+                    # Пересверка пишет правку поверх уже правленного текста.
+                    # Затирание прежней записи рвало цепочку: новое «было» не
+                    # совпадало с черновиком, и при сборке пропадали обе
+                    # починки. Стыкующиеся правки склеиваются в одну.
+                    for b, e in obj[k].items():
+                        w = was[k].get(b)
+                        if isinstance(e, dict) and isinstance(w, dict) \
+                                and e.get("old") == w.get("new"):
+                            e["old"] = w.get("old", e["old"])
                 obj[k] = {**was[k], **obj[k]}
     # Метка нужна там, где на один блок притязают два файла: спор решается по
     # времени записи. У сплошных карт «блок → работа» (`ocrfix.json`,
@@ -1846,13 +1856,12 @@ def has_notes(t):
     return bool(t) and len(t) > 12 and t.lower().rstrip(".") not in NO_NOTES
 
 
-# Служебная речь сверщика в тексте для книги. Модель любит дописать к
-# последнему исправлению или сноске отчёт о прочёсе — на живой книге он
-# уезжал прямиком в собранный том, и следующий прочёс честно докладывал
-# о чужеродной вставке… приклеивая доклад к собственному исправлению.
-_SERVICE = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b|расхождени\w+ с оригиналом"
-                      r"|сквозн\w+ прочёс\w*|замечани\w* редактора"
-                      r"|остальны\w+ (?:абзац\w+|пар\w+)", re.I)
+# Идентификаторы блоков в тексте для книги — верный след служебной речи.
+# Список фраз («расхождений с оригиналом» и т.п.) здесь не живёт: сверщик
+# пишет на целевом языке, и русские фразы не поймали бы утечку в переводе
+# на китайский, а в художественном тексте они возможны. Главная защита —
+# закрывающий маркер [[[/P]]]: всё дописанное после него отброшено само.
+_SERVICE = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b")
 
 
 def _parse_verify(out, want, must=None):
@@ -1873,9 +1882,15 @@ def _parse_verify(out, want, must=None):
         raise ValueError(f"нет вердикта по блокам {missing[:4]} ({len(missing)})")
     notes = parse_notes_blocks(out, want)
     fixes = {}
-    for m in re.finditer(r"\[\[\[P\s+(\S+?)\]\]\]\s*(.*?)(?=\[\[\[|\Z)", out, re.S):
+    for m in re.finditer(r"\[\[\[P\s+(\S+?)\]\]\]\s*(.*?)\s*"
+                         r"\[\[\[\s*/\s*P\s+\1\s*\]\]\]", out, re.S):
         if m.group(1) in want and m.group(2).strip():
             fixes[m.group(1)] = m.group(2).strip()
+    loose = [m.group(1) for m in re.finditer(r"\[\[\[P\s+(\S+?)\]\]\]", out)
+             if m.group(1) in want and m.group(1) not in fixes]
+    if loose:
+        raise ValueError(f"исправление {loose[:3]} не закрыто маркером"
+                         " [[[/P идентификатор]]]")
     noted = {n["block"] for n in notes}
     bad = [i for i, (k, _) in verdicts.items() if k == "author" and i not in noted]
     if bad:
