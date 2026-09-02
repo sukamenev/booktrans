@@ -1251,19 +1251,24 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
     ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
         if os.path.exists(rp) else []
 
+    # Готово — это когда и блок тот же, и текст в нём тот же. Отпечатка
+    # нет только у файлов от прежних версий: там верим на слово.
+    def translated(c):
+        return all(b["id"] in have
+                   and have[b["id"]] in (None, fingerprint(b["text"]))
+                   for b in translatable(c["blocks"]))
+
     done = skipped = 0
     refused, halted = [0], False
+    if not only and chunks:
+        left = sum(1 for c in chunks if not translated(c))
+        log("  " + T("tr_todo", left, len(chunks) - left))
     for i, c in enumerate(chunks):
         idx = c["index"]
         if only and idx not in only:
             continue
         out_path = f'{lpath(work, "tr", to)}/{idx:04d}.json'
-        # Готово — это когда и блок тот же, и текст в нём тот же. Отпечатка
-        # нет только у файлов от прежних версий: там верим на слово.
-        if not only and all(
-                b["id"] in have
-                and have[b["id"]] in (None, fingerprint(b["text"]))
-                for b in translatable(c["blocks"])):
+        if not only and translated(c):
             skipped += 1
             continue
         summary = condense(state, idx, agent, retries, log, fallback)
@@ -1584,6 +1589,9 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 continue
         if any(i in raw for i in ids):
             todo.append(c)
+
+    if todo or skipped:
+        log("  " + T("ed_todo", len(todo), skipped))
 
     done = total = 0
     lock = threading.Lock()
@@ -2143,6 +2151,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             skipped += 1
             continue
         todo.append(c)
+    if todo or skipped:
+        log("  " + T("nt_todo", len(todo), skipped))
 
     # Список «уже объяснено» снимается один раз, до начала: при работе в
     # несколько потоков куски не увидят предложений друг друга. Это не беда —
