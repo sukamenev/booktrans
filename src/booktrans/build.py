@@ -1196,6 +1196,30 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
                 for i in bad[:4]:
                     log(f"     {i}: {strip(tr[i])[:90]}")
 
+    # Служебная речь в готовом тексте: идентификаторы блоков и маркеры
+    # конвертов не имеют права дожить до сборки. На живой книге отчёт
+    # сверщика приклеился к исправлению абзаца и уехал к читателю.
+    log(T("qa7"))
+    svc = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b|\[\[\[")
+    dirty = [i for i, t in tr.items() if i in src and svc.search(t)]
+    ndirty = []
+    for sub in ("tr", "ed", "vf", "nt"):
+        for _, p_ in chunk_files(lpath(work, sub, to)):
+            for fn in (json.load(open(p_, encoding="utf-8")).get("footnotes")
+                       or []):
+                if svc.search(fn.get("text", "") + fn.get("term", "")):
+                    ndirty.append(fn.get("block"))
+    if dirty or ndirty:
+        problems += len(dirty) + len(ndirty)
+        if dirty:
+            log("   " + T("qa7_bad", len(dirty)))
+            for i in dirty[:6]:
+                log(f"     {i}: {strip(tr[i])[:90]}")
+        if ndirty:
+            log("   " + T("qa7_note", len(ndirty)))
+    else:
+        log("   " + T("qa7_ok"))
+
     log("")
     log(T("qa_total", problems))
     return problems
