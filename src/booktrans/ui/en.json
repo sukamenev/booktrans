@@ -258,6 +258,7 @@
  "step_verify": "verifying remarks against the original",
  "done_verify": "verified {}, already done {}, {} footnotes, {} fixes",
  "nothing_verify": "no remarks to verify",
+ "vf_todo": "chunks to verify: {0}, already verified: {1}",
  "vf_start": "VERIFY   {0} paragraphs",
  "vf_done": "DONE     author {0}, translation {1}, dismissed {2}, for a human {3}, in {4} s [{5}]",
  "vf_author": "author's error → footnote.",

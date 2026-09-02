@@ -1959,6 +1959,37 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
     # и ручная правка какого-нибудь куска не тасует её.
     todo.sort()
 
+    # Готовность считается заранее: сколько осталось, видно первой строкой
+    # этапа, а не выясняется по ходу. Куски, чьи отпечатки сошлись, в
+    # очередь не попадают вовсе.
+    pend = []
+    for idx, ep in todo:
+        d = json.load(open(ep, encoding="utf-8"))
+        remark = (d.get("notes") or "").strip()
+        if not has_notes(remark):
+            if not full:
+                continue
+            remark = ""
+        must_ = [i for i in orig if i in remark and i in cur]
+        ids_ = must_
+        if full:
+            ids_ = [b["id"] for b in ((by_index.get(idx) or {}).get("blocks")
+                                      or []) if b["id"] in cur]
+        if not ids_:
+            continue
+        op = f'{lpath(work, "vf", to)}/{idx:04d}.json'
+        if os.path.exists(op) and not only:
+            old = json.load(open(op, encoding="utf-8"))
+            if old.get("remark") == fingerprint(remark) and all(
+                    old.get("src", {}).get(i) == fingerprint(cur[i])
+                    for i in ids_):
+                skipped += 1
+                continue
+        pend.append((idx, ep))
+    todo = pend
+    if todo or skipped:
+        log("  " + T("vf_todo", len(todo), skipped))
+
     def one(item):
         nonlocal done, skipped, added, fixed
         if STOP.is_set():
