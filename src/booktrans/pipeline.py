@@ -1846,6 +1846,15 @@ def has_notes(t):
     return bool(t) and len(t) > 12 and t.lower().rstrip(".") not in NO_NOTES
 
 
+# Служебная речь сверщика в тексте для книги. Модель любит дописать к
+# последнему исправлению или сноске отчёт о прочёсе — на живой книге он
+# уезжал прямиком в собранный том, и следующий прочёс честно докладывал
+# о чужеродной вставке… приклеивая доклад к собственному исправлению.
+_SERVICE = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b|расхождени\w+ с оригиналом"
+                      r"|сквозн\w+ прочёс\w*|замечани\w* редактора"
+                      r"|остальны\w+ (?:абзац\w+|пар\w+)", re.I)
+
+
 def _parse_verify(out, want, must=None):
     """Вердикты сверщика + сноски и исправления, каждое при своём вердикте.
 
@@ -1879,6 +1888,11 @@ def _parse_verify(out, want, must=None):
     notes = [n for n in notes if verdicts.get(n["block"], ("",))[0] == "author"]
     fixes = {i: v for i, v in fixes.items()
              if verdicts.get(i, ("",))[0] == "translation"}
+    dirty = [i for i, v in fixes.items() if _SERVICE.search(v)] \
+        + [n["block"] for n in notes if _SERVICE.search(n["text"])]
+    if dirty:
+        raise ValueError(f"служебный отчёт внутри текста для книги: {dirty[:4]}"
+                         " — верни только сам абзац или сноску")
     return verdicts, notes, fixes
 
 
