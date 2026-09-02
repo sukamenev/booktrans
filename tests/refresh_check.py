@@ -60,7 +60,9 @@ def main():
               open(f"{d}/vf/0001.json", "w", encoding="utf-8"),
               ensure_ascii=False)
 
+    os.utime(f"{d}/ed/0001.json", (1_000_000_000, 1_000_000_000))
     P.refresh(d, hush)
+    ok0 = os.stat(f"{d}/ed/0001.json").st_mtime == 1_000_000_000
     ed = json.load(open(f"{d}/ed/0001.json", encoding="utf-8"))
     vf = json.load(open(f"{d}/vf/0001.json", encoding="utf-8"))
     ok("чистая правка признана сделанной",
@@ -73,6 +75,10 @@ def main():
        vf["src"]["b1"] == fp("сверенное имя"), vf["src"]["b1"])
     ok("осмотренный сверкой блок — по наложенному тексту",
        vf["src"]["b3"] == fp(tr["b3"]), vf["src"]["b3"])
+
+    # Освежение не меняет сделанности — не меняет и возраст файла: от него
+    # зависят очередь кусков и победитель среди файлов-дубликатов блока.
+    ok("возраст файла сохранён", ok0)
 
     # Повторный запуск ничего не меняет.
     P.refresh(d, hush)

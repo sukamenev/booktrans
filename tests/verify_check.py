@@ -171,6 +171,21 @@ def main():
     done2 = P.verify(d, chunks2, Judge(), "", "задание", 1,
                      lambda *a, **k: None, jobs=2)[0]
     ok("повторная сверка пропущена по отпечаткам", done2 == 0, done2)
+
+    # Очередь сверки — по номерам кусков, а не по возрасту файлов: ручная
+    # правка одного куска не тасует порядок.
+    order = []
+
+    class Tally(Judge):
+        def run(self, system, user):
+            order.append(sorted(set(_re.findall(r"### (s\d+)", user))))
+            return Judge.run(self, system, user)
+
+    _sh.rmtree(f"{d}/vf", ignore_errors=True)
+    os.utime(f"{d}/ed/0002.json", (1_000_000_000, 1_000_000_000))
+    P.verify(d, chunks2, Tally(), "", "задание", 1, lambda *a, **k: None)
+    ok("очередь по номерам при перепутанных возрастах",
+       order == [["s01"], ["s02"]], order)
     _sh.rmtree(d, ignore_errors=True)
 
     # Полнотекстовый прочёс: вердикты обязательны только по замечаниям,

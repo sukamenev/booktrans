@@ -753,6 +753,15 @@ def ref_rows_for(rows, text, budget=0):
     return [l for _, l in got]
 
 
+def _dump_keeping_time(d, p):
+    """Перезапись служебных полей не меняет сделанности работы — не должна
+    менять и возраст файла: от него зависят очередь кусков и победитель
+    среди файлов-дубликатов блока (см. chunk_files)."""
+    st = os.stat(p)
+    json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
 def refresh(work, log, to=""):
     """Пересчитать отпечатки готовности после ручной правки переводов.
 
@@ -788,7 +797,7 @@ def refresh(work, log, to=""):
             else:
                 orphan += 1
         if ch:
-            json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+            _dump_keeping_time(d, p)
     log("  " + T("refresh_done", "ed", stale, orphan))
     cur = dict(tr)
     for _, p in chunk_files(lpath(work, "ed", to)):
@@ -813,7 +822,7 @@ def refresh(work, log, to=""):
                 ch = True
                 stale += 1
         if ch:
-            json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+            _dump_keeping_time(d, p)
     log("  " + T("refresh_done", "vf", stale, orphan))
 
 
@@ -1917,6 +1926,9 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
     todo = [(int(n.split(".")[0]), ep)
             for n, ep in chunk_files(lpath(work, "ed", to))
             if not only or int(n.split(".")[0]) in only]
+    # По номерам, а не по возрасту файлов: очередь сверки читается по логу,
+    # и ручная правка какого-нибудь куска не тасует её.
+    todo.sort()
 
     def one(item):
         nonlocal done, skipped, added, fixed
