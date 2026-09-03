@@ -959,8 +959,10 @@ def usage_report(work, log, T=None, to=""):
     неделю покажет то же самое, и прерванный прогон не потеряет учёт.
     """
     rows = {}
-    for sub, name in (("tr", T("pass_tr")), ("ed", T("pass_ed")),
-                      ("vf", T("pass_vf")), ("nt", T("pass_nt"))):
+    # Порядок проходов — конвейерный, а не алфавитный: сводка читается как
+    # история прогона.
+    for step, (sub, name) in enumerate((("tr", T("pass_tr")), ("ed", T("pass_ed")),
+                                        ("vf", T("pass_vf")), ("nt", T("pass_nt")))):
         d = lpath(work, sub, to)
         if not os.path.isdir(d):
             continue
@@ -968,7 +970,7 @@ def usage_report(work, log, T=None, to=""):
             if not n.endswith(".json"):
                 continue
             x = json.load(open(os.path.join(d, n), encoding="utf-8"))
-            k = (name, x.get("model") or "?")
+            k = (step, name, x.get("model") or "?")
             r = rows.setdefault(k, {"n": 0, "usd": 0.0})
             r["n"] += 1
             r["usd"] += x.get("cost_usd") or 0
@@ -979,7 +981,7 @@ def usage_report(work, log, T=None, to=""):
     log(f"  {T('usage_pass'):12s} {T('usage_model'):22s} "
         f"{T('usage_reqs'):>9s} {'$':>8s}")
     tot_n = tot_u = 0
-    for (name, model), r in sorted(rows.items()):
+    for (_, name, model), r in sorted(rows.items()):
         log(f"  {name:12s} {model:22s} {r['n']:9d} {r['usd']:8.2f}")
         tot_n += r["n"]
         tot_u += r["usd"]
