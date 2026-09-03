@@ -100,7 +100,10 @@ translation, adds footnotes and assembles the file.
   bloating the requests;
 - **proposes footnotes** and flags claims that contradict reality without
   correcting the author: the text keeps the mistake, the footnote holds the
-  truth;
+  truth. The footnote sign lands on the explained word: the translator marks
+  the spot with a service pointer, editing must keep it in place (the
+  pipeline enforces this), and older translations fall back to a term
+  search;
 - **edits in a second pass**, deliberately without seeing the original;
 - **renders verse as verse**, quotes canonical texts from recognised
   translations;

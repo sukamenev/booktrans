@@ -1706,6 +1706,12 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 raise ValueError(
                     f"правка {swap[0]} подменяет абзац {swap[1]}: результат "
                     f"ближе к чужому черновику, чем к своему")
+            lost = [i for i, v in res.items() if _marks_differ(draft.get(i), v)]
+            if lost:
+                raise ValueError(
+                    f"правка {lost[:3]} трогает служебные указатели сносок"
+                    " [^N] — сохрани их у тех же слов, не добавляя и не"
+                    " убирая")
             return res, tail
 
         # Заняты все — переждать. Прогон не встанет: три подряд «не взялись»
@@ -1871,6 +1877,15 @@ def has_notes(t):
 # закрывающий маркер [[[/P]]]: всё дописанное после него отброшено само.
 _SERVICE = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b")
 
+# Служебный указатель сноски в тексте: переводчик ставит его сразу за
+# поясняемым словом, сборка заменяет знаком сноски. Правка, потерявшая или
+# добавившая указатель, отвергается: знак съехал бы с объясняемого слова.
+NOTE_MARK = re.compile(r"\[\^\d+\]")
+
+
+def _marks_differ(old, new):
+    return sorted(NOTE_MARK.findall(old or "")) != sorted(NOTE_MARK.findall(new or ""))
+
 
 def _parse_verify(out, want, must=None, size=None, snap=None):
     """Вердикты сверщика + сноски и исправления, каждое при своём вердикте.
@@ -1925,6 +1940,11 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
             raise ValueError(f"исправление {fat[:3]} вдвое длиннее оригинала —"
                              " убери из него всё, кроме самого абзаца")
     if snap:
+        lost = [i for i, v in fixes.items() if _marks_differ(snap.get(i), v)]
+        if lost:
+            raise ValueError(f"исправление {lost[:3]} трогает служебные"
+                             " указатели сносок [^N] — сохрани их у тех же"
+                             " слов, не добавляя и не убирая")
         # Промах идентификатором: под чужим номером приходит текст соседнего
         # абзаца — свой абзац книга теряет, чужой получает дважды. Законный
         # авторский рефрен так не выглядит: он совпал бы и с прежним текстом
