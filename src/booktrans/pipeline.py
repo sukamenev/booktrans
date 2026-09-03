@@ -3892,14 +3892,24 @@ def headings(work, blocks, agent, system, retries, log, fallback=None, to=""):
     prompt_tpl, _ = lang.prompt("headings")
     who = [agent] + _backups(fallback)
     total_dt = 0
-    
+
+    # Система у прохода тощая: полный справочник Ward на 900 тысяч знаков
+    # молча обрезался транспортом, и модель возвращала пустоту. Нужные
+    # строки реестра приезжают с запросом — по упоминанию, как у кусков.
+    rp = lpath(work, "scout.md", to)
+    ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
+        if os.path.exists(rp) else []
+
     for start in range(0, len(uniq), HEAD_CHUNK):
         chunk = uniq[start:start + HEAD_CHUNK]
         if len(uniq) > HEAD_CHUNK:
             log(f"    {start+1}-{start+len(chunk)} ... ", end="")
-            
+
         listing = "\n".join(f"{i}. {t}" for i, t in enumerate(chunk, 1))
-        prompt = prompt_tpl + "\n\n## Заголовки\n\n" + listing
+        refs = ref_rows_for(ref_rows, "\n".join(chunk), SCOUT_CANON_BUDGET)
+        ref_part = (lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs)
+                    + "\n\n") if refs else ""
+        prompt = prompt_tpl + "\n\n" + ref_part + "## Заголовки\n\n" + listing
 
         def parse_heads(out):
             got = {}

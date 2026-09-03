@@ -796,9 +796,9 @@ def main():
         n += 1
         log("")
         log(head("step_translate", n))
-        pipeline.headings(work, blocks, agent_for("translator"), sysprompt(),
-                          args.retries, log, fallback=backup_for("translator"),
-                          to=args.to)
+        pipeline.headings(work, blocks, agent_for("translator"),
+                          sysprompt(lean=True), args.retries, log,
+                          fallback=backup_for("translator"), to=args.to)
         d, s, halted = pipeline.translate(
             work, chunks, agent_for("translator"), sysprompt(lean=True),
             task("translate", model=agent_for("translator").model
