@@ -1278,6 +1278,10 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
     items = _render_math_to_images(items, images)
     blocks = kw['blocks']
     tr = kw['tr']
+    # Тексты абзацев — из items: сборка уже вставила туда метки привязки
+    # сносок. Свежий tr этих меток не знает, и знак сноски съезжал в конец
+    # абзаца — единственный из сборщиков, fb2 ходил мимо items.
+    anchored = {bid: t for _, t, bid, *_ in items}
     partial = kw['partial']
     log = kw['log']
     note_seq = kw['note_seq']
@@ -1366,7 +1370,7 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
 
     was_title, after_img = False, False
     for b in blocks:
-        text = tr.get(b["id"], "")
+        text = anchored.get(b["id"]) or tr.get(b["id"], "")
         if after_img and b["kind"] != "image":
             # Короткая строка сразу за снимком — это подпись под ним: её
             # оставляем прижатой, а отбиваем уже после неё.
