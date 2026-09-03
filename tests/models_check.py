@@ -75,8 +75,9 @@ def main():
     ok("страницы pdf у claude читает Sonnet, не --model",
        got == [("claude", "claude-sonnet-5", "low")], got)
     got = models("--agent", "agy", "--model", "X").chain("ocrmodel")
-    ok("у agy своей модели чтения нет — берётся --model",
-       got == [("agy", "X", None)], got)
+    ok("у agy страницы читает Flash, не --model",
+       got == [("agy", "gemini-3.8-flash-low", None),
+               ("agy", "claude-sonnet-4-6", None)], got)
     got = models("--formatter", "Y", "--effort", "high").chain("formatter")
     ok("названная явно модель разметки — с общим усилием",
        got == [("claude", "Y", "high")], got)

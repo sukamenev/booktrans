@@ -221,7 +221,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS, Linux
 
 `--check` names whatever is missing and prints the exact command to install it
 on your system — apt, dnf, pacman, zypper, emerge, apk, brew, scoop, choco or
-winget, whichever is actually there. Nothing is installed for you: a system
+winget, whichever is actually there. It exits non-zero when something required
+is absent, so a script can ask it. Nothing is installed for you: a system
 package needs elevated rights, and a program that runs `sudo` on your machine
 unasked is not one you should trust.
 
@@ -602,8 +603,8 @@ An agent other than `--agent` is named before the model with a colon
 Name nothing and the agent's set applies (`PRESETS` in `models.py`): with agy the
 meaning-bearing passes run Gemini with Opus behind it and Claude Code's own
 Opus last — a different provider refuses in different places — while
-markup and OCR repair run a cheap Flash with Sonnet behind it; with claude,
-markup, OCR repair and page reading go to Sonnet. What you name explicitly
+markup, OCR repair and page reading run a cheap Flash with Sonnet behind it;
+with claude, all three go to Sonnet. What you name explicitly
 always beats the set.
 
 **A chain covers a failure of any kind.** A refusal, a 502 from the provider,

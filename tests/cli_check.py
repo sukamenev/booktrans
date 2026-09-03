@@ -117,6 +117,14 @@ def main():
        lines[4] == "" and lines[5] == "" and lines[6].endswith("четыре")
        and lines[6][2] == ":", lines[4:7])
 
+    # ---- код выхода: что вернул main(), то и увидит оболочка
+    was = cli.main
+    cli.main = lambda: 1
+    ok("run() отдаёт код выхода main()", cli.run() == 1)
+    cli.main = lambda: None
+    ok("без кода — ноль", cli.run() is None)
+    cli.main = was
+
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0

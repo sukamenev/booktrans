@@ -27,6 +27,7 @@ PRESETS = {
         "model": "gemini-3.1-pro-high,claude-opus-4-6-thinking,claude-opus-5",
         "formatter": "gemini-3.6-flash-low,claude-sonnet-4-6",
         "ocrfixer": "gemini-3.6-flash-low,claude-sonnet-4-6",
+        "ocrmodel": "gemini-3.8-flash-low,claude-sonnet-4-6",
     },
     "claude": {
         "formatter": "claude-sonnet-5",
