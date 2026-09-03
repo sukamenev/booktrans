@@ -343,8 +343,7 @@ class Run:
         стоит часы и деньги, а нарезка вслепую разорвёт книгу посреди сцены.
         """
         a, T, log, blocks = self.args, self.T, self.log, self.blocks
-        self.chunks = pipeline.make_chunks(blocks, a.chunk_words,
-                                           int(a.chunk_words * 1.4))
+        self.chunks = pipeline.make_chunks(blocks, a.chunk_words)
         paras = sum(1 for b in blocks if b["kind"] == "p")
         heads = sum(1 for b in blocks if b["kind"] == "title")
         total_words = sum(c["words"] for c in self.chunks)

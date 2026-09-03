@@ -89,7 +89,12 @@ def _cut_points(blocks):
     return ok
 
 
-def _split_section(blocks, target=TARGET_WORDS, limit=MAX_WORDS):
+def chunk_limit(target):
+    """Предел куска в словах: MAX_WORDS — доля от цели или, от десяти, слова."""
+    return int(target * MAX_WORDS) if MAX_WORDS < 10 else int(MAX_WORDS)
+
+
+def _split_section(blocks, target, limit):
     """Одну секцию — на примерно равные части, а не «до предела и огрызок»."""
     total = sum(words(b["text"]) for b in blocks)
     n_blocks = sum(1 for b in blocks if b["kind"] in ("p", "verse", "note", "table"))
@@ -136,12 +141,13 @@ def _split_section(blocks, target=TARGET_WORDS, limit=MAX_WORDS):
     return parts
 
 
-def make_chunks(blocks, target=TARGET_WORDS, limit=MAX_WORDS):
+def make_chunks(blocks, target=TARGET_WORDS):
     """Границу секции (заголовка) не пересекаем: в одном запросе — один кусок
     текста с одной интонацией. Заголовки прилипают к следующей секции.
 
     Размер куска — параметр, а не константа модуля: `--chunk-words` меняет его
     на один прогон, и подменять для этого числа в модуле незачем."""
+    limit = chunk_limit(target)
     sections, cur = [], []
     for b in blocks:
         if b["kind"] == "title" and any(x["kind"] == "p" for x in cur):

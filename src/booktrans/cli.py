@@ -204,7 +204,7 @@ def parser(ui):
     ap.add_argument("--verifier", help=T("h_verifier"))
     ap.add_argument("--full-verify", action=argparse.BooleanOptionalAction,
                     default=True, help=T("h_full_verify"))
-    ap.add_argument("--ocrmodel", help="Agent/model chain for visual PDF extraction (e.g. codex:,agy:)")
+    ap.add_argument("--ocrmodel", help=T("h_ocrmodel"))
     ap.add_argument("--formatter", default=os.environ.get("BT_FORMATTER"),
                     help=T("h_formatter"))
     ap.add_argument("--ocrfixer", default=os.environ.get("BT_OCRFIXER"),
@@ -230,11 +230,6 @@ def parser(ui):
     ap.add_argument("--encoding", help=T("h_encoding"))
     ap.add_argument("--code", choices=("comments", "asis"), default="comments",
                     help=T("h_code"))
-    ap.add_argument("--fallback-agent", choices=("claude", "cmd", "agy"),
-                    default=os.environ.get("BT_FALLBACK_AGENT"),
-                    help=T("h_fb_agent"))
-    ap.add_argument("--fallback-model", default=os.environ.get("BT_FALLBACK_MODEL"),
-                    help=T("h_fb_model"))
     return ap
 
 

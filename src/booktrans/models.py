@@ -12,9 +12,10 @@ from .agent import make_agent
 
 AGENTS = ("claude", "agy", "codex", "cmd")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-# Проходы опознавательные, а не сочинительные: разобрать вёрстку и увидеть
-# порчу распознавания умеет и самая дешёвая модель поставщика.
-CHEAP_ROLES = ("formatter", "ocrfixer")
+# Проходы опознавательные, а не сочинительные: разобрать вёрстку, увидеть
+# порчу распознавания и прочитать страницу умеет и самая дешёвая модель
+# поставщика.
+CHEAP_ROLES = ("formatter", "ocrfixer", "ocrmodel")
 # У claude усилие — отдельный ключ, у agy оно вшито в имя модели.
 CHEAP_EFFORT = {"claude": "low"}
 # Ключ `--agent` — это, по сути, имя набора умолчаний: какими моделями делать
@@ -30,12 +31,12 @@ PRESETS = {
     "claude": {
         "formatter": "claude-sonnet-5",
         "ocrfixer": "claude-sonnet-5",
-        "ocrmodel": "codex:,agy:",
+        "ocrmodel": "claude-sonnet-5",
     },
 }
 # Ключи, из которых собираются цепочки: проверяются все разом при старте.
 CHAIN_KEYS = ("model", "translator", "scout", "editor", "verifier",
-              "formatter", "ocrfixer", "ocrmodel", "fallback_model")
+              "formatter", "ocrfixer", "ocrmodel")
 
 
 def parse_chain(s, agent=None):
@@ -130,18 +131,9 @@ class Models:
         cheap = role in CHEAP_ROLES and not named
         s = named or (preset.get(role) if cheap else None) \
             or a.model or preset.get("model")
-        out = [self._agent(n, m, eff or (CHEAP_EFFORT.get(n) if cheap else None))
-               for n, m, eff in parse_chain(s, a.agent)] \
+        return [self._agent(n, m, eff or (CHEAP_EFFORT.get(n) if cheap else None))
+                for n, m, eff in parse_chain(s, a.agent)] \
             or [self._agent(a.agent, None)]
-        # Старые ключи `--fallback-agent/--fallback-model` — последнее звено
-        # любой цепочки. Они появились раньше цепочек и делают то же самое;
-        # `--editor модель,claude:другая` выражает это короче.
-        if a.fallback_agent or a.fallback_model:
-            fb = a.fallback_agent or a.agent
-            out += [self._agent(n, m, eff) for n, m, eff in
-                    (parse_chain(a.fallback_model, fb)
-                     or parse_chain(a.translator or a.model, fb))]
-        return out
 
     def first(self, role=None):
         """Основная модель прохода — первая в цепочке."""

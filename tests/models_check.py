@@ -71,6 +71,12 @@ def main():
     got = models("--model", "X").chain("formatter")
     ok("--model разметке не достаётся",
        got == [("claude", "claude-sonnet-5", "low")], got)
+    got = models("--model", "X").chain("ocrmodel")
+    ok("страницы pdf у claude читает Sonnet, не --model",
+       got == [("claude", "claude-sonnet-5", "low")], got)
+    got = models("--agent", "agy", "--model", "X").chain("ocrmodel")
+    ok("у agy своей модели чтения нет — берётся --model",
+       got == [("agy", "X", None)], got)
     got = models("--formatter", "Y", "--effort", "high").chain("formatter")
     ok("названная явно модель разметки — с общим усилием",
        got == [("claude", "Y", "high")], got)
@@ -90,16 +96,6 @@ def main():
        m.chain("verifier"))
     got = models("--editor", "E", "--verifier", "V").chain("verifier")
     ok("свой ключ сверщика сильнее", got == [("claude", "V", None)], got)
-
-    # ---- старые ключи --fallback-*: последнее звено любой цепочки
-    got = models("--editor", "E", "--fallback-agent", "agy",
-                 "--fallback-model", "F").chain("editor")
-    ok("--fallback-model замыкает цепочку",
-       got == [("claude", "E", None), ("agy", "F", None)], got)
-    got = models("--agent", "agy", "--translator", "T",
-                 "--fallback-agent", "claude").chain("translator")
-    ok("без модели запасной агент берёт модель переводчика",
-       got == [("agy", "T", None), ("claude", "T", None)], got)
 
     # ---- первая и остальные
     m = models("--editor", "a,b,c")
@@ -122,7 +118,7 @@ def main():
     ok("усилие ключом без суффикса — можно",
        not stops("--agent", "agy", "--effort", "high", "--editor", "m"))
     ok("исправные ключи проходят",
-       not stops("--editor", "a,agy:b:low", "--fallback-agent", "cmd"))
+       not stops("--editor", "a,agy:b:low", "--ocrmodel", "cmd:"))
 
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0

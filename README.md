@@ -596,13 +596,15 @@ An agent other than `--agent` is named before the model with a colon
 | `--verifier` | verifying the editor's remarks against the original; unnamed — the editor's chain |
 | `--formatter` | markup detection: epub and fb2 styles, pdf and txt pieces |
 | `--ocrfixer` | repairing OCR damage |
-| `--model` | every pass at once, save the last two |
+| `--ocrmodel` | reading pdf pages that have no text layer |
+| `--model` | every pass at once, save those the agent's set gives to a cheap model |
 
 Name nothing and the agent's set applies (`PRESETS` in `models.py`): with agy the
 meaning-bearing passes run Gemini with Opus behind it and Claude Code's own
 Opus last — a different provider refuses in different places — while
-markup and OCR repair run a cheap Flash with Sonnet behind it. What you name
-explicitly always beats the set.
+markup and OCR repair run a cheap Flash with Sonnet behind it; with claude,
+markup, OCR repair and page reading go to Sonnet. What you name explicitly
+always beats the set.
 
 **A chain covers a failure of any kind.** A refusal, a 502 from the provider,
 a connection that dropped — the chunk goes to the next model, and the error
@@ -854,6 +856,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --code asis           leave the comments in listings alone too
 --formatter ID        model that works out the markup, any format
 --ocrfixer ID         model that repairs recognition damage in the original
+--ocrmodel ID         model that reads pdf pages with no text layer
 --model ID            model for every pass
 --scout / --translator / --editor / --verifier ID   model for one pass
 --agent claude|cmd    agent

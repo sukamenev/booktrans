@@ -15,7 +15,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
-from booktrans import tune                                  # noqa: E402
+from booktrans import pipeline, tune                        # noqa: E402
 
 
 def main():
@@ -69,7 +69,15 @@ def main():
 
     ok("нет файла — нет и правок", tune.load(os.path.join(d, "нет.conf")) == {})
 
-    print(f"\nслучаев: 7   с расхождениями: {bad}")
+    # Предел куска: доля от цели или прямо слова — по величине числа.
+    was = pipeline.MAX_WORDS
+    pipeline.MAX_WORDS = 1.4
+    ok("MAX_WORDS долей: 1.4 × 2000", pipeline.chunk_limit(2000) == 2800)
+    pipeline.MAX_WORDS = 3600
+    ok("MAX_WORDS словами — как есть", pipeline.chunk_limit(2000) == 3600)
+    pipeline.MAX_WORDS = was
+
+    print(f"\nслучаев: 9   с расхождениями: {bad}")
     return 1 if bad else 0
 
 
