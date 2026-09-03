@@ -598,7 +598,7 @@ An agent other than `--agent` is named before the model with a colon
 | `--ocrfixer` | repairing OCR damage |
 | `--model` | every pass at once, save the last two |
 
-Name nothing and the agent's set applies (`PRESETS` in `cli.py`): with agy the
+Name nothing and the agent's set applies (`PRESETS` in `models.py`): with agy the
 meaning-bearing passes run Gemini with Opus behind it and Claude Code's own
 Opus last — a different provider refuses in different places — while
 markup and OCR repair run a cheap Flash with Sonnet behind it. What you name

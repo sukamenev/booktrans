@@ -89,14 +89,14 @@ def _cut_points(blocks):
     return ok
 
 
-def _split_section(blocks):
+def _split_section(blocks, target=TARGET_WORDS, limit=MAX_WORDS):
     """Одну секцию — на примерно равные части, а не «до предела и огрызок»."""
     total = sum(words(b["text"]) for b in blocks)
     n_blocks = sum(1 for b in blocks if b["kind"] in ("p", "verse", "note", "table"))
-    if total <= MAX_WORDS and n_blocks <= MAX_BLOCKS:
+    if total <= limit and n_blocks <= MAX_BLOCKS:
         return [blocks]
-    n = max(1, round(total / TARGET_WORDS))
-    while total / n > MAX_WORDS:
+    n = max(1, round(total / target))
+    while total / n > limit:
         n += 1
     # ...и столько же раз, сколько нужно, чтобы блоков в куске было немного
     n = max(n, -(-n_blocks // MAX_BLOCKS))
@@ -136,9 +136,12 @@ def _split_section(blocks):
     return parts
 
 
-def make_chunks(blocks):
+def make_chunks(blocks, target=TARGET_WORDS, limit=MAX_WORDS):
     """Границу секции (заголовка) не пересекаем: в одном запросе — один кусок
-    текста с одной интонацией. Заголовки прилипают к следующей секции."""
+    текста с одной интонацией. Заголовки прилипают к следующей секции.
+
+    Размер куска — параметр, а не константа модуля: `--chunk-words` меняет его
+    на один прогон, и подменять для этого числа в модуле незачем."""
     sections, cur = [], []
     for b in blocks:
         if b["kind"] == "title" and any(x["kind"] == "p" for x in cur):
@@ -153,13 +156,13 @@ def make_chunks(blocks):
     # вышло сорок кусков по семьдесят слов, и каждый платил полную цену за
     # системный промпт со справочником. Настоящие главы не трогаем — только
     # то, что заведомо мельче четверти куска.
-    small = TARGET_WORDS // 4
+    small = target // 4
     merged, buf = [], []
     for sec in sections:
         w = sum(words(b["text"]) for b in sec)
         if w < small:
             buf.append(sec)
-            if sum(words(b["text"]) for s2 in buf for b in s2) >= TARGET_WORDS:
+            if sum(words(b["text"]) for s2 in buf for b in s2) >= target:
                 merged.append([b for s2 in buf for b in s2])
                 buf = []
             continue
@@ -173,7 +176,7 @@ def make_chunks(blocks):
 
     chunks = []
     for sec in sections:
-        for part in _split_section(sec):
+        for part in _split_section(sec, target, limit):
             chunks.append({"blocks": part})
     last = ""
     for i, c in enumerate(chunks, 1):
