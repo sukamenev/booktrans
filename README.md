@@ -556,6 +556,10 @@ in the package. Your own profile therefore survives an update.
 
 A profile inside a profile is not expanded — one level is enough.
 
+Without `--profile` no profile applies at all: the run uses the default
+agent — `claude`, or whatever `BT_AGENT` names — with that agent's own
+built-in model set.
+
 **A profile is executable configuration, not data.** It can carry
 `--agent-cmd 'any command'`, so treat a profile you did not write the way you
 would treat somebody else's script. To check without calling a model:
