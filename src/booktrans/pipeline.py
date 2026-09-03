@@ -3786,7 +3786,7 @@ def _forked(merged, to):
     if not rng:
         return []
     has_target = re.compile(rf"[{rng}]")
-    sep = re.compile(r"\s/\s|\bили\b|\bor\b")
+    sep = re.compile(r"\s/\s|\bили\b|\bor\b|\bversus\b|\bvs\.?\b")
     out, inside = [], False
     for line in merged.splitlines():
         if line.startswith("#"):
@@ -3797,6 +3797,10 @@ def _forked(merged, to):
         cols = [c.strip() for c in line.split("|")]
         orig, trans = cols[1], cols[2]
         if len(trans) > 70 or not has_target.search(trans):
+            continue
+        # Цельная закавыченная фраза — один перевод, а не выбор из двух:
+        # «поцелуй или убей» двоится только с виду.
+        if trans.startswith("«") and trans.endswith("»") and trans.count("«") == 1:
             continue
         if len(sep.split(trans)) > len(sep.split(orig)):
             out.append((orig, re.sub(r"\s+", " ", line.strip())[:88]))
