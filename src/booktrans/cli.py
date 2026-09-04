@@ -21,7 +21,7 @@ import signal
 import sys
 import time
 
-from . import agent, build, doctor, lang, pipeline, tune
+from . import agent, build, doctor, lang, pipeline, refconvert, tune
 from .models import AGENTS, EFFORTS, Models
 from .run import Run, locked
 from .tune import config_dir
@@ -286,6 +286,7 @@ def main():
     with locked(work, argv):
         # Какая версия конвейера трогала папку — для архивов: спустя год по
         # этому файлу видно, какие миграции внутренних форматов нужны.
+        refconvert.convert_ref(work, args.to, log)
         pipeline.note_version(work)
         Run(args, work, log, models, steps_of(args)).go()
 

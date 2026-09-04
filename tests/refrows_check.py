@@ -113,9 +113,24 @@ def main():
     ok("карточка едет по оригинальному написанию",
        any("остряк" in l for l in P.ref_rows_for(rows, "Clockpicker grinned.")),
        None)
-    ok("карточка едет и по целевому написанию",
-       any("остряк" in l for l in P.ref_rows_for(rows, "Клокблокер ухмыльнулся.")),
-       None)
+    # Новый вид строки: `| оригинал | перевод | род | содержимое |`, ключ —
+    # первая ячейка; пара ADDRESS с именами через «;» едет по любому из них.
+    NEW = """## CHARACTERS — Персонажи
+
+| Clockpicker | Клокблокер | | остряк, речь быстрая |
+
+## ADDRESS — Обращения
+
+| Taylor; Danny | Тейлор; Дэнни | отец и дочь: на «ты» |
+"""
+    nrows = P.split_ref(NEW)[1]
+    ok("строка нового вида едет по оригиналу",
+       any("остряк" in l for l in P.ref_rows_for(nrows, "Clockpicker grinned.")),
+       nrows)
+    ok("пара ADDRESS едет по любому имени",
+       any("отец" in l for l in P.ref_rows_for(nrows, "Danny sighed."))
+       and any("отец" in l for l in P.ref_rows_for(nrows, "Taylor left.")),
+       nrows)
     ok("кандидат в сноски ключуется",
        any("PHO" in l for _, l in rows)
        and any("PHO" in l for l in P.ref_rows_for(rows, "Она открыла PHO.")),

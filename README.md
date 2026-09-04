@@ -95,9 +95,11 @@ translation, adds footnotes and assembles the file.
   gender and declension, physical properties of things, how characters change;
 - **translates in chunks**, never crossing a boundary between narrators, with
   a cumulative plot digest and a shared list of accepted terms; the reference
-  is two-tier: the registry of names, terms and character cards is merged by
-  code without losses and has no size cap — only the rows that occur in the
-  chunk ride along — while every request carries just a short frame (narrator,
+  is two-tier: the registry — one row per entity, with the original, the
+  translation, gender and a note — is merged by code without losses and has
+  no size cap — only the rows that occur in the chunk ride along (references
+  from earlier releases are converted to this layout automatically, with a
+  copy kept beside) — while every request carries just a short frame (narrator,
   prose style, danger spots), so a book of any size translates without
   bloating the requests;
 - **proposes footnotes** and flags claims that contradict reality without

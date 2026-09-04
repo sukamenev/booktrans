@@ -63,6 +63,7 @@
 | `marks.part.json` | чтение | `format.plan` | недоделанная разметка, для продолжения |
 | `toc.json` | чтение | `pipeline._check_toc` | названия глав из оглавления книги |
 | `scout.md` | разведка | `pipeline.scout` | справочник по книге; идёт в каждый запрос |
+| `scout.md.bak` | разведка | `refconvert.convert_ref`, `pipeline.cycle_merge` | справочник до перекладки в новый вид строк или до сведения цикла |
 | `scout.json` | разведка | `pipeline.scout` | какая модель его собрала |
 | `scout.part.json` | разведка | `pipeline.scout` | разборы частей, для продолжения |
 | `scout.no_shrink.json` | разведка | `pipeline._condense_scout` | модели, не осилившие сжатие справочника |

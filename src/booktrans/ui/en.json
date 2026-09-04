@@ -280,5 +280,7 @@
  "pass_vf": "verifying",
  "h_verifier": "model chain for verifying editor remarks against the original (defaults to --editor)",
  "h_full_verify": "verify whole chunks against the original: besides editor remarks, sweep every paragraph pair for gross meaning and language errors (default; disable with --no-full-verify)",
- "cycle_merged": "cycle names: {} aligned, {} added"
+ "cycle_merged": "cycle names: {} aligned, {} added",
+ "ref_converted": "reference rows converted to the new layout: {}",
+ "ref_dead": "rows without the original: {} — they never reach a chunk; put the original in the first cell"
 }

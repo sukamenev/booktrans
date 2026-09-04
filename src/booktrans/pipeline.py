@@ -612,12 +612,26 @@ def verse_learn(state, blocks, res):
             known.setdefault(fingerprint(b["text"]), res[b["id"]])
 
 
-# Разделы, где карточки «- **Имя (Name):** …» ключуются и едут с куском по
-# упоминанию, как строки таблиц. Остальные разделы — костяк: он нужен
-# каждому куску и живёт в системном промпте.
+# Разделы реестра: их строки ключуются по первой ячейке и едут с куском по
+# упоминанию. Остальные разделы — костяк: он нужен каждому куску и живёт в
+# системном промпте. GENDER и WORLD разведка больше не пишет — род и
+# свойства живут в ячейках строк сущностей, — но строки прежних
+# справочников, не нашедшие своей сущности, остаются там и едут по ключу.
 REF_KEYED = ("CHARACTERS", "NAMES", "TERMS", "GENDER", "ADDRESS", "WORLD",
              "FOOTNOTES")
+# Разделы сущностей: `| оригинал | перевод | род и склонение | содержимое |`.
+REF_ENTITY = ("CHARACTERS", "NAMES", "TERMS")
 _BULLET_KEY = re.compile(r"\s*[-*]\s+\*\*(.+?):?\*\*(?=[\s:—–-])")
+
+
+def _cells(line):
+    """Ячейки строки таблицы, без краёв и лишних пробелов."""
+    return [c.strip() for c in " ".join(line.split()).strip("|").split("|")]
+
+
+def _row(cells):
+    """Строка таблицы из ячеек; пустая ячейка — `| |`."""
+    return "|" + "".join(f" {c} |" if c else " |" for c in cells)
 
 
 def _unbracket(inner):
@@ -3011,8 +3025,15 @@ def _name_key(line):
     return k
 
 
+_DOMAIN = re.compile(
+    r"#{1,4}\s*(CHARACTERS|ПЕРСОНАЖ|NAMES|ИМЕНА|TERMS|ТЕРМИН)", re.I)
+_DOMAIN_KIND = {"CHARACTERS": "CHARACTERS", "ПЕРСОНАЖ": "CHARACTERS",
+                "NAMES": "NAMES", "ИМЕНА": "NAMES", "TERMS": "TERMS",
+                "ТЕРМИН": "TERMS"}
+
+
 def _domains(parts):
-    """Границы разделов NAMES/TERMS в нарезке по заголовкам.
+    """Границы разделов CHARACTERS/NAMES/TERMS в нарезке по заголовкам.
 
     Раздел включает свои подразделы: `## NAMES` кончается не на `### Люди`,
     а на следующем заголовке того же или старшего уровня. Пока сведение
@@ -3025,13 +3046,12 @@ def _domains(parts):
     out, cur, kind, depth = [], None, None, 0
     for i_ in range(1, len(parts), 2):
         level = len(parts[i_]) - len(parts[i_].lstrip("#"))
-        m = re.match(r"#{1,4}\s*(NAMES|ИМЕНА|TERMS|ТЕРМИН)", parts[i_], re.I)
+        m = _DOMAIN.match(parts[i_])
         if cur is not None and level <= depth:
             out.append((kind, cur))
             cur = None
         if m:
-            kind = ("NAMES" if m.group(1).upper() in ("NAMES", "ИМЕНА")
-                    else "TERMS")
+            kind = _DOMAIN_KIND[m.group(1).upper()]
             cur, depth = [i_ + 1], level
         elif cur is not None:
             cur.append(i_ + 1)
@@ -3041,14 +3061,16 @@ def _domains(parts):
 
 
 def _cycle_canon(paths, to, log=None):
-    """Канон цикла: строки NAMES/TERMS и выходные данные прежних книг.
+    """Канон цикла: строки CHARACTERS/NAMES/TERMS и выходные данные прежних
+    книг.
 
     Повтор имени остаётся за самой ранней книгой — по правилу старшинства:
     написание, которое читатель встретил в вышедшей раньше книге, менять
     нельзя. Ключ раздела латинский, поэтому разделы находятся на любом
     целевом языке.
     """
-    rows, meta = {}, {}
+    from .refconvert import canon_ref
+    rows, meta = {}, {}    # имя → (строка, раздел)
     for p in paths:
         path = p
         if os.path.isdir(p):
@@ -3059,8 +3081,10 @@ def _cycle_canon(paths, to, log=None):
             if log:
                 log("  " + T("like_none", p))
             continue
-        parts = re.split(r"(?m)^(#{1,4}\s.*)$",
-                         open(path, encoding="utf-8").read())
+        # Прежнюю книгу могла собрать старая версия: её строки перекладываются
+        # в памяти, файл не трогается.
+        text = canon_ref(_headify(open(path, encoding="utf-8").read()), to)[0]
+        parts = re.split(r"(?m)^(#{1,4}\s.*)$", text)
         for kind, bodies in _domains(parts):
             for at in bodies:
                 for line in parts[at].split("\n"):
@@ -3101,6 +3125,20 @@ def _phrase_in(text, key):
     return False
 
 
+def _splice(line, canon):
+    """Персонажу — перевод и род из канона; карточка остаётся своя: она
+    описывает героя в этой книге, а в прежней он был другим."""
+    if not line.strip().startswith("|"):
+        return canon
+    c, k = _cells(line), _cells(canon)
+    c += [""] * (4 - len(c))
+    k += [""] * (4 - len(k))
+    # Пустая ячейка канона не затирает свою: в старых справочниках перевод
+    # бывал не отделён от справки.
+    c[1:3] = [n or o for o, n in zip(c[1:3], k[1:3])]
+    return _row(c)
+
+
 def cycle_merge(work, likes, to, blocks, log=None):
     """Сведение имён цикла — после разведки, кодом и без моделей.
 
@@ -3119,6 +3157,9 @@ def cycle_merge(work, likes, to, blocks, log=None):
     «antibody drone» из чужой книги. Дописывается имя только по полной
     фразе ключа в тексте: правило «хватит любого слова» тащило канон
     целиком — у терминов слова обычные.
+
+    Строка имени или термина берётся целиком; у персонажа — только перевод
+    и род, карточка остаётся своя (см. _splice).
     """
     if not likes:
         return
@@ -3148,11 +3189,11 @@ def cycle_merge(work, likes, to, blocks, log=None):
 
     # Слова канона по ключам: строке справочника сверяются лишь ключи с общим
     # словом, а не весь канон — тысячи строк на тысячи шли десять секунд.
-    words = {rk: set(rk.split()) for rk in rows}
+    words = {k: set(k.split()) for k in rows}
     by_word = {}
-    for rk, ws in words.items():
+    for k, ws in words.items():
         for w in ws:
-            by_word.setdefault(w, []).append(rk)
+            by_word.setdefault(w, []).append(k)
 
     swapped = added = 0
     seen, tail = set(), {}
@@ -3164,9 +3205,12 @@ def cycle_merge(work, likes, to, blocks, log=None):
                 k = _name_key(line)
                 if k in rows:
                     seen.add(k)
-                    if line.strip() != rows[k][0].strip():
+                    new = rows[k][0]
+                    if "CHARACTERS" in (kind, rows[k][1]):
+                        new = _splice(line, new)
+                    if line.strip() != new.strip():
                         swapped += 1
-                        line = rows[k][0]
+                        line = new
                 elif k:
                     aw = set(k.split())
                     for rk in {r for w in aw for r in by_word.get(w, ())}:
@@ -3322,7 +3366,7 @@ def _render_registry(order, groups, heads):
     return "\n".join(out).strip()
 
 
-def _settle_rows(conflicts, total, who, system, retries, log):
+def _settle_rows(conflicts, total, who, system, retries, log, to=""):
     """Свести разноголосицу реестра: моделью и только спорные ключи.
 
     conflicts: [(гк, ключ, [(часть, строка), …]), …]. Варианты подписаны
@@ -3330,9 +3374,11 @@ def _settle_rows(conflicts, total, who, system, retries, log):
     остаётся вариант самой ранней части, по тому же правилу старшинства,
     что у имён цикла.
     """
+    from .refconvert import _script_re, canon_row
     task = lang.prompt("scout_rows")[0]
     box = lang.prompt("box_scout_rows")[0]
     label = lang.prompt("scout_label")[0]
+    tgt = _script_re(to)
     got = {}
 
     def flush(batch):
@@ -3355,12 +3401,12 @@ def _settle_rows(conflicts, total, who, system, retries, log):
             t = line.strip()
             if not t or t.startswith("#"):
                 continue
-            nk = _norm_key(_line_key(t))
-            if not nk:
-                continue
             for gk, _, _ in batch:
-                if gk not in got and gk[1] == nk:
-                    got[gk] = " ".join(t.split())
+                if gk in got:
+                    continue
+                c = canon_row(t, gk[0], tgt)[0]
+                if _norm_key(_line_key(c, gk[0])) == gk[1]:
+                    got[gk] = " ".join(c.split())
                     break
 
     batch, size = [], 0
@@ -3388,6 +3434,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     именам и интонациям принимаются один раз на всю книгу, а не заново в
     каждом куске.
     """
+    from .refconvert import canon_ref
     out_path = lpath(work, "scout.md", to)
     who = [agent] + _backups(fallback)
     if os.path.exists(out_path):
@@ -3426,7 +3473,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     half = lpath(work, "scout.part.json", to)
     mfile = lpath(work, "scout.merge.json", to)
     if os.path.exists(half):
-        findings = json.load(open(half, encoding="utf-8"))
+        findings = [canon_ref(_headify(f), to)[0] if f else f for f in
+                    json.load(open(half, encoding="utf-8"))]
     else:
         findings = []
 
@@ -3509,6 +3557,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             log("  " + T("scout_block", i, len(parts), wc), end="")
         (res, _), m, dt = _chain_run(who, system, prompt, retries,
                                      _parse_scout, log)
+        res = canon_ref(_headify(res), to)[0]
         # Подпись части остаётся в разборе до сведения: пачки пирамиды друг
         # друга не видят, и противоречие состояний («женщина» в части 1,
         # «мужчина» в части 5) сведение датирует именно этими подписями.
@@ -3553,7 +3602,8 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     conflicts = [(gk, key, groups[gk]) for gk, key, _ in order
                  if len(groups[gk]) > 1]
     if conflicts:
-        got = _settle_rows(conflicts, len(parts), who, system, retries, log)
+        got = _settle_rows(conflicts, len(parts), who, system, retries,
+                           log, to)
         for gk, line in got.items():
             groups[gk] = [(0, line)]
         for gk, key, vs in conflicts:
@@ -3615,6 +3665,9 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if registry:
         merged = merged.rstrip() + "\n\n" + registry + "\n"
     open(mkparent(out_path), "w", encoding="utf-8").write(merged)
+    dead = canon_ref(merged, to)[2]
+    if dead:
+        log("  " + T("ref_dead", dead))
     # Модель разведки нигде больше не записана, а в книге её надо назвать.
     json.dump({"model": meta.get("model")},
               open(mkparent(lpath(work, "scout.json", to)), "w", encoding="utf-8"),
@@ -3839,7 +3892,7 @@ def _forked(merged, to):
     out, inside = [], False
     for line in merged.splitlines():
         if line.startswith("#"):
-            inside = bool(re.search(r"ИМЕНА|ТЕРМИН|NAMES|TERMS", line, re.I))
+            inside = bool(_DOMAIN.match(line.strip()))
             continue
         if not inside or line.count("|") < 3 or "---" in line:
             continue
@@ -3891,23 +3944,21 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
         if len(cols) > 3:
             orig = cols[1].strip().lower()
             if orig in want and orig in picks:
+                done.append((cols[1].strip(), cols[2].strip(), picks[orig]))
                 cols[2] = f" {picks[orig]} "
                 line = "|".join(cols)
-                done.append(f"{cols[1].strip()} → {picks[orig]}")
         out.append(line)
     if not done:
         return merged
-    # Кроме таблицы, тот же термин поминается в справочнике прозой, и там он
-    # остаётся двойным. Переписывать прозу подстановкой опасно, поэтому выбор
-    # закрепляем отдельным разделом в конце: он короткий и старше остального.
-    out.append("")
-    out.append(lang.prompt("scout_oneterm_apply")[0])
-    out.append("")
-    out += [f"- {x}" for x in done]
     merged = "\n".join(out)
+    # Прозой тот же термин поминается в том же двойном виде — заменяется
+    # точная фраза, и отвергнутый вариант из справочника уходит совсем.
+    for _, old, new in done:
+        if old and old != new:
+            merged = merged.replace(old, new)
     open(mkparent(out_path), "w", encoding="utf-8").write(_headify(merged))
-    for x in done:
-        log(f"      {x}")
+    for orig, _, new in done:
+        log(f"      {orig} → {new}")
     return merged
 
 

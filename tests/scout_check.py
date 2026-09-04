@@ -288,8 +288,8 @@ def main():
        [t for t, _ in P._forked(f"## TERMS — 用語\n\n{pair}", "ru")]
        == ["grand illusion"],
        P._forked(f"## TERMS — 用語\n\n{pair}", "ru"))
-    ok("вне таблиц имён и терминов не ищем",
-       P._forked(f"## CHARACTERS — Персонажи\n\n{pair}", "ru") == [])
+    ok("вне таблиц сущностей не ищем",
+       P._forked(f"## FOOTNOTES — Сноски\n\n{pair}", "ru") == [])
 
     # «Или» внутри перевода — ещё не развилка: закавыченная фраза цельна,
     # а союзу оригинала (versus) отвечает союз перевода. На живой книге обе
@@ -302,6 +302,27 @@ def main():
           "| nature versus nurture | природа или воспитание |\n")
     ok("versus в оригинале уравновешивает «или» в переводе",
        P._forked(f"## TERMS\n\n{vs}", "ru") == [])
+
+    # Выбор по двоящемуся термину вносится в саму строку и в прозу, где он
+    # помянут тем же двойным видом: отдельный раздел с выбором копил
+    # отвергнутый вариант, и переводчик видел оба.
+    class Picker:
+        model, kind = "выбор", "стенд"
+
+        def run(self, system, user):
+            return ("grand illusion = великая иллюзия",
+                    {"model": self.model, "cost_usd": 0})
+
+    twin = (f"## TERMS — Термины\n\n{pair}\n## RISK — Опасные места\n\n"
+            "«великая иллюзия / большой обман» — не путать с фокусом.\n")
+    fp = f"{d}/unfork.md"
+    got_u = P._unfork(twin, P._forked(twin, "ru"), [Picker()], "", 1, hush, fp)
+    ok("выбор вписан в ячейку перевода",
+       "| grand illusion | великая иллюзия |" in got_u
+       and "большой обман" not in got_u, got_u)
+    ok("выбор вписан и в прозу, файл переписан",
+       "«великая иллюзия» — не путать" in got_u
+       and open(fp, encoding="utf-8").read() == P._headify(got_u), got_u)
 
     # Имена соседних книг цикла (`--like`) сводятся ПОСЛЕ разведки кодом:
     # просьба в промпте оставляла модели волю (на живой книге разведка молча
@@ -374,15 +395,41 @@ def main():
         "## META — Выходные данные\n\ntitle_target = Subs\n\n"
         "## NAMES — Имена\n\n### Люди\n\n| Пётр | Peter |\n\n"
         "### Места\n\n| изба | hut |\n\n"
-        "## GENDER — Род\n\n| Пётр | м |\n")
+        "## RISK — Опасные места\n\nсцена суда\n")
     P.cycle_merge(f"{d}/sub", [f"{d}/cyc2"], "en", blocks)
     got2 = open(sp2, encoding="utf-8").read()
     ok("строка в подразделе видна сведению",
-       got2.count("Пётр") == 2 and "Peter" in got2,
+       got2.count("Пётр") == 1 and "Peter" in got2,
        [l for l in got2.splitlines() if "Пётр" in l])
-    ok("дописанное встаёт в хвост раздела, не в GENDER",
-       got2.index("| Анна | Anna |") < got2.index("## GENDER"),
+    ok("дописанное встаёт в хвост раздела, не в RISK",
+       got2.index("| Анна | Anna |") < got2.index("## RISK"),
        got2[got2.index("### Места"):][:120])
+    # Персонаж едет по циклу переводом и родом, карточка остаётся своя: в
+    # старшей книге герой был другим. Пропущенный — дописывается целиком.
+    os.makedirs(f"{d}/cyc5/en", exist_ok=True)
+    open(f"{d}/cyc5/en/scout.md", "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = Fifth\n\n"
+        "## CHARACTERS — Персонажи\n\n"
+        "| Пётр | Pyotr | ж, не склоняется | старшая карточка |\n"
+        "| Рой | Swarm | she | карточка |\n"
+        "| Анна | Anna | | старшая |\n")
+    open(sp2, "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = Subs\n\n"
+        "## CHARACTERS — Персонажи\n\n| Пётр | Peter | м | своя карточка |\n"
+        "| Анна | Ann | ж | своя |\n")
+    P.cycle_merge(f"{d}/sub", [f"{d}/cyc5"], "en",
+                  [{"text": "Пётр и Рой вошли."}])
+    got2 = open(sp2, encoding="utf-8").read()
+    ok("персонажу — перевод и род канона, карточка своя",
+       "| Пётр | Pyotr | ж, не склоняется | своя карточка |" in got2
+       and "Peter" not in got2 and "старшая" not in got2,
+       [l for l in got2.splitlines() if "Пётр" in l])
+    ok("пропущенный персонаж дописан целиком",
+       "| Рой | Swarm | she | карточка |" in got2,
+       [l for l in got2.splitlines() if "Рой" in l])
+    ok("пустая ячейка канона свою не затирает",
+       "| Анна | Anna | ж | своя |" in got2,
+       [l for l in got2.splitlines() if "Анна" in l])
     # Дописывание — только по полной фразе ключа: у терминов слова обычные,
     # и правило «хватит любого слова» тащило канон целиком.
     ok("однословного совпадения мало",
@@ -531,10 +578,10 @@ def main():
     ok("канон цикла в части: упомянутое есть, лишнего нет",
        bool(seen) and "| the Qax | хаксы" in seen[0] and "Пул" not in seen[0],
        (seen[0][:160] if seen else "запроса не было"))
-    # Карточка-маркер прежней книги — тоже канон: после двухъярусного
-    # справочника NAMES пишется и так, и канон молча пустел.
+    # Карточка-маркер прежней книги — тоже канон, в памяти она
+    # перекладывается в строку: NAMES писался и так, и канон молча пустел.
     ok("канон цикла читает карточки-маркеры",
-       bool(seen) and "**Skitter (Weaver):** Рой" in seen[0],
+       bool(seen) and "| Skitter; Weaver | Рой |" in seen[0],
        (seen[0][-200:] if seen else "запроса не было"))
 
     # Часть, начавшаяся посреди главы, знает эту главу, а разборы приходят
@@ -660,7 +707,7 @@ def main():
        and "[разбор части 1 из 2]" in asked[0]
        and "[разбор части 2 из 2]" in asked[0], (asked or [""])[0][:200])
     ok("ответ судьи лёг по ключу",
-       got_rows == {con[0][0]: "| Brockton Bay | Броктон-Бей |"}, got_rows)
+       got_rows == {con[0][0]: "| Brockton Bay | Броктон-Бей | | |"}, got_rows)
 
     class Mute:
         model, kind = "немой", "стенд"
@@ -693,12 +740,17 @@ def main():
                for _ in range(181)]
     got4 = P.scout(os.path.join(md4, "w.work"), blocks4, TwoParts(), "",
                    "задание", 1, hush)
+    # Строки модели старого вида «Перевод (Оригинал)» перекладываются в
+    # `| оригинал | перевод | род | содержимое |` сразу — и в канон, и в
+    # справочник.
     ok("канон своей части едет в следующую",
-       len(cap4) == 2 and "| Скиттер (Skitter) |" in cap4[1]
-       and "| Скиттер (Skitter) |" not in cap4[0],
+       len(cap4) == 2 and "| Skitter | Скиттер |" in cap4[1]
+       and "Скиттер" not in cap4[0],
        (len(cap4), cap4[1][:200] if len(cap4) > 1 else ""))
     ok("строки частей дошли до справочника без пирамиды",
-       "Клокблокер" in got4 and "| Скиттер (Skitter) |" in got4, got4[:300])
+       "| Clockpicker | Клокблокер |" in got4
+       and "| Skitter | Скиттер | | девушка, говорит коротко |" in got4,
+       got4[:300])
     ok("костяк пирамиды в справочнике",
        "сухой и быстрый" in got4, got4[:200])
     ok("шапка без прозы в костяк не идёт",
