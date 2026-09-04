@@ -188,6 +188,105 @@ def main():
     got = A.reset_after(f"…or try again at {h12}:{just.tm_min:02d} {half}.")
     ok("свежепрошедший срок — пауза, а не сутки", 0 < got <= 600, got)
 
+    # ---- OpenRouter: запрос по HTTP, перехвачен на отправке.
+    class Posted:
+        """Ответ вместо запроса; тело запроса запоминается."""
+
+        def __init__(self, status, events):
+            self.status, self.events, self.body = status, events, None
+
+        def __call__(self, body, key, timeout):
+            self.body = body
+            return self.status, self.events
+
+    real_post, real_key = A.openrouter_post, A.openrouter_key
+    A.openrouter_key = lambda: "sk-or-проба"
+
+    def openrouter(status, events, model="deepseek/x:free", effort="low",
+                   system="система"):
+        spy = Posted(status, events)
+        A.openrouter_post = spy
+        try:
+            a = A.make_agent("openrouter", model=model, effort=effort,
+                             wait=0)
+            try:
+                return spy, a.run(system, "запрос")
+            except A.AgentError as e:
+                return spy, e
+        finally:
+            A.openrouter_post = real_post
+
+    stream = [{"model": "deepseek/x:free",
+               "choices": [{"delta": {"content": "гото"}, "finish_reason": None}]},
+              {"choices": [{"delta": {"content": "во"}, "finish_reason": "stop"}],
+               "usage": {"cost": 0.0021}}]
+    spy, got = openrouter(200, stream)
+    b = spy.body
+    ok("openrouter: модель с косой чертой и вариантом — как есть",
+       b["model"] == "deepseek/x:free", b["model"])
+    ok("openrouter: усилие ушло в reasoning.effort",
+       b.get("reasoning", {}).get("effort") == "low", b.get("reasoning"))
+    sysm = [m for m in b["messages"] if m["role"] == "system"]
+    ok("openrouter: системный промпт помечен для кэша",
+       sysm and sysm[0]["content"][0]["text"] == "система"
+       and sysm[0]["content"][0].get("cache_control"), sysm)
+    ok("openrouter: текст склеен из потока, модель и цена из ответа",
+       got == ("готово", {"model": "deepseek/x:free", "cost_usd": 0.0021}), got)
+    spy, got = openrouter(200, stream, effort=None, system="")
+    ok("openrouter: без усилия и системы — без reasoning и system",
+       "reasoning" not in spy.body
+       and all(m["role"] != "system" for m in spy.body["messages"]), spy.body)
+
+    # Коды ответа: лимит ждут, закрытый доступ и негодный ключ — Fatal,
+    # модерация — Blocked, сбой поставщика — обычная ошибка с повтором.
+    err = lambda code, msg, **meta: {"error": {"code": code, "message": msg,
+                                               "metadata": meta}}
+    _, got = openrouter(429, [err(429, "Rate limit exceeded")])
+    ok("openrouter: 429 — RateLimited", isinstance(got, A.RateLimited), got)
+    _, got = openrouter(401, [err(401, "User not found.")])
+    ok("openrouter: 401 — Fatal, без повторов", isinstance(got, A.Fatal), got)
+    _, got = openrouter(403, [err(403, "Input flagged", reasons=["violence"])])
+    ok("openrouter: модерация — Blocked", isinstance(got, A.Blocked), got)
+    _, got = openrouter(502, [err(502, "Provider returned error")])
+    ok("openrouter: 502 — сбой, не Fatal",
+       type(got) is A.AgentError, got)
+    _, got = openrouter(200, [{"error": {"code": 429, "message": "busy"},
+                              "choices": [{"finish_reason": "error"}]}])
+    ok("openrouter: ошибка внутри потока — по её коду",
+       isinstance(got, A.RateLimited), got)
+    _, got = openrouter(200, [{"choices": [{"delta": {"content": ""},
+                                            "finish_reason": "content_filter"}]}])
+    ok("openrouter: фильтр поставщика — Blocked", isinstance(got, A.Blocked), got)
+
+    # Модель без размышлений отвергает reasoning — повтор без него.
+    calls = []
+
+    def twice(body, key, timeout):
+        calls.append(dict(body))
+        if "reasoning" in body:
+            return 400, [err(400, "Reasoning is not supported by this model")]
+        return 200, stream
+    A.openrouter_post = twice
+    try:
+        got = A.make_agent("openrouter", model="x/y", effort="low",
+                           wait=0).run("с", "з")
+    finally:
+        A.openrouter_post = real_post
+    ok("openrouter: 400 про reasoning — повтор без него",
+       len(calls) == 2 and "reasoning" not in calls[1] and got[0] == "готово",
+       (len(calls), got))
+
+    A.openrouter_key = lambda: ""
+    try:
+        A.make_agent("openrouter", model="x/y", wait=0).run("с", "з")
+        got = "прошло"
+    except A.Fatal as e:
+        got = str(e)
+    finally:
+        A.openrouter_key = real_key
+    ok("openrouter: без ключа — Fatal с именем переменной",
+       A.OPENROUTER_ENV in got, got)
+
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0
 

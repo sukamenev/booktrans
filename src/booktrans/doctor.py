@@ -84,6 +84,10 @@ def check(log=print, agent="claude"):
     if who:
         line(bool(shutil.which(who)), who, T("doc_agent", agent),
              T("doc_agent_how", agent))
+    if agent == "openrouter":
+        from .agent import OPENROUTER_ENV, openrouter_key, openrouter_key_file
+        line(bool(openrouter_key()), "openrouter key", T("doc_or_key"),
+             T("doc_or_key_how", OPENROUTER_ENV, openrouter_key_file()))
 
     log("")
     log("  " + T("doc_opt"))

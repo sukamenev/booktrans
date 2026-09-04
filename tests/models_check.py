@@ -59,6 +59,15 @@ def main():
     ok("пустая модель — умолчание агента",
        got == [("codex", "", None), ("agy", "", None)], got)
     ok("пустой ключ — пустая цепочка", parse_chain(None, "agy") == [])
+    # У моделей OpenRouter косая черта в имени и двоеточие в варианте:
+    # двоеточие само по себе агента не значит.
+    got = parse_chain("openrouter:deepseek/deepseek-v4:free:high", "claude")
+    ok("openrouter: агент, модель с вариантом, усилие",
+       got == [("openrouter", "deepseek/deepseek-v4:free", "high")], got)
+    got = parse_chain("deepseek/x:free,anthropic/claude-sonnet-5:low", "openrouter")
+    ok("модели openrouter без префикса под своим --agent",
+       got == [("openrouter", "deepseek/x:free", None),
+               ("openrouter", "anthropic/claude-sonnet-5", "low")], got)
 
     # ---- старшинство
     got = models().chain()
@@ -123,6 +132,22 @@ def main():
     ok("local:pdftotext замыкает чтение страниц",
        not stops("--ocrmodel", "agy:x,local:pdftotext"))
     ok("а в других проходах local — чужой", stops("--editor", "local:pdftotext"))
+
+    # Ключ OpenRouter спрашивается при старте, а не первым запросом.
+    from booktrans import agent as A
+    real_file = A.openrouter_key_file
+    A.openrouter_key_file = lambda: os.path.join(HERE, "нет-такого.key")
+    os.environ.pop(A.OPENROUTER_ENV, None)
+    try:
+        ok("openrouter в цепочке без ключа — остановка",
+           stops("--editor", "openrouter:x/y"))
+        ok("--agent openrouter без ключа — остановка", stops("--agent", "openrouter"))
+        os.environ[A.OPENROUTER_ENV] = "sk-or-проба"
+        ok("с ключом в окружении — проходит",
+           not stops("--agent", "openrouter", "--editor", "x/y:free:high"))
+    finally:
+        A.openrouter_key_file = real_file
+        del os.environ[A.OPENROUTER_ENV]
 
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0

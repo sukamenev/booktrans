@@ -5,7 +5,10 @@
     --agent-cmd 'llm -s {system}'
     --agent-cmd 'my-agent --sys-file {system_file}'
 """
+import base64
+import http.client
 import json
+import mimetypes
 import os
 import re
 import select
@@ -15,8 +18,11 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.request
 
 from .lang import T
+from .tune import config_dir
 
 
 class AgentError(RuntimeError):
@@ -667,6 +673,156 @@ class CodexAgent(Agent):
         return r.stdout, {"model": actual_model, "cost_usd": None}
 
 
+OPENROUTER_ENV = "OPENROUTER_API_KEY"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+
+def openrouter_key_file():
+    return os.path.join(config_dir(), "openrouter.key")
+
+
+def openrouter_key():
+    """Ключ — из переменной окружения или из файла в папке настроек. Не из
+    командной строки: `running.pid` хранит её целиком, и `ps` показывает всем."""
+    key = os.environ.get(OPENROUTER_ENV, "").strip()
+    if key:
+        return key
+    try:
+        with open(openrouter_key_file(), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def openrouter_post(body, key, timeout):
+    """Запрос к OpenRouter потоком. -> (код HTTP, [события json]).
+
+    Потоком, а не одним ответом: думающая модель на большом куске молчит
+    минутами, и посредники рвут тихое соединение — а со служебными строками
+    `: OPENROUTER PROCESSING` оно живо. Срок один на весь ответ.
+    """
+    req = urllib.request.Request(
+        OPENROUTER_URL, data=json.dumps(body).encode(), method="POST",
+        headers={"Authorization": f"Bearer {key}",
+                 "Content-Type": "application/json",
+                 "HTTP-Referer": "https://github.com/sukamenev/booktrans",
+                 "X-Title": "BookTrans"})
+    events, deadline = [], time.time() + timeout
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            for raw in r:
+                if time.time() > deadline:
+                    raise AgentError(T("or_silent", timeout))
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue                # пустые строки и `: PROCESSING`
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    ev = json.loads(data)
+                except ValueError:
+                    continue
+                if isinstance(ev, dict):
+                    events.append(ev)
+            return r.status, events
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        try:
+            env = json.loads(raw)
+        except ValueError:
+            env = None
+        if not isinstance(env, dict):
+            env = {"error": {"message": raw[:300]}}
+        return e.code, [env]
+    except (OSError, http.client.HTTPException) as e:
+        raise AgentError(f"openrouter: {e}")
+
+
+def openrouter_error(code, err):
+    """Каким сбоем считать ответ OpenRouter с кодом `code`."""
+    err = err if isinstance(err, dict) else {"message": str(err)}
+    try:
+        code = int(code or 0)
+    except ValueError:
+        code = 0
+    msg = f"openrouter {code}: {err.get('message') or '?'}"[:300]
+    meta = err.get("metadata") or {}
+    if code == 429:
+        return RateLimited(msg)
+    # 403 — это и модерация, и закрытый доступ; модерацию выдают причины.
+    if code == 403 and (meta.get("reasons") or re.search(r"moderat|flagged", msg, re.I)):
+        return Blocked(msg)
+    if code in (400, 401, 402, 403, 404):
+        return Fatal(msg)
+    return AgentError(msg)
+
+
+class OpenRouterAgent(Agent):
+    """OpenRouter: один HTTP-вход к моделям сотни поставщиков, плата по
+    токенам. Имена моделей — `поставщик/модель`, варианты через двоеточие:
+    `deepseek/deepseek-v4:free`."""
+
+    kind = "openrouter"
+
+    def default_model(self):
+        return "anthropic/claude-sonnet-5"
+
+    def __init__(self, model=None, timeout=1800, effort=None):
+        self.model = model or self.default_model()
+        self.timeout = timeout
+        self.effort = effort
+
+    def run(self, system, user, image=None):
+        key = openrouter_key()
+        if not key:
+            raise Fatal(T("openrouter_key", OPENROUTER_ENV, openrouter_key_file()))
+        ask = [{"type": "text", "text": user}]
+        if image:
+            mime = mimetypes.guess_type(image)[0] or "image/png"
+            with open(image, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            ask.append({"type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"}})
+        messages = [{"role": "user", "content": ask}]
+        if system:
+            # Пометка для кэша: справочник по книге один на все куски, а без
+            # пометки Anthropic берёт за него полную цену каждый раз. Кому
+            # пометка не нужна, тот её не замечает.
+            messages.insert(0, {"role": "system", "content": [
+                {"type": "text", "text": system,
+                 "cache_control": {"type": "ephemeral"}}]})
+        body = {"model": self.model, "messages": messages, "stream": True,
+                "usage": {"include": True}}
+        if self.effort:
+            body["reasoning"] = {"effort": self.effort, "exclude": True}
+        status, events = openrouter_post(body, key, self.timeout)
+        err = (events[0].get("error") or events[0]) if events else {}
+        if status == 400 and "reasoning" in body \
+                and "reasoning" in str(err.get("message")).lower():
+            # Модель не думает вовсе — усилие ей ни к чему.
+            del body["reasoning"]
+            status, events = openrouter_post(body, key, self.timeout)
+            err = (events[0].get("error") or events[0]) if events else {}
+        if status != 200:
+            raise openrouter_error(status, err)
+        text, model, cost, finish = [], self.model, None, None
+        for ev in events:
+            if ev.get("error"):
+                raise openrouter_error(ev["error"].get("code"), ev["error"])
+            for ch in ev.get("choices") or ():
+                piece = (ch.get("delta") or {}).get("content")
+                if piece:
+                    text.append(piece)
+                finish = ch.get("finish_reason") or finish
+            model = ev.get("model") or model
+            if ev.get("usage"):
+                cost = ev["usage"].get("cost")
+        if finish == "content_filter":
+            raise Blocked(T("or_filter", model))
+        return "".join(text), {"model": model, "cost_usd": cost}
+
+
 def make_agent(kind="claude", model=None, command=None, timeout=1800,
                wait=900, max_wait=86400, log=print, tools="", effort=None):
     if kind == "claude":
@@ -675,6 +831,8 @@ def make_agent(kind="claude", model=None, command=None, timeout=1800,
         inner = AgyAgent(model, timeout, effort)
     elif kind == "codex":
         inner = CodexAgent(model, timeout, effort)
+    elif kind == "openrouter":
+        inner = OpenRouterAgent(model, timeout, effort)
     elif kind == "local":
         class LocalAgent(Agent):
             def __init__(self, model):

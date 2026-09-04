@@ -32,9 +32,11 @@ ready-made wrappers, each one line away from `booktrans`:
 | `./bt_agy` | Gemini Pro & Flash through Antigravity |
 | `./bt_codex` | Codex |
 
-The key `--agent claude|agy|codex` does the same, and `--agent cmd
---agent-cmd '…'` plugs in a CLI of your own. Which models each set uses is
-written in the wrapper itself and under "Per-pass models".
+The key `--agent claude|agy|codex` does the same, `--agent openrouter`
+reaches any model of [OpenRouter](https://openrouter.ai) by API key (see
+"OpenRouter"), and `--agent cmd --agent-cmd '…'` plugs in a CLI of your own.
+Which models each set uses is written in the wrapper itself and under
+"Per-pass models".
 
 With translator's instructions:
 
@@ -56,7 +58,7 @@ What each part does:
 | `-p instructions.md` | your instructions to the translator: what to call the characters, which terms to fix, what to leave alone |
 | `-pt "leave the names in Latin"` | the same, but as a string — a typo in a filename must not silently become an instruction |
 | `--to ru` | target language |
-| `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, and `cmd` for a CLI of your own |
+| `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, `openrouter`, and `cmd` for a CLI of your own |
 | `--name-series` | include the cycle and book number in output file names: “Author. Cycle 02. Title” — a cycle's books line up in reading order; the number is zero-padded to two digits so plain alphabetical sorting keeps book 10 after book 9 |
 | `--like Book.work` | a book of the same cycle translated earlier: after reconnaissance its names are merged into the new reference — the spelling accepted there wins by force, so the cycle keeps one spelling. Repeat the key; the order is the order of publication |
 | `--jobs 5` | five threads for editing, verification and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
@@ -589,6 +591,15 @@ An agent other than `--agent` is named before the model with a colon
 ./booktrans book.epub --translator claude:claude-sonnet-5:max
 ```
 
+OpenRouter's model names carry a slash and a colon of their own
+(`deepseek/deepseek-v4:free`); the slash is what tells a model from an
+agent, so both spellings work — see "OpenRouter":
+
+```bash
+./booktrans book.epub --agent agy --editor gemini-3.1-pro-high,openrouter:deepseek/deepseek-v4-pro:high
+./booktrans book.epub --agent openrouter --editor deepseek/deepseek-v4-pro:high,anthropic/claude-sonnet-5
+```
+
 | key | pass |
 |---|---|
 | `--scout` | reconnaissance: the reference about the book |
@@ -604,8 +615,9 @@ Name nothing and the agent's set applies (`PRESETS` in `models.py`): with agy th
 meaning-bearing passes run Gemini with Opus behind it and Claude Code's own
 Opus last — a different provider refuses in different places — while
 markup, OCR repair and page reading run a cheap Flash with Sonnet behind it;
-with claude, all three go to Sonnet. What you name explicitly
-always beats the set.
+with claude, all three go to Sonnet; with openrouter, paid per token, Sonnet
+does the meaning-bearing passes with Gemini Flash behind it and Flash the
+cheap ones. What you name explicitly always beats the set.
 
 **A chain covers a failure of any kind.** A refusal, a 502 from the provider,
 a connection that dropped — the chunk goes to the next model, and the error
@@ -860,7 +872,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --ocrmodel ID         model that reads pdf pages from the image
 --model ID            model for every pass
 --scout / --translator / --editor / --verifier ID   model for one pass
---agent claude|cmd    agent
+--agent NAME          agent: claude|agy|codex|openrouter|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes
 --scout-jobs N        threads for scouting parts (off by default — see "Scouting can too")
@@ -876,6 +888,47 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --partial             assemble even with parts untranslated
 --check               check the environment and say what is missing
 ```
+
+## OpenRouter
+
+[OpenRouter](https://openrouter.ai) is one API key to the models of every
+provider at once, paid per token — DeepSeek, Qwen, Kimi and the like
+included, which none of the three CLIs above reaches.
+
+```bash
+export OPENROUTER_API_KEY=sk-or-…
+./booktrans book.epub --agent openrouter --model deepseek/deepseek-v4-pro
+```
+
+The key is read from `OPENROUTER_API_KEY` or from the file
+`~/.config/booktrans/openrouter.key` (`%APPDATA%\booktrans` on Windows,
+`~/Library/Application Support/booktrans` on macOS) — a single line, nothing
+else. Never from a command-line key: the command line is kept in
+`running.pid` and shown by `ps`. Without a key the run stops at once and
+names both places; `./booktrans --check --agent openrouter` says whether the
+key is found.
+
+Model names are OpenRouter's, `provider/model`, a variant after a colon:
+`deepseek/deepseek-v4:free`, `anthropic/claude-sonnet-5:batch`. Inside a
+chain the agent goes first, the effort last, and the slash tells the model
+from the agent:
+
+```bash
+./booktrans book.epub --agent agy \
+    --editor gemini-3.1-pro-high,openrouter:deepseek/deepseek-v4-pro:high
+./booktrans book.epub --agent openrouter \
+    --translator anthropic/claude-sonnet-5:max,google/gemini-3.7-flash
+```
+
+The effort goes to OpenRouter's `reasoning.effort`; a model that does not
+think gets the request without it. The system prompt — the reference about
+the book, the same for every chunk — is marked for the provider's cache
+(Anthropic caches nothing unmarked; the others cache on their own), so the
+chunks pay a tenth of its price. The cost of each request comes back in the
+reply and goes into the spending report.
+
+The set of `--agent openrouter`: Sonnet for the meaning-bearing passes with
+Gemini Flash behind it, Flash for markup, OCR repair and page reading.
 
 ## Your own agent
 
@@ -1153,7 +1206,7 @@ Reconnaissance and markup detection are not included — they write no chunk
 files.
 
 On a subscription the sum is indicative: that is what it would cost at API
-rates.
+rates. With OpenRouter it is what was charged.
 
 ## Security
 

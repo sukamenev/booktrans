@@ -8,16 +8,16 @@ import re
 import sys
 
 from . import lang
-from .agent import make_agent
+from .agent import OPENROUTER_ENV, make_agent, openrouter_key, openrouter_key_file
 
-AGENTS = ("claude", "agy", "codex", "cmd")
+AGENTS = ("claude", "agy", "codex", "openrouter", "cmd")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Проходы опознавательные, а не сочинительные: разобрать вёрстку, увидеть
 # порчу распознавания и прочитать страницу умеет и самая дешёвая модель
 # поставщика.
 CHEAP_ROLES = ("formatter", "ocrfixer", "ocrmodel")
-# У claude усилие — отдельный ключ, у agy оно вшито в имя модели.
-CHEAP_EFFORT = {"claude": "low"}
+# У claude и openrouter усилие — отдельный ключ, у agy оно вшито в имя модели.
+CHEAP_EFFORT = {"claude": "low", "openrouter": "low"}
 # Ключ `--agent` — это, по сути, имя набора умолчаний: какими моделями делать
 # проходы у этого поставщика. Названная явно модель сильнее набора, набор
 # сильнее умолчания самого агента. Затем он и нужен: `--agent agy` работает
@@ -33,6 +33,14 @@ PRESETS = {
         "formatter": "claude-sonnet-5",
         "ocrfixer": "claude-sonnet-5",
         "ocrmodel": "claude-sonnet-5",
+    },
+    # Платится по токенам, потому и в смысловых проходах не Opus: Sonnet
+    # впятеро дешевле, а запасным — другой поставщик.
+    "openrouter": {
+        "model": "anthropic/claude-sonnet-5,google/gemini-3.7-flash",
+        "formatter": "google/gemini-3.7-flash",
+        "ocrfixer": "google/gemini-3.7-flash",
+        "ocrmodel": "google/gemini-3.7-flash",
     },
 }
 # Ключи, из которых собираются цепочки: проверяются все разом при старте.
@@ -59,6 +67,11 @@ def parse_chain(s, agent=None):
     (low/medium/high, а где агент умеет — xhigh и max):
 
         --editor gemini-pro:high,claude:claude-opus-5:low
+
+    У моделей OpenRouter в имени косая черта, а у варианта — своё двоеточие,
+    `deepseek/deepseek-v4:free`. Косая черта и отличает модель от агента:
+
+        --editor openrouter:deepseek/deepseek-v4:free:high
     """
     out = []
     for part in (s or "").split(","):
@@ -66,15 +79,13 @@ def parse_chain(s, agent=None):
         if not part:
             continue
         parts = [p.strip() for p in part.split(":")]
-        name, model, effort = agent, None, None
+        name, effort = agent, None
         if parts[-1] in EFFORTS:
             effort = parts.pop()
-        if len(parts) == 2:
+        if len(parts) > 1 and "/" not in parts[0]:
             name = parts[0] or agent
-            model = parts[1]
-        elif len(parts) == 1:
-            model = parts[0]
-        out.append((name, model, effort))
+            parts = parts[1:]
+        out.append((name, ":".join(parts) if parts else None, effort))
     return out
 
 
@@ -96,9 +107,11 @@ class Models:
         книги невнятной ошибкой из чужой программы.
 
         У agy усилие задаётся либо суффиксом в имени модели, либо ключом
-        `--effort`, и вместе они не работают.
+        `--effort`, и вместе они не работают. Ключ OpenRouter — здесь же:
+        иначе о нём сказал бы только 401 первого запроса.
         """
         a = self.args
+        used = {a.agent}
         for key in CHAIN_KEYS:
             # Цепочку чтения страниц замыкает `local:pdftotext` — текстовый
             # слой без модели, когда все модели отказали.
@@ -109,6 +122,9 @@ class Models:
                 if name == "agy" and a.effort \
                         and m and re.search(r"-(low|medium|high|xhigh|max)$", m):
                     sys.exit(lang.T("effort_clash", m, a.effort))
+                used.add(name)
+        if "openrouter" in used and not openrouter_key():
+            sys.exit(lang.T("openrouter_key", OPENROUTER_ENV, openrouter_key_file()))
 
     def _agent(self, name, model, effort=None):
         a = self.args
