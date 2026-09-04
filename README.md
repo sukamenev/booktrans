@@ -597,7 +597,7 @@ An agent other than `--agent` is named before the model with a colon
 | `--verifier` | verifying the editor's remarks against the original; unnamed — the editor's chain |
 | `--formatter` | markup detection: epub and fb2 styles, pdf and txt pieces |
 | `--ocrfixer` | repairing OCR damage |
-| `--ocrmodel` | reading pdf pages that have no text layer |
+| `--ocrmodel` | reading pdf pages from the image; `local:pdftotext` last in the chain falls back to the text layer |
 | `--model` | every pass at once, save those the agent's set gives to a cheap model |
 
 Name nothing and the agent's set applies (`PRESETS` in `models.py`): with agy the
@@ -857,7 +857,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --code asis           leave the comments in listings alone too
 --formatter ID        model that works out the markup, any format
 --ocrfixer ID         model that repairs recognition damage in the original
---ocrmodel ID         model that reads pdf pages with no text layer
+--ocrmodel ID         model that reads pdf pages from the image
 --model ID            model for every pass
 --scout / --translator / --editor / --verifier ID   model for one pass
 --agent claude|cmd    agent

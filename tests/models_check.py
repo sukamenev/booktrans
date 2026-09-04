@@ -120,6 +120,9 @@ def main():
        not stops("--agent", "agy", "--effort", "high", "--editor", "m"))
     ok("исправные ключи проходят",
        not stops("--editor", "a,agy:b:low", "--ocrmodel", "cmd:"))
+    ok("local:pdftotext замыкает чтение страниц",
+       not stops("--ocrmodel", "agy:x,local:pdftotext"))
+    ok("а в других проходах local — чужой", stops("--editor", "local:pdftotext"))
 
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
     return 1 if bad else 0

@@ -187,7 +187,7 @@
  "h_scout": "scouting model, a comma-separated chain (defaults to --model)",
  "h_translator": "translation model, a comma-separated chain (defaults to --model)",
  "h_editor": "editing and footnotes model, a comma-separated chain (defaults to --model)",
- "h_ocrmodel": "model that reads pdf pages with no text layer, a comma-separated chain (defaults to the cheapest of the chosen agent)",
+ "h_ocrmodel": "model that reads pdf pages from the image, a comma-separated chain (defaults to the cheapest of the chosen agent); local:pdftotext last takes the text layer when every model has failed",
  "h_ocrfixer": "model that repairs OCR damage in the source, a comma-separated chain (defaults to the cheapest of the chosen agent)",
  "h_formatter": "model for working out the markup — epub and fb2 styles, pdf and txt pieces; a comma-separated chain (defaults to the cheapest of the chosen agent)",
  "code_known": "listings already processed: {0} (delete work/code.json to redo)",

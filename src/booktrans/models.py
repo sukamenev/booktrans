@@ -100,8 +100,11 @@ class Models:
         """
         a = self.args
         for key in CHAIN_KEYS:
+            # Цепочку чтения страниц замыкает `local:pdftotext` — текстовый
+            # слой без модели, когда все модели отказали.
+            allowed = AGENTS + ("local",) if key == "ocrmodel" else AGENTS
             for name, m, _ in parse_chain(getattr(a, key, None), a.agent):
-                if name not in AGENTS:
+                if name not in allowed:
                     sys.exit(lang.T("bad_agent", name, ", ".join(AGENTS)))
                 if name == "agy" and a.effort \
                         and m and re.search(r"-(low|medium|high|xhigh|max)$", m):
