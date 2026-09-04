@@ -17,6 +17,7 @@
 import argparse
 import os
 import shlex
+import signal
 import sys
 import time
 
@@ -295,12 +296,15 @@ def run():
     try:
         return main()
     except KeyboardInterrupt:
+        # Второе Ctrl+C нетерпеливого человека прилетает, пока мы прощаемся,
+        # и без этого выходило трассировкой.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         # Потокам говорим остановиться и уходим сразу, не дожидаясь их: всё
         # сделанное уже на диске, а ожидание висящего запроса — это минуты
         # и ещё одно Ctrl+C от человека. os._exit минует уборку потоков,
         # из-за которой прежде вылезала трассировка threading.
         pipeline.STOP.set()
-        sys.stderr.write("\n" + lang.UI(os.environ.get("BT_UI", "en"))("interrupted") + "\n")
+        sys.stderr.write("\n" + lang.T("interrupted") + "\n")
         sys.stderr.flush()
         os._exit(130)
     except RuntimeError as e:

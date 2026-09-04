@@ -12,6 +12,7 @@ import contextlib
 import io
 import os
 import shutil
+import signal
 import sys
 import tempfile
 
@@ -124,6 +125,23 @@ def main():
     cli.main = lambda: None
     ok("без кода — ноль", cli.run() is None)
     cli.main = was
+
+    # ---- Ctrl+C: прощание, код 130, второе нажатие глушится
+    was_sig, was_exit, codes = signal.getsignal(signal.SIGINT), os._exit, []
+
+    def boom():
+        raise KeyboardInterrupt
+    cli.main, os._exit = boom, codes.append
+    lang.set_ui("ru")                       # выбранный язык, а не BT_UI
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err):
+        cli.run()
+    ok("Ctrl+C: прощание, код 130, второе Ctrl+C глушится",
+       codes == [130] and "прервано" in err.getvalue()
+       and signal.getsignal(signal.SIGINT) is signal.SIG_IGN, (codes, err.getvalue()))
+    signal.signal(signal.SIGINT, was_sig)
+    cli.main, os._exit = was, was_exit
+    cli.pipeline.STOP.clear()
 
     shutil.rmtree(d, ignore_errors=True)
     print(f"\nслучаев: {seen}   с расхождениями: {bad}")
