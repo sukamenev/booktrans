@@ -3087,6 +3087,20 @@ def _no_shrink_path(out_path):
         f"{head}.no_shrink" + (f"_{suffix}" if suffix else "") + ".json")
 
 
+def _phrase_in(text, key):
+    """Ключ целой фразой, с небуквами по краям. Через `find`, а не регулярным
+    выражением с оглядкой: то шло по большой книге треть секунды на имя, и
+    канон цикла в две тысячи имён стоил полторы минуты на каждый запуск."""
+    at = text.find(key)
+    while at >= 0:
+        end = at + len(key)
+        if ((at == 0 or not text[at - 1].isalpha())
+                and (end == len(text) or not text[end].isalpha())):
+            return True
+        at = text.find(key, at + 1)
+    return False
+
+
 def cycle_merge(work, likes, to, blocks, log=None):
     """Сведение имён цикла — после разведки, кодом и без моделей.
 
@@ -3130,9 +3144,15 @@ def cycle_merge(work, likes, to, blocks, log=None):
         # мира в справочник другого.
         if not key or not any(ch.isupper() for ch in key):
             return False
-        return re.search(
-            rf"(?<![^\W\d_]){re.escape(key)}(?![^\W\d_])",
-            body_text) is not None
+        return _phrase_in(body_text, key)
+
+    # Слова канона по ключам: строке справочника сверяются лишь ключи с общим
+    # словом, а не весь канон — тысячи строк на тысячи шли десять секунд.
+    words = {rk: set(rk.split()) for rk in rows}
+    by_word = {}
+    for rk, ws in words.items():
+        for w in ws:
+            by_word.setdefault(w, []).append(rk)
 
     swapped = added = 0
     seen, tail = set(), {}
@@ -3148,9 +3168,9 @@ def cycle_merge(work, likes, to, blocks, log=None):
                         swapped += 1
                         line = rows[k][0]
                 elif k:
-                    for rk in rows:
-                        aw, bw = set(k.split()), set(rk.split())
-                        if aw <= bw or bw <= aw:
+                    aw = set(k.split())
+                    for rk in {r for w in aw for r in by_word.get(w, ())}:
+                        if aw <= words[rk] or words[rk] <= aw:
                             seen.add(rk)
                 out.append(line)
             parts[at] = "\n".join(out)

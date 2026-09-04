@@ -408,6 +408,16 @@ def main():
        "| the Qax | хаксы |" in got3 and "кваксы" not in got3,
        [l for l in got3.splitlines() if "акс" in l])
     _sh.rmtree(f"{d}/cyc1", ignore_errors=True)
+    # Имя в тексте ищется целой фразой между небуквами — через find, а не
+    # регулярным выражением: то стоило полторы минуты на большой книге.
+    ok("фраза внутри слова — не находка",
+       not P._phrase_in("toward the wardens", "Ward")
+       and not P._phrase_in("уШтуки", "Штуки"),
+       (P._phrase_in("toward the wardens", "Ward"), P._phrase_in("уШтуки", "Штуки")))
+    ok("фраза у знаков, цифр и краёв — находка",
+       P._phrase_in("«Ward»", "Ward") and P._phrase_in("2Ward2", "Ward")
+       and P._phrase_in("Glory Girl", "Glory Girl")
+       and P._phrase_in("toward Ward.", "Ward"))
 
     # Сноска начинается с термина: по ссылке читалка показывает её одну,
     # без абзаца вокруг. Начатую с термина не дублируем, склонение — по
