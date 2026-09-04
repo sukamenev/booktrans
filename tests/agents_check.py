@@ -3,7 +3,8 @@
 
 Модель, усилие и срок ожидания задаются не нами, а ключами чужой командной
 строки, и пропажу такого ключа видно только на живом прогоне. Здесь запуск
-перехватывается, и строка сверяется по частям.
+перехватывается, и строка сверяется по частям. Agy запускается не через
+`subprocess.run`, а через `run_envelope` — перехват свой.
 
 Отдельно — срок. У agy свой срок ожидания, пять минут, и думающая модель на
 большом куске в него не укладывалась: ответ обрывался, а выглядело как отказ
@@ -50,16 +51,27 @@ def main():
               + ("" if cond else f"   вышло: {got}"))
         bad += not cond
 
-    real = A.subprocess.run
+    real = A.subprocess.run, A.run_envelope
+
+    def spied(kind, spy):
+        """Запуск подменён: agy идёт через run_envelope, остальные — run."""
+        if kind == "agy":
+            A.run_envelope = spy
+        else:
+            A.subprocess.run = spy
+
+    def restore():
+        A.subprocess.run, A.run_envelope = real
+
     for kind in ("claude", "agy", "codex"):
         spy = Ran(ANSWERS[kind])
-        A.subprocess.run = spy
+        spied(kind, spy)
         try:
             a = A.make_agent(kind, model="проба-модель", timeout=1234,
                              effort="low")
             a.run("система", "запрос")
         finally:
-            A.subprocess.run = real
+            restore()
         cmd = spy.cmd or []
         ok(f"{kind}: модель названа", "проба-модель" in cmd, cmd)
         ok(f"{kind}: усилие названо",
@@ -70,12 +82,12 @@ def main():
     # сменой модели. Ошибкой это считалось раньше — и тихая цензура жгла
     # повторы той же модели с паузами сбоя связи.
     spy = Ran(json.dumps({"status": "SUCCESS", "response": ""}))
-    A.subprocess.run = spy
+    spied("agy", spy)
     try:
         a = A.make_agent("agy", model="проба-модель", timeout=60)
         got, meta = a.run("система", "запрос")
     finally:
-        A.subprocess.run = real
+        restore()
     ok("agy: пустой SUCCESS — пустой ответ, не ошибка", got == "", repr(got))
 
     # Фильтр на входе шлюза: промпт до модели не дошёл, повтор бьётся о тот
@@ -83,7 +95,7 @@ def main():
     spy = Ran(json.dumps({"status": "SUCCESS", "response":
         "The prompt could not be submitted. The prompt contains sensitive "
         "words that violate Google's [Generative AI Prohibited Use Policy]"}))
-    A.subprocess.run = spy
+    spied("agy", spy)
     try:
         a = A.make_agent("agy", model="проба-модель", timeout=60)
         try:
@@ -92,17 +104,17 @@ def main():
         except A.Blocked:
             got = ""
     finally:
-        A.subprocess.run = real
+        restore()
     ok("agy: фильтр шлюза — Blocked, а не ответ", not got, got)
 
     # Наш срок в 1234 секунды должен дойти до agy: свой у него короче, и
     # обрыв по нему приходит как отказ модели, а не как исчерпанное время.
     spy = Ran(ANSWERS["agy"])
-    A.subprocess.run = spy
+    spied("agy", spy)
     try:
         A.make_agent("agy", model="проба", timeout=1234).run("", "запрос")
     finally:
-        A.subprocess.run = real
+        restore()
     cmd = spy.cmd or []
     ok("agy: срок ожидания наш",
        "--print-timeout" in cmd and cmd[cmd.index("--print-timeout") + 1]
@@ -156,7 +168,7 @@ def main():
     except A.RateLimited as e:
         msg = str(e)
     finally:
-        A.subprocess.run = real
+        restore()
     ok("лимит codex: в сообщении срок, а не эхо промпта",
        A.reset_after(msg) == 2 * 3600 + 5 * 60 + 3 and "правь кусок" not in msg,
        repr(msg[:80]))

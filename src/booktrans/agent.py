@@ -8,7 +8,9 @@
 import json
 import os
 import re
+import select
 import shlex
+import signal
 import subprocess
 import tempfile
 import threading
@@ -299,6 +301,79 @@ class WaitingAgent:
             raise
 
 
+LIVE = set()            # наши группы процессов: при Ctrl+C убить всех
+
+
+def _killpg(p):
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def kill_all():
+    """Дети в своём сеансе, сигнала терминала не видят — убиваются отсюда."""
+    for p in list(LIVE):
+        _killpg(p)
+
+
+def run_envelope(cmd, input, timeout, done):
+    """Запуск агента, отвечающего json-конвертом: ждём конверт, а не выход.
+
+    agy 1.1.26 после ответа на большой запрос не выходит — сбрасывает свою
+    базу и виснет, конверт уже напечатав. Ждать выхода значило сжечь полчаса
+    срока и выбросить готовый ответ. Здоровому даются три секунды выйти самому.
+    Ребёнок в своём сеансе, и убивается вся группа: под обёрткой sudo
+    одиночный kill до самой программы не доходит, повисшие жили дальше.
+    """
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, start_new_session=True)
+    LIVE.add(p)
+    errs = []
+
+    def feed():
+        try:
+            p.stdin.write(input.encode())
+            p.stdin.close()
+        except OSError:                 # умер, не дочитав: причина придёт кодом
+            pass
+    threading.Thread(target=feed, daemon=True).start()
+    hear = threading.Thread(target=lambda: errs.append(p.stderr.read()), daemon=True)
+    hear.start()
+    out, deadline, got = b"", time.time() + timeout, False
+    try:
+        while not got:
+            if time.time() > deadline:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            ready = select.select([p.stdout], [], [], 1)[0]
+            if not ready and p.poll() is not None:
+                # Вышел, а трубу держит его потомок — конца файла не будет.
+                ready = select.select([p.stdout], [], [], 0)[0]
+                if not ready:
+                    break
+            if not ready:
+                continue
+            chunk = os.read(p.stdout.fileno(), 1 << 16)
+            if not chunk:
+                break
+            out += chunk
+            got = done(out)
+        if got:
+            try:
+                p.wait(3)
+            except subprocess.TimeoutExpired:
+                pass
+    finally:
+        _killpg(p)
+        p.wait()
+        LIVE.discard(p)
+    hear.join(2)
+    rc = 0 if got and p.returncode < 0 else p.returncode
+    return subprocess.CompletedProcess(
+        cmd, rc, out.decode("utf-8", "replace"),
+        b"".join(errs).decode("utf-8", "replace"))
+
+
 class Agent:
     _default_cache = {}
 
@@ -453,6 +528,16 @@ class CommandAgent(Agent):
                 os.unlink(tmp.name)
 
 
+def agy_done(out):
+    """Удачный конверт напечатан целиком. Неудачный дожидается выхода:
+    сбой объясняют код возврата и stderr."""
+    try:
+        env = json.loads(out)
+    except ValueError:
+        return False
+    return isinstance(env, dict) and env.get("status") == "SUCCESS"
+
+
 class AgyAgent(Agent):
     """Antigravity CLI (agy)."""
 
@@ -489,8 +574,8 @@ class AgyAgent(Agent):
             payload += "\n\n" + lang.prompt("image_read_tools")[0].format(
                 path=os.path.abspath(image))
         try:
-            r = subprocess.run(cmd, input=payload, capture_output=True,
-                               text=True, timeout=self.timeout)
+            r = run_envelope(cmd, input=payload, timeout=self.timeout,
+                             done=agy_done)
         except Exception as e:
             raise AgentError(f"ошибка запуска agy: {e}")
         if r.returncode != 0:

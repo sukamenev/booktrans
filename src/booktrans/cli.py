@@ -21,7 +21,7 @@ import signal
 import sys
 import time
 
-from . import build, doctor, lang, pipeline, tune
+from . import agent, build, doctor, lang, pipeline, tune
 from .models import AGENTS, EFFORTS, Models
 from .run import Run, locked
 from .tune import config_dir
@@ -304,6 +304,7 @@ def run():
         # и ещё одно Ctrl+C от человека. os._exit минует уборку потоков,
         # из-за которой прежде вылезала трассировка threading.
         pipeline.STOP.set()
+        agent.kill_all()
         sys.stderr.write("\n" + lang.T("interrupted") + "\n")
         sys.stderr.flush()
         os._exit(130)
