@@ -76,7 +76,7 @@ def _name_like(s, tgt, upper, orig):
     единой буквы целевого языка — только сам оригинал («JPIGGOT»)."""
     parts = [p for p in re.split(r"\s*[;,]\s*", s) if p]
     if not parts or any(len([w for w in _words(p) if re.search(r"[^\W\d_]", w)])
-                        > 5 or re.search(r"[:!?]", p) for p in parts):
+                        > 5 or re.search(r"[!?]", p) for p in parts):
         return False
     if upper and not any(ch.isupper() for ch in s):
         return False
@@ -95,12 +95,18 @@ def _head(cell, sec, tgt, orig):
     Из разделителей берётся первый, за которым остаётся написание: в
     «мистер Гладли; обращение Mr. G — мистер Джи» это «;»."""
     upper = sec != "TERMS" and any(ch.isupper() for ch in orig)
-    seps = list(re.finditer(r"\s+[—–]\s+", cell))
+    # Двоеточие — только после имени: «Гилпатрик: офицер»; у термина за ним
+    # бывает и справка целиком.
+    seps = list(re.finditer(r"\s+[—–]\s+" + (r"|:\s+" if upper else ""), cell))
     # «Рой; Тейлор» и «Штаты, США» — два написания, не справка.
     seps += [m for m in re.finditer(r"[;,]\s+(?=[^\W\d_])", cell)
              if cell[m.end()].islower()]
     for m in sorted(seps, key=lambda m: m.start()):
         head = cell[:m.start()].rstrip(".")
+        # Разделитель внутри кавычек или скобок — часть написания.
+        if (any(head.count(o) != head.count(c) for o, c in ("«»", "()"))
+                or head.count('"') % 2):
+            continue
         if _name_like(head, tgt, upper, orig):
             return head, cell[m.end():]
     whole = cell.rstrip(".")
@@ -128,6 +134,9 @@ def canon_row(line, sec, tgt, legacy=False):
     if not key or set(key) <= set("- :") or key.lower() in _HEADER_KEYS:
         return line, False, False
     orig, trans = _split_key(key, tgt)
+    if orig.lower() in _HEADER_KEYS:
+        # Шапка старой таблицы с «оригиналом» в скобках; новой шапка не нужна.
+        return ("", True, False) if legacy else (line, False, False)
     if sec == "ADDRESS":
         orig = "; ".join(p for p in _ADDR_SEP.split(orig) if p)
     dead = bool(tgt) and not re.search(r"[^\W\d_]", tgt.sub("", orig))

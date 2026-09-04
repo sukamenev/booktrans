@@ -52,6 +52,7 @@ title_target = Проба
 
 ## GENDER — Род и склонение
 
+| Имя / сущность (оригинал) | Род и склонение | Пояснение |
 | Разлом (Faultline) | ж, склоняется |
 | Земля-Алеф | средний |
 | Taylor, Clockpicker | пол не сказан |
@@ -121,6 +122,14 @@ def main():
        row("| the States, U.S. | Штаты, США. |", "NAMES")[0]
        == "| the States, U.S. | Штаты, США | | |",
        row("| the States, U.S. | Штаты, США. |", "NAMES"))
+    ok("«Перевод: справка» — надвое",
+       row("| Gilpatrick | Гилпатрик: взрослый мужчина, офицер |")[0]
+       == "| Gilpatrick | Гилпатрик | | взрослый мужчина, офицер |",
+       row("| Gilpatrick | Гилпатрик: взрослый мужчина, офицер |"))
+    ok("двоеточие в кавычках — часть написания",
+       row("| Bay: Crime | «Бей: преступность» — трактат |", "NAMES")[0]
+       == "| Bay: Crime | «Бей: преступность» | | трактат |",
+       row("| Bay: Crime | «Бей: преступность» — трактат |", "NAMES"))
     ok("«Имя (Имя)» — одно имя",
        row("| Fern (Fern) | Ферн, подруга |")[0]
        == "| Fern | Ферн | | подруга |", row("| Fern (Fern) | Ферн, подруга |"))
@@ -168,7 +177,7 @@ def main():
        R.canon_row("| Сыон / Scion | з |", "CHARACTERS", None))
 
     new, n, dd = R.canon_ref(OLD, "ru", legacy=True)
-    ok("переложены все строки реестра", n == 19 and dd == 2, (n, dd))
+    ok("переложены все строки реестра", n == 20 and dd == 2, (n, dd))
     ok("VOICES не тронут", "| Рассказчик | Тейлор, 1-е лицо |" in new, new)
     ok("шапка старой таблицы выброшена",
        "| Оригинал |" not in new and "|---|" not in new, new)
@@ -178,6 +187,7 @@ def main():
     ok("свойства влиты в четвёртую, WORLD пропал",
        "| Brockton Bay | Броктон-Бей | | город; портовый город |" in new
        and "## WORLD" not in new, new)
+    ok("шапка старой таблицы выброшена", "| оригинал |" not in new, new)
     ok("мёртвая строка GENDER остаётся в своём разделе",
        "## GENDER — Род и склонение\n\n| Земля-Алеф | средний |" in new, new)
     ok("род на несколько имён — каждому персонажу",
@@ -222,7 +232,7 @@ def main():
         ok("копия старого справочника рядом",
            open(sp + ".bak", encoding="utf-8").read() == OLD)
         ok("в логе — сколько переложено и сколько мёртвых",
-           len(said) == 2 and "19" in said[0] and "2" in said[1], said)
+           len(said) == 2 and "20" in said[0] and "2" in said[1], said)
         said.clear()
         json.dump({"last": {"pipeline": R.REF_FORMAT + " abc"}},   # note_version
                   open(os.path.join(work, "versions.json"), "w"))
