@@ -26,6 +26,24 @@ REF_FORMAT = "1.10.9"
 _FOLD = {"GENDER": 2, "WORLD": 3}
 # Раздел, который прежде дописывал _unfork; теперь выбор вносится в текст.
 _ONETERM = "## ОКОНЧАТЕЛЬНЫЙ ВЫБОР ПО ТЕРМИНАМ"
+# Заголовки разведки до латинских ключей: промпт тогда был только русским.
+_OLD_TITLES = {
+    "ВЫХОДНЫЕ ДАННЫЕ": "META", "ПЕРСОНАЖИ": "CHARACTERS",
+    "ИМЕНА И НАЗВАНИЯ": "NAMES", "ТЕРМИНЫ": "TERMS",
+    "РОД И СКЛОНЕНИЕ": "GENDER", "ОБРАЩЕНИЯ": "ADDRESS", "МИР": "WORLD",
+    "КАНДИДАТЫ В СНОСКИ": "FOOTNOTES", "СТИХИ И ЦИТАТЫ": "VERSE",
+    "ОПАСНЫЕ МЕСТА": "RISK", "РАЗДЕЛЫ-УКАЗАТЕЛИ": "INDEX",
+}
+_OLD_HEAD = re.compile(r"(#{1,4}\s*)(" + "|".join(_OLD_TITLES)
+                       + r")(?![^\W\d_])", re.I)
+
+
+def _key_heads(text):
+    """Старым русским заголовкам — латинский ключ впереди."""
+    def fix(m):
+        return f"{m.group(1)}{_OLD_TITLES[m.group(2).upper()]} — {m.group(2)}"
+    return "\n".join(_OLD_HEAD.sub(fix, line, count=1) if line.startswith("#")
+                     else line for line in text.split("\n"))
 
 
 def _script_re(to):
@@ -38,27 +56,23 @@ def _script_re(to):
 
 def _split_key(key, tgt):
     """Старый ключ — в (оригинал, перевод): «Перевод (Оригинал)»,
-    «Оригинал (перевод)», «Перевод / Оригинал». Без скобок и косой —
+    «Оригинал (перевод)», «Перевод / Оригинал», «Имя (Прозвище) (Name /
+    Nick)». Куски ключа делятся по письменности; без скобок и косой —
     (ключ, '')."""
     inner = [p.strip() for p in re.findall(r"\(([^()]+)\)", key)]
     outer = " ".join(re.sub(r"\([^()]*\)", " ", key).split())
     outer = re.sub(r"\s+([,;])", r"\1", outer).strip(" :—–-")
     if len(inner) == 1 and inner[0].lower() == outer.lower():
         return outer, ""                    # «Fern (Fern)»
-    if inner:
-        orig, trans = "; ".join(inner), outer
-        if tgt and tgt.search(orig) and not tgt.search(trans):
-            orig, trans = trans, orig   # «слово (перевод)» у сносок
-        elif tgt and not tgt.search(trans):
-            return f"{trans}; {orig}", ""   # «Имя (Прозвище)» — оба оригиналы
-        return orig, trans
-    if tgt and " / " in key:
-        parts = [p.strip() for p in key.split(" / ")]
-        mine = [p for p in parts if tgt.search(p)]
-        theirs = [p for p in parts if not tgt.search(p)]
-        if mine and theirs:
-            return "; ".join(theirs), "; ".join(mine)
-    return key, ""
+    if not tgt:
+        return ("; ".join(inner), outer) if inner else (key, "")
+    pieces = [x.strip() for p in (outer, *inner) for x in p.split(" / ")
+              if x.strip()]
+    mine = [x for x in pieces if tgt.search(x)]
+    theirs = [x for x in pieces if not tgt.search(x)]
+    if not mine or not theirs:
+        return ("; ".join(pieces), "") if inner else (key, "")
+    return "; ".join(theirs), "; ".join(mine)
 
 
 _ADDR_SEP = re.compile(r"\s+[—–↔→&]\s+|\s+(?:и|and)\s+|\s*[/;,]\s*")
@@ -133,10 +147,16 @@ def canon_row(line, sec, tgt, legacy=False):
     key = re.sub(r"[\s*_`~]+", " ", cells[0]).strip()
     if not key or set(key) <= set("- :") or key.lower() in _HEADER_KEYS:
         return line, False, False
-    orig, trans = _split_key(key, tgt)
-    if orig.lower() in _HEADER_KEYS:
+    if any(p.strip().lower() in _HEADER_KEYS for p in re.split(r"[()/]", key)):
         # Шапка старой таблицы с «оригиналом» в скобках; новой шапка не нужна.
         return ("", True, False) if legacy else (line, False, False)
+    full = 4 if sec in REF_ENTITY else 3
+    # Ключ новой строки в полном виде не делится: скобки в нём — часть
+    # написания.
+    if legacy or len(cells) < full:
+        orig, trans = _split_key(key, tgt)
+    else:
+        orig, trans = key, ""
     if sec == "ADDRESS":
         orig = "; ".join(p for p in _ADDR_SEP.split(orig) if p)
     dead = bool(tgt) and not re.search(r"[^\W\d_]", tgt.sub("", orig))
@@ -148,6 +168,8 @@ def canon_row(line, sec, tgt, legacy=False):
             new = [new[0], new[1], "", new[2]]
         elif len(new) > 3 and legacy:
             new = [new[0], new[1], "", "; ".join(c for c in new[2:] if c)]
+    elif sec not in _FOLD and not dead and len(new) == 2:
+        new = [new[0], "", new[1]]             # ADDRESS и FOOTNOTES — из трёх
     out = _row(new)
     if t == out:
         return line, False, dead
@@ -214,17 +236,21 @@ def _fold(lines, kinds, rows, order, tgt):
     по _home: дописывается в конец lines, а в порядок вывода `order` — за
     последней строкой раздела. Возвращает число тронутых строк."""
     from .pipeline import _cells, _norm_key, _row, REF_ENTITY
-    whole, part, last = {}, {}, {}
+    whole, part, tpart, last = {}, {}, {}, {}
     alive = {i: is_dead for i, _, is_dead in rows}
     for i in order:
         sec = kinds[i][0]
         if i in alive and sec in REF_ENTITY:
             last[sec] = i
             if not alive[i]:
-                k = _norm_key(_cells(lines[i])[0])
+                cells = _cells(lines[i])
+                k = _norm_key(cells[0])
                 whole.setdefault(k, i)
                 for p in k.split(" / "):
                     part.setdefault(p, set()).add(i)
+                for p in (_norm_key(cells[1]).split(" / ")
+                          if len(cells) > 1 and cells[1] else ()):
+                    tpart.setdefault(p, set()).add(i)
     n = 0
     for i, sec, is_dead in list(rows):
         if sec not in _FOLD or is_dead or lines[i] is None:
@@ -236,6 +262,11 @@ def _fold(lines, kinds, rows, order, tgt):
             hits = [whole[k]]
         else:
             hits = set().union(*(part.get(p, set()) for p in k.split(" / ")))
+            # Ключ в скобках бывал не оригиналом («Маккоркл (duo)»): тогда
+            # сущность ищется по переводу.
+            if not hits and len(cells) > 2:
+                hits = set().union(*(tpart.get(p, set()) for p in
+                                     _norm_key(cells[1]).split(" / ")))
             if sec == "GENDER":
                 hits = [j for j in hits if kinds[j][0] == "CHARACTERS"] or hits
             elif len(hits) != 1:
@@ -248,7 +279,13 @@ def _fold(lines, kinds, rows, order, tgt):
             ecells = _cells(lines[j])
             if len(ecells) < 4:
                 continue
-            ecells[at] = "; ".join(x for x in (ecells[at].rstrip("."), body)
+            # Род в строке о нескольких именах («Papa, Roam, Sleepy») — чей.
+            mine = body
+            if sec == "GENDER" and k not in whole \
+                    and " / " in _norm_key(ecells[0]):
+                who = cells[1] if len(cells) > 2 and cells[1] else cells[0]
+                mine = f"{who}: {body}"
+            ecells[at] = "; ".join(x for x in (ecells[at].rstrip("."), mine)
                                    if x)
             lines[j] = _row(ecells)
         if hits:
@@ -277,10 +314,12 @@ def canon_ref(text, to, legacy=False):
     переложено, сколько мёртвых). `legacy` — справочник старой версии:
     строки старых таблиц перекладываются целиком, а раздел, оставшийся без
     строк, убирается — см. canon_row."""
-    from .pipeline import REF_ENTITY, REF_KEYED, _ref_scan
+    from .pipeline import REF_ENTITY, REF_KEYED, _cells, _ref_scan, _row
     tgt = _script_re(to)
     lines, kinds, rows, n, dead = [], [], [], 0, 0
-    skip = False
+    skip, tail = False, None
+    if legacy:
+        text = _key_heads(text)
     for sec, _head, _key, line, kind in _ref_scan(text):
         if kind == "head":
             skip = legacy and line.strip() == _ONETERM
@@ -290,6 +329,18 @@ def canon_ref(text, to, legacy=False):
             line, changed, is_dead = canon_row(line, sec, tgt, legacy)
             n += changed
             rows.append((len(lines), sec, is_dead))
+            tail = len(lines)
+        elif (legacy and tail is not None and kind == "frame"
+              and sec in REF_KEYED and re.match(r"\s+\S", line)):
+            # Подпункт карточки «  - *Выбор слов:* …» — в её содержимое.
+            cells = _cells(lines[tail])
+            more = re.sub(r"^\s*[-*•]\s*", "", line).strip()
+            cells[-1] = "; ".join(x for x in (cells[-1].rstrip("."), more)
+                                  if x)
+            lines[tail] = _row(cells)
+            continue
+        else:
+            tail = None
         lines.append(line)
         kinds.append((sec, kind))
     order = list(range(len(lines)))
@@ -309,13 +360,23 @@ def canon_ref(text, to, legacy=False):
         if not step:
             break
     dead = sum(is_dead for _, _, is_dead in rows)
-    # Раздел GENDER или WORLD, отдавший все строки и без прозы, не нужен.
+    # Раздел GENDER или WORLD, отдавший все строки и без прозы, не нужен;
+    # пустой подраздел — тоже.
     for sec in _FOLD:
         mine = [i for i, (s, _) in enumerate(kinds) if s == sec]
-        if mine and not any(lines[i] is not None and lines[i].strip()
-                            and kinds[i][1] != "head" for i in mine):
-            for i in mine:
-                lines[i] = None
+        while mine:
+            body = [i for i in mine if kinds[i][1] != "head" and lines[i]
+                    and not re.fullmatch(r"\s*(-{3,}|\*{3,})?\s*", lines[i])]
+            heads = [i for i in mine if kinds[i][1] == "head" and lines[i]]
+            if not body:
+                for i in mine:
+                    lines[i] = None
+                break
+            for h in heads[1:]:
+                if not any(i > h and i < next((j for j in heads if j > h),
+                                              len(lines)) for i in body):
+                    lines[h] = None
+            break
     res = "\n".join(lines[i] for i in order if lines[i] is not None)
     res = re.sub(r"\n{3,}", "\n\n", res)
     if text.endswith("\n") and not res.endswith("\n"):
