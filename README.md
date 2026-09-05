@@ -593,6 +593,10 @@ An agent other than `--agent` is named before the model with a colon
 ./booktrans book.epub --translator claude:claude-sonnet-5:max
 ```
 
+The log names the model together with its effort in the same spelling —
+`done in 69 s [claude-sonnet-5:max, $0.75]` — so a chain mixing efforts
+shows which one did the chunk.
+
 OpenRouter's model names carry a slash and a colon of their own
 (`deepseek/deepseek-v4:free`); the slash is what tells a model from an
 agent, so both spellings work — see "OpenRouter":

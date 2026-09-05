@@ -357,7 +357,7 @@ def _run(agent, system, prompt, retries, parse_fn, log):
     # ok» значит одно и то же, какими бы словами поставщик ни объяснял
     # запрет, — и тогда это не отказ, а ожидание.
     if isinstance(err, AgentError) and not agent_mod.alive(agent):
-        log("    " + T("probe_dead", getattr(agent, "model", "?")))
+        log("    " + T("probe_dead", agent_mod.label(agent)))
         raise RateLimited(str(err))
     raise RuntimeError("исчерпаны попытки")
 
@@ -584,7 +584,7 @@ def condense(state, upto, agent, retries, log, fallback=None):
     state["digest"] = new
     state["digest_upto"] = upto - 1
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-    log(T("digest_done", len(new), f"{dt:.0f}", f"{meta['model']}{cost}"))
+    log(T("digest_done", len(new), f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
     return new
 
 
@@ -1146,7 +1146,7 @@ def _chain_run(who, system, prompt, retries, parse, log):
                 continue
             if k:
                 log("")
-                log("    " + T("refused_retry", getattr(a, "model", "?")), end="")
+                log("    " + T("refused_retry", agent_mod.label(a)), end="")
             try:
                 got, meta, dt = _run(a, system, prompt, retries, parse, log)
                 # Пометка «после отказа» уходит в файл куска вместе с именами
@@ -1348,7 +1348,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
             for fb in backups:
                 if agent_mod.limit_left(fb):
                     continue
-                log("    " + T("refused_retry", getattr(fb, "model", "?")))
+                log("    " + T("refused_retry", agent_mod.label(fb)))
                 try:
                     got = _run(fb, system, prompt, retries,
                                lambda o: _parse_translate(o, expected, srcs), log)
@@ -1409,7 +1409,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                   ensure_ascii=False, indent=1)
         done += 1
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-        log(T("ready_in", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        log(T("ready_in", f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
     return done, skipped, halted
 
 
@@ -1770,7 +1770,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             with lock:
                 if stopped:
                     log("    " + T("edit_stopped", stopped, len(ids)))
-                log("    " + T("refused_retry", getattr(fb, "model", "?")))
+                log("    " + T("refused_retry", agent_mod.label(fb)))
             try:
                 (res2, notes2), meta2, dt2 = _run(fb, system, prompt, retries,
                                                   parse, log)
@@ -1816,7 +1816,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             total += len(res)
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
                 + T("ed_done", f"{len(res):3d}", f"{len(draft):3d}",
-                    f"{dt:.0f}", f"{meta['model']}{cost}"))
+                    f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
             if stopped:
                 log("    " + T("edit_stopped", stopped, len(ids)))
                 # Три оборванных куска подряд — дело уже не в книге, как и при
@@ -2154,7 +2154,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
                 + T("vf_done", counts["author"], counts["translation"],
                     counts["dismiss"], counts["unsure"], f"{dt:.0f}",
-                    f"{meta['model']}{cost}"))
+                    f"{agent_mod.label(meta)}{cost}"))
 
     if jobs > 1 and len(todo) > 1:
         log("  " + T("in_threads", jobs))
@@ -2269,7 +2269,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
             total += len(items)
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} "
                 + T("nt_done", f"{len(items):2d}", f"{dt:.0f}",
-                    f"{meta['model']}{cost}"))
+                    f"{agent_mod.label(meta)}{cost}"))
 
     if jobs > 1 and len(todo) > 1:
         log("  " + T("in_threads", jobs))
@@ -2413,7 +2413,7 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
         a = next((x for x in who[k:] if not agent_mod.limit_left(x)), who[k])
         if a is not who[0]:
             log("")
-            log("  " + T("refused_retry", getattr(a, "model", "?")), end="")
+            log("  " + T("refused_retry", agent_mod.label(a)), end="")
         out, meta = a.run("", task + "\n\n---\n\n" + body)
         cost[0] += meta.get("cost_usd") or 0
         return out
@@ -2427,7 +2427,7 @@ def format_marks(work, path, agent, task, encoding, ask, log, fallback=None):
     marks, names = fmt.plan(paras, run, log, photo, tries=len(who),
                             resume=resume, save=keep)
     log(T("took", f"{time.time() - t:.0f}",
-          f"{getattr(agent, 'model', '?')}" + (f", ${cost[0]:.2f}" if cost[0] else "")))
+          agent_mod.label(agent) + (f", ${cost[0]:.2f}" if cost[0] else "")))
     cuts = _check_toc(work, paras, marks, names, log)
     kinds = collections.Counter(marks.values())
     log("  " + T("marks_done", kinds.get("title", 0), kinds.get("skip", 0),
@@ -2540,7 +2540,7 @@ def code_comments(work, blocks, agent, system, task, retries, log,
             n += k
     _save(p, done, stamp=False)
     log(T("took", f"{time.time() - t:.0f}",
-          f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
+          agent_mod.label(agent) + (f", ${cost:.2f}" if cost else "")))
     log("  " + T("code_done", n, len(todo)))
     return done
 
@@ -2644,7 +2644,7 @@ def fix_ocr(work, blocks, agent, system, task, retries, log, fallback=None):
         # на тридцатом не должен терять все тридцать.
         _save(p, done, stamp=False)
     log(T("took", f"{time.time() - t0:.0f}",
-          f"{getattr(agent, 'model', '?')}" + (f", ${cost:.2f}" if cost else "")))
+          agent_mod.label(agent) + (f", ${cost:.2f}" if cost else "")))
     log("  " + T("fix_done", n, len(todo)) + (T("fix_bad", bad) if bad else ""))
     note_source(work, fixer=getattr(agent, "model", None) or "?")
     return done
@@ -3396,7 +3396,7 @@ def _settle_rows(conflicts, total, who, system, retries, log, to=""):
             log(T("scout_rows_kept"))
             return
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-        log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+        log(T("took", f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
         for line in res.splitlines():
             t = line.strip()
             if not t or t.startswith("#"):
@@ -3570,7 +3570,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             findings[i - 1] = res
             json.dump(findings, open(mkparent(half), "w", encoding="utf-8"),
                       ensure_ascii=False)
-            took = T("took", f"{dt:.0f}", f"{m['model']}{cost}")
+            took = T("took", f"{dt:.0f}", f"{agent_mod.label(m)}{cost}")
             log(took if jobs <= 1
                 else "  " + T("scout_block", i, len(parts), wc) + took)
 
@@ -3648,7 +3648,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 (m, _), meta, dt = _chain_run(who, system, merge, retries,
                                               _parse_scout, log)
                 cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-                log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+                log(T("took", f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
                 nxt.append(m)
                 json.dump(nxt + [f for b in batches[j:] for f in b],
                           open(mkparent(mfile), "w", encoding="utf-8"),
@@ -3804,12 +3804,12 @@ def _condense_scout(merged, who, system, retries, log, out_path):
         short, meta, why = _shrink(now, _floor(now, len(now) - SCOUT_BUDGET),
                                    who, system, retries, log)
         cost += meta.get("cost_usd") or 0
-        model = meta.get("model") or model
+        model = agent_mod.label(meta) if meta.get("model") else model
         if not short:
             log("\n    " + T("shr_no", why), end="")
             break
         log("\n    " + T("shr_ok", len(now), len(short),
-                         meta.get("model") or "?"), end="")
+                         agent_mod.label(meta)), end="")
         now = short
     log("\n  " + T("took", f"{time.time() - t0:.0f}",
                   model + (f", ${cost:.2f}" if cost else "")))
@@ -3923,7 +3923,7 @@ def _unfork(merged, forked, who, system, retries, log, out_path):
     (res, _), meta, dt = _chain_run(who, system or _text_only(), ask, retries,
                                     lambda o: (o, ""), log)
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-    log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+    log(T("took", f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
 
     picks = {}
     for line in res.splitlines():
@@ -4032,10 +4032,10 @@ def headings(work, blocks, agent, system, retries, log, fallback=None, to=""):
         
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         if len(uniq) > HEAD_CHUNK:
-            log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+            log(T("took", f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
             
     if len(uniq) <= HEAD_CHUNK:
-        log(T("ready_in", f"{total_dt:.0f}", f"{meta['model']}{cost}"))
+        log(T("ready_in", f"{total_dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
     return have
 
 
@@ -4100,7 +4100,7 @@ def detect_structure(work, styles, agent, task, retries, log, fallback=None):
     out.update(got)
     json.dump(out, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
-    log(T("took", f"{dt:.0f}", f"{meta['model']}{cost}"))
+    log(T("took", f"{dt:.0f}", f"{agent_mod.label(meta)}{cost}"))
     log("  " + ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())
                          if k != "?"))
     return got

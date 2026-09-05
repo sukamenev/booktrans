@@ -229,6 +229,15 @@ def key_of(a):
     return f"{getattr(a, 'kind', '?')}:{getattr(a, 'model', None) or '—'}"
 
 
+def label(a):
+    """Модель с усилием для лога, как в ключе: `claude-opus-5:medium`.
+    Принимает агента или мету его ответа; усилие, вшитое в имя модели
+    (agy), не повторяется."""
+    get = a.get if isinstance(a, dict) else lambda k, d=None: getattr(a, k, d)
+    model, effort = get("model") or "?", get("effort")
+    return f"{model}:{effort}" if effort else model
+
+
 def limit_left(a):
     return LIMITS.left(key_of(a))
 
@@ -292,12 +301,16 @@ class WaitingAgent:
     def kind(self):
         return getattr(self.inner, "kind", "?")
 
+    @property
+    def effort(self):
+        return getattr(self.inner, "effort", None)
+
     def run(self, system, user, image=None):
         left = LIMITS.left(key_of(self))
         if left:
             raise RateLimited(T("lim_known", self.model, max(int(left) // 60, 1)))
         try:
-            return self.inner.run(system, user, image=image)
+            text, meta = self.inner.run(system, user, image=image)
         except RateLimited as e:
             # Названо точное время снятия — берём его, а не четверть часа
             # вслепую. Полминуты сверху: часы у нас и у поставщика расходятся,
@@ -305,6 +318,9 @@ class WaitingAgent:
             pause = reset_after(str(e))
             LIMITS.note(key_of(self), pause + 30 if pause else self.interval)
             raise
+        # Усилие — свойство запуска, а не ответа: в мету оно попадает отсюда,
+        # чтобы лог назвал модель вместе с ним.
+        return text, (dict(meta, effort=self.effort) if self.effort else meta)
 
 
 LIVE = set()            # наши группы процессов: при Ctrl+C убить всех
