@@ -2870,7 +2870,7 @@ def _headify(text):
         t = line.strip()
         if (t and not t.startswith("#") and len(t) < 60 and re.match(
                 r"(?:META|CHARACTERS|VOICES|NAMES|TERMS|GENDER|ADDRESS|"
-                r"WORLD|FOOTNOTES|VERSE|RISK)\b\s*($|—|-|:)", t)):
+                r"WORLD|FOOTNOTES|VERSE|RISK|UNITS)\b\s*($|—|-|:)", t)):
             line = "## " + t
         out.append(line)
     return "\n".join(out)
