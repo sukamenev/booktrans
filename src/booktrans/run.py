@@ -434,7 +434,7 @@ class Run:
         """
         to = self.args.to
         parts = [lang.prompt("sys_language")[0].format(lang=lang.lang_name(to)),
-                 self.task("style")]
+                 self.task("style"), self.task("units")]
         # Порча от распознавания — свойство исходника, а не прохода: её видят
         # и разведка, и перевод, и редактура, поэтому место ей в общем промпте.
         if self.made_by_ocr:

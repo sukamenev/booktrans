@@ -112,7 +112,11 @@ translation, adds footnotes and assembles the file.
 - **renders verse as verse**, quotes canonical texts from recognised
   translations;
 - **converts units** to the system the target reader uses — except inside
-  quotations, names and clinical measures;
+  quotations, names, clinical measures and trade sizes the target country
+  keeps in the author's unit (inch pipes, screen diagonals, calibres).
+  The rule is a prompt of its own, `prompts/units.md`, seen by every pass,
+  so the editor and the verifier judge by it too and do not "correct" a
+  converted figure back; your country's exceptions go into `units.add.md`;
 - **carries over** images, links, front and back matter, publication data;
 - **leaves code alone** in programming books, but translates the comments
   inside it;

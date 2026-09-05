@@ -2,7 +2,8 @@
 
 These are the instructions the pipeline gives the model — one file per pass:
 `translate.md`, `edit.md`, `scout.md`, `format.md`, `structure.md`, `notes.md`,
-`code.md`, `ocr.md`, `ocrfix.md`, and `style.md`, which goes into every request.
+`code.md`, `ocr.md`, `ocrfix.md`, and two that go into every request:
+`style.md` and `units.md` (when and how measures are converted).
 They are written in Russian; the model works with any target language from
 them.
 
