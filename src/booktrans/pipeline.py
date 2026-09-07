@@ -32,7 +32,25 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    STUB_MIN, STUB_SHARE,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
-                   VERSE_GROUP, HEAD_CHUNK)
+                   VERSE_GROUP, HEAD_CHUNK, WARM)
+
+
+def in_threads(one, todo, jobs, log):
+    """Проход в `jobs` потоков. Первый кусок идёт один: кэш общего начала
+    промпта поставщик отдаёт лишь тем, кто пришёл после ответа первому, и
+    волна, пущенная разом, прошла бы мимо вся. Пул без `with`: при выходе
+    тот ждёт все запущенные задачи, и Ctrl+C не доходит до обработчика,
+    пока не вернётся последний запрос. Здесь очередь отменяется, флаг STOP
+    останавливает потоки, а сделанное уже на диске."""
+    log("  " + T("in_threads", jobs))
+    ex = cf.ThreadPoolExecutor(max_workers=jobs)
+    try:
+        first = ex.submit(one, todo[0])
+        cf.wait([first], timeout=WARM)
+        list(ex.map(one, todo[1:]))
+        first.result()
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
 HEAD_KINDS = ("title", "subtitle")
 
@@ -1004,6 +1022,14 @@ def _save(path, obj, keep=True, stamp=True):
     os.replace(tmp, path)
 
 
+def _spent(meta):
+    """Учёт в файл куска: модель, цена и токены — где поставщик их называет."""
+    out = {"model": meta["model"], "cost_usd": meta["cost_usd"]}
+    if meta.get("tokens"):
+        out["tokens"] = meta["tokens"]
+    return out
+
+
 def _blockmap(path):
     """Карта «блок → сделанная работа». Метку времени, если она туда попала от
     прежних выпусков, снимаем: блока с именем `saved` не бывает."""
@@ -1387,8 +1413,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 res[k] = v
         verse_learn(state, c["blocks"], res)
         summ, terms = _split_meta(extra)
-        _save(out_path, {"index": idx, "model": meta["model"],
-                         "cost_usd": meta["cost_usd"], "footnotes": found,
+        _save(out_path, {"index": idx, **_spent(meta), "footnotes": found,
                          **{k: meta[k] for k in ("after_refusal", "refused_by")
                             if meta.get(k)},
                          "tr": res,
@@ -1801,8 +1826,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         # считается сделанное. Хвост оборванного куска в `src` не пишем,
         # иначе он сойдёт за отредактированный.
         covered = ids[:stopped] if stopped else ids
-        out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
-               "notes": notes, "blocks": ids,
+        out = {"index": idx, **_spent(meta), "notes": notes, "blocks": ids,
                "src": {k: fingerprint(draft[k]) for k in covered},
                "edits": {k: {"old": draft[k], "new": v} for k, v in res.items()}}
         if stopped:
@@ -1828,17 +1852,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 refused[0] = 0
 
     if jobs > 1 and len(todo) > 1:
-        log("  " + T("in_threads", jobs))
-        # Не `with`: при выходе он ждёт завершения всех запущенных задач, и
-        # Ctrl+C не доходит до обработчика, пока не вернётся последний
-        # запрос к модели. Человек жмёт снова и снова и в конце получает
-        # трассировку из недр threading. Здесь ожидания нет: очередь
-        # отменяется, флаг STOP останавливает потоки, а сделанное уже на диске.
-        ex = cf.ThreadPoolExecutor(max_workers=jobs)
-        try:
-            list(ex.map(one, todo))
-        finally:
-            ex.shutdown(wait=False, cancel_futures=True)
+        in_threads(one, todo, jobs, log)
     else:
         for c in todo:
             one(c)
@@ -2133,8 +2147,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                  "dismiss": T("vf_dismissed"), "unsure": T("vf_unsure")}
         lines = [f"{i}: {kinds[verdicts[i][0]]} {verdicts[i][1]}".strip()
                  for i in ids if i in verdicts]
-        out = {"index": idx, "model": meta["model"], "cost_usd": meta["cost_usd"],
-               "remark": fingerprint(remark),
+        out = {"index": idx, **_spent(meta), "remark": fingerprint(remark),
                # Отпечаток — от текста ПОСЛЕ исправления: следующий запуск
                # увидит его же и сочтёт сверенным. По досверочному сверка
                # зацикливалась бы на каждом исправленном блоке.
@@ -2157,14 +2170,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                     f"{agent_mod.label(meta)}{cost}"))
 
     if jobs > 1 and len(todo) > 1:
-        log("  " + T("in_threads", jobs))
-        # Не `with`: см. редактуру — при выходе он ждал бы все запущенные
-        # задачи, и Ctrl+C не доходил до обработчика.
-        ex = cf.ThreadPoolExecutor(max_workers=jobs)
-        try:
-            list(ex.map(one, todo))
-        finally:
-            ex.shutdown(wait=False, cancel_futures=True)
+        in_threads(one, todo, jobs, log)
     else:
         for it in todo:
             one(it)
@@ -2261,8 +2267,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
 
         (items, _), meta, dt = _chain_run(chain, system, prompt, retries,
                                           parse_notes, log)
-        _save(out_path, {"index": idx, "model": meta["model"],
-                         "cost_usd": meta["cost_usd"], "notes": items})
+        _save(out_path, {"index": idx, **_spent(meta), "notes": items})
         cost = f", ${meta['cost_usd']:.2f}" if meta.get("cost_usd") else ""
         with lock:
             done += 1
@@ -2272,17 +2277,7 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                     f"{agent_mod.label(meta)}{cost}"))
 
     if jobs > 1 and len(todo) > 1:
-        log("  " + T("in_threads", jobs))
-        # Не `with`: при выходе он ждёт завершения всех запущенных задач, и
-        # Ctrl+C не доходит до обработчика, пока не вернётся последний
-        # запрос к модели. Человек жмёт снова и снова и в конце получает
-        # трассировку из недр threading. Здесь ожидания нет: очередь
-        # отменяется, флаг STOP останавливает потоки, а сделанное уже на диске.
-        ex = cf.ThreadPoolExecutor(max_workers=jobs)
-        try:
-            list(ex.map(one, todo))
-        finally:
-            ex.shutdown(wait=False, cancel_futures=True)
+        in_threads(one, todo, jobs, log)
     else:
         for c in todo:
             one(c)

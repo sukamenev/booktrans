@@ -975,21 +975,33 @@ def usage_report(work, log, T=None, to=""):
                 continue
             x = json.load(open(os.path.join(d, n), encoding="utf-8"))
             k = (step, name, x.get("model") or "?")
-            r = rows.setdefault(k, {"n": 0, "usd": 0.0})
+            r = rows.setdefault(k, {"n": 0, "usd": 0.0, "in": 0, "cached": 0, "out": 0})
             r["n"] += 1
             r["usd"] += x.get("cost_usd") or 0
+            tok = x.get("tokens") or {}
+            for f in ("in", "cached", "out"):
+                r[f] += tok.get(f) or 0
     if not rows:
         return
+    # Токены — тысячами, кэш — долей входа; пусто там, где поставщик счёта
+    # не называет.
+    kilo = lambda v: f"{v / 1000:.0f}" if v else ""      # noqa: E731
+    share = lambda r: f"{100 * r['cached'] / r['in']:.0f}" if r["in"] else ""  # noqa: E731
+
+    def line(name, model, r):
+        log(f"  {name:12s} {model:22s} {r['n']:9d} {kilo(r['in']):>11s} "
+            f"{share(r):>8s} {kilo(r['out']):>12s} {r['usd']:8.2f}")
+
     log("")
     log(T("usage"))
-    log(f"  {T('usage_pass'):12s} {T('usage_model'):22s} "
-        f"{T('usage_reqs'):>9s} {'$':>8s}")
-    tot_n = tot_u = 0
+    log(f"  {T('usage_pass'):12s} {T('usage_model'):22s} {T('usage_reqs'):>9s} "
+        f"{T('usage_in'):>11s} {T('usage_cached'):>8s} {T('usage_out'):>12s} {'$':>8s}")
+    tot = {"n": 0, "usd": 0.0, "in": 0, "cached": 0, "out": 0}
     for (_, name, model), r in sorted(rows.items()):
-        log(f"  {name:12s} {model:22s} {r['n']:9d} {r['usd']:8.2f}")
-        tot_n += r["n"]
-        tot_u += r["usd"]
-    log(f"  {T('usage_sum'):12s} {'':22s} {tot_n:9d} {tot_u:8.2f}")
+        line(name, model, r)
+        for k in tot:
+            tot[k] += r[k]
+    line(T("usage_sum"), "", tot)
     log("  " + T("usage_note_scout"))
     log("  " + T("usage_note_sub"))
 

@@ -34,11 +34,31 @@ class Ran:
         return self
 
 
+# Codex отвечает потоком событий (`--json`): текст — в agent_message, счёт
+# токенов — в turn.completed; служебные строки без json перемежаются.
+CODEX_STREAM = "\n".join((
+    "Reading prompt from stdin...",
+    json.dumps({"type": "thread.started", "thread_id": "t1"}),
+    json.dumps({"type": "item.completed", "item": {
+        "type": "agent_message", "text": "готово"}}),
+    json.dumps({"type": "turn.completed", "usage": {
+        "input_tokens": 1200, "cached_input_tokens": 1000,
+        "output_tokens": 300, "reasoning_output_tokens": 50}}),
+))
 ANSWERS = {
-    "claude": json.dumps({"result": "готово", "total_cost_usd": 0}),
-    "agy": json.dumps({"status": "SUCCESS", "response": "готово"}),
-    "codex": "готово",
+    "claude": json.dumps({"result": "готово", "total_cost_usd": 0.5,
+                          "modelUsage": {"проба-модель": {
+                              "inputTokens": 50, "cacheReadInputTokens": 1000,
+                              "cacheCreationInputTokens": 150,
+                              "outputTokens": 300, "thinkingTokens": 50}}}),
+    "agy": json.dumps({"status": "SUCCESS", "response": "готово",
+                       "usage": {"input_tokens": 1200, "cache_read_tokens": 1000,
+                                 "output_tokens": 250, "thinking_tokens": 50,
+                                 "total_tokens": 1500}}),
+    "codex": CODEX_STREAM,
 }
+# Один счёт на всех: вход с кэшем, из него кэш; выход с рассуждениями.
+TOKENS = {"in": 1200, "cached": 1000, "out": 300, "reasoning": 50}
 
 
 def main():
@@ -69,13 +89,16 @@ def main():
         try:
             a = A.make_agent(kind, model="проба-модель", timeout=1234,
                              effort="low")
-            a.run("система", "запрос")
+            got, meta = a.run("система", "запрос")
         finally:
             restore()
         cmd = spy.cmd or []
         ok(f"{kind}: модель названа", "проба-модель" in cmd, cmd)
         ok(f"{kind}: усилие названо",
            any("low" in str(c) for c in cmd), cmd)
+        ok(f"{kind}: текст ответа", got == "готово", repr(got))
+        ok(f"{kind}: счёт токенов", meta.get("tokens") == TOKENS,
+           meta.get("tokens"))
 
     # SUCCESS с пустым текстом — пустой ответ, а не сбой: перевод разберёт
     # его как обрыв на первом блоке, и два таких подряд станут отказом со
@@ -219,7 +242,10 @@ def main():
     stream = [{"model": "deepseek/x:free",
                "choices": [{"delta": {"content": "гото"}, "finish_reason": None}]},
               {"choices": [{"delta": {"content": "во"}, "finish_reason": "stop"}],
-               "usage": {"cost": 0.0021}}]
+               "usage": {"cost": 0.0021, "prompt_tokens": 1200,
+                         "prompt_tokens_details": {"cached_tokens": 1000},
+                         "completion_tokens": 300,
+                         "completion_tokens_details": {"reasoning_tokens": 50}}}]
     spy, got = openrouter(200, stream)
     b = spy.body
     ok("openrouter: модель с косой чертой и вариантом — как есть",
@@ -231,7 +257,8 @@ def main():
        sysm and sysm[0]["content"][0]["text"] == "система"
        and sysm[0]["content"][0].get("cache_control"), sysm)
     ok("openrouter: текст склеен из потока, модель и цена из ответа",
-       got == ("готово", {"model": "deepseek/x:free", "cost_usd": 0.0021}), got)
+       got == ("готово", {"model": "deepseek/x:free", "cost_usd": 0.0021,
+                          "tokens": TOKENS}), got)
     spy, got = openrouter(200, stream, effort=None, system="")
     ok("openrouter: без усилия и системы — без reasoning и system",
        "reasoning" not in spy.body

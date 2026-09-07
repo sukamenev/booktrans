@@ -185,6 +185,42 @@ def bare_words(msg, sent=""):
     return msg.strip()
 
 
+def tokens(inp=0, cached=0, out=0, reasoning=0):
+    """Счёт токенов запроса, один на всех поставщиков: вход целиком и сколько
+    из него взято из кэша, выход целиком и сколько из него — рассуждения."""
+    return {"in": int(inp or 0), "cached": int(cached or 0),
+            "out": int(out or 0), "reasoning": int(reasoning or 0)}
+
+
+def codex_events(stdout):
+    """Разбор потока `codex exec --json` -> (текст ответа, usage, ошибки).
+
+    Не-json строки (баннер, эхо промпта) пропускаются. Поток без единого
+    события — ответ codex без --json, отдаётся как есть.
+    """
+    texts, usage, errors, seen = [], None, [], False
+    for line in (stdout or "").splitlines():
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        seen = True
+        kind, item = e.get("type"), e.get("item") or {}
+        if kind == "item.completed" and item.get("type") == "agent_message":
+            texts.append(item.get("text") or "")
+        elif kind == "item.completed" and item.get("type") == "error":
+            errors.append(item.get("message") or "")
+        elif kind == "turn.completed":
+            usage = e.get("usage") or {}
+        elif kind == "error":
+            errors.append(e.get("message") or "")
+    if not seen:
+        return stdout, None, []
+    return "\n\n".join(texts), usage, errors
+
+
 class Limits:
     """Кто из моделей сейчас под лимитом и до какого времени.
 
@@ -403,7 +439,7 @@ class Agent:
         return "unknown"
 
     def run(self, system, user, image=None):
-        """-> (текст ответа, {'model':..., 'cost_usd':...})"""
+        """-> (текст ответа, {'model':..., 'cost_usd':..., 'tokens': tokens()|None})"""
         raise NotImplementedError
 
 
@@ -499,9 +535,15 @@ class ClaudeAgent(Agent):
             raise AgentError(f"агент сообщил об ошибке: {msg[:300]}")
         usage = env.get("modelUsage") or {}
         main = {k: v for k, v in usage.items() if not k.startswith("claude-haiku")}
+        model = max(main, key=lambda k: main[k].get("outputTokens", 0), default=None)
+        u = main.get(model) or {}
         return env.get("result") or "", {
-            "model": max(main, key=lambda k: main[k].get("outputTokens", 0), default=None),
+            "model": model,
             "cost_usd": env.get("total_cost_usd"),
+            "tokens": tokens(u.get("inputTokens", 0) + u.get("cacheReadInputTokens", 0)
+                             + u.get("cacheCreationInputTokens", 0),
+                             u.get("cacheReadInputTokens"), u.get("outputTokens"),
+                             u.get("thinkingTokens")) if u else None,
         }
 
 
@@ -613,6 +655,7 @@ class AgyAgent(Agent):
             if not plain:
                 raise Hushed(f"agy вернул {r.returncode} без объяснения")
             raise AgentError(f"agy вернул {r.returncode}: {plain[:400]}")
+        tok = None
         try:
             env = json.loads(r.stdout)
             # SUCCESS с пустым текстом — пустой ответ, а не сбой: перевод
@@ -623,12 +666,21 @@ class AgyAgent(Agent):
             # не подставляется: разбор жаловался бы «ответ без маркеров» с
             # json вместо текста в сообщении.
             text = str(env.get("result") or env.get("response") or "")
+            u = env.get("usage")
+            if u:
+                inp, out = u.get("input_tokens") or 0, u.get("output_tokens") or 0
+                think = u.get("thinking_tokens") or 0
+                # Gemini считает рассуждения отдельно от ответа — тогда они
+                # входят в total; у нас выход — всё порождённое.
+                if (u.get("total_tokens") or 0) >= inp + out + think:
+                    out += think
+                tok = tokens(inp, u.get("cache_read_tokens"), out, think)
         except json.JSONDecodeError:
             text = r.stdout
         # Фильтр шлюза приходит и с кодом 0 — сообщением вместо ответа.
         if BLOCKED_PAT.search(text[:400]):
             raise Blocked(text.strip()[:300])
-        return text, {"model": self.model, "cost_usd": None}
+        return text, {"model": self.model, "cost_usd": None, "tokens": tok}
 
 
 class CodexAgent(Agent):
@@ -653,7 +705,9 @@ class CodexAgent(Agent):
 
     def run(self, system, user, image=None):
         payload = f"{system}\n\n---\n\n{user}" if system else user
-        cmd = ["codex", "exec", "--skip-git-repo-check",
+        # --json — тот же запрос, но ответ приходит потоком событий, и в
+        # последнем, turn.completed, лежит счёт токенов.
+        cmd = ["codex", "exec", "--skip-git-repo-check", "--json",
                "-c", 'web_search="disabled"', "--sandbox", "read-only"]
         if self.model:
             cmd += ["--model", self.model]
@@ -666,8 +720,9 @@ class CodexAgent(Agent):
                                text=True, timeout=self.timeout)
         except Exception as e:
             raise AgentError(f"ошибка запуска codex: {e}")
+        text, usage, errors = codex_events(r.stdout)
         if r.returncode != 0:
-            msg = said(r)
+            msg = "\n".join(errors) or said(r)
             if limited(msg):
                 # Леса и эхо срезаем и здесь: в трёхстах знаках лимита должен
                 # быть виден срок возвращения, а не баннер с workdir и не
@@ -686,7 +741,10 @@ class CodexAgent(Agent):
             m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)
             if m:
                 actual_model = m.group(1)
-        return r.stdout, {"model": actual_model, "cost_usd": None}
+        tok = tokens(usage.get("input_tokens"), usage.get("cached_input_tokens"),
+                     usage.get("output_tokens"), usage.get("reasoning_output_tokens")
+                     ) if usage else None
+        return text, {"model": actual_model, "cost_usd": None, "tokens": tok}
 
 
 OPENROUTER_ENV = "OPENROUTER_API_KEY"
@@ -822,7 +880,7 @@ class OpenRouterAgent(Agent):
             err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)
-        text, model, cost, finish = [], self.model, None, None
+        text, model, cost, tok, finish = [], self.model, None, None, None
         for ev in events:
             if ev.get("error"):
                 raise openrouter_error(ev["error"].get("code"), ev["error"])
@@ -832,11 +890,16 @@ class OpenRouterAgent(Agent):
                     text.append(piece)
                 finish = ch.get("finish_reason") or finish
             model = ev.get("model") or model
-            if ev.get("usage"):
-                cost = ev["usage"].get("cost")
+            u = ev.get("usage")
+            if u:
+                cost = u.get("cost")
+                tok = tokens(u.get("prompt_tokens"),
+                             (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
+                             u.get("completion_tokens"),
+                             (u.get("completion_tokens_details") or {}).get("reasoning_tokens"))
         if finish == "content_filter":
             raise Blocked(T("or_filter", model))
-        return "".join(text), {"model": model, "cost_usd": cost}
+        return "".join(text), {"model": model, "cost_usd": cost, "tokens": tok}
 
 
 def make_agent(kind="claude", model=None, command=None, timeout=1800,

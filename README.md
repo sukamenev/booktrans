@@ -444,7 +444,11 @@ on the previous one: the tail of the translated text, the plot digest, the
 accumulated terms. Translating in parallel would throw away the very
 machinery that keeps a book coherent.
 
-**Editing, verification and footnotes parallelise**: `--jobs 3`.
+**Editing, verification and footnotes parallelise**: `--jobs 3`. The first
+chunk of each pass goes alone and the other threads start about 25 seconds
+later: providers serve the prompt cache only to requests that arrive after
+the first one has been answered, so a wave fired at once would all miss it.
+One warm-up per pass is enough — after it the cache serves every thread.
 
 **Scouting can too** — `--scout-jobs 3` — but it is off by default and
 that is deliberate. Parts run in waves of that size; names born in
@@ -1211,16 +1215,26 @@ At the end of a run the pipeline reports what it cost, by pass and by model:
 
 ```
 USAGE
-  pass         model                   requests        $
-  translation  claude-opus-5                 44    19.80
-  editing      claude-sonnet-5               44     6.10
-  TOTAL                                      88    25.90
+  pass         model                   requests   in, k tok  cache %   out, k tok        $
+  translation  gpt-5.6-sol                   44        1320       34          180     0.00
+  editing      claude-opus-5                 44        1408       41           92    19.80
+  TOTAL                                      88        2728       38          272    19.80
 ```
 
 Counted from the chunk files rather than an in-memory tally: an interrupted
 run keeps its accounting, and rebuilding a week later shows the same figures.
 Reconnaissance and markup detection are not included — they write no chunk
 files.
+
+Tokens are in thousands, as the provider reports them: input including the
+cached part, output including reasoning. `cache %` is the share of input
+served from the prompt cache — a cached token costs about a tenth of a fresh
+one at Anthropic and OpenAI alike. Only what repeats between chunks can be
+cached: the rules and the reference skeleton do, the previous chunk's tail,
+the summary and the per-chunk reference rows do not. The exact figures per
+request — with the cached and reasoning parts separately — are in the chunk
+files, field `tokens`. A subscription bills nothing in dollars, but it burns
+a quota, and the token columns are what it burns.
 
 On a subscription the sum is indicative: that is what it would cost at API
 rates. With OpenRouter it is what was charged.
