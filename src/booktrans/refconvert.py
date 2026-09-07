@@ -17,9 +17,12 @@ import re
 
 from .lang import T
 
-# Выпуск, с которого справочник пишется в новом виде; папку, которую
+# Выпуск, с которого справочник пишется в нынешнем виде; папку, которую
 # последней трогала версия старше, convert_ref перекладывает при открытии.
-REF_FORMAT = "1.10.9"
+REF_FORMAT = "1.10.19"
+# До этого выпуска строки таблиц были вида «| ключ | содержимое |»: такой
+# справочник перекладывается глубже (legacy у canon_row).
+REF_LEGACY = "1.10.9"
 
 # Разделы, чьи строки вливаются в ячейки сущностей: род — в третью,
 # свойства — в четвёртую.
@@ -158,7 +161,11 @@ def canon_row(line, sec, tgt, legacy=False):
     else:
         orig, trans = key, ""
     if sec == "ADDRESS":
-        orig = "; ".join(p for p in _ADDR_SEP.split(orig) if p)
+        # Самодельная строка «кто | кому | форма»: второе имя — к первому.
+        if (tgt and len(cells) > 2 and re.search(r"[^\W\d_]", cells[1])
+                and not tgt.search(cells[1]) and tgt.search(cells[2])):
+            orig, cells[1] = f"{orig}; {cells[1]}", ""
+        orig = "; ".join(dict.fromkeys(p for p in _ADDR_SEP.split(orig) if p))
     dead = bool(tgt) and not re.search(r"[^\W\d_]", tgt.sub("", orig))
     new = [orig, trans] + cells[1:] if trans else [orig] + cells[1:]
     if sec in REF_ENTITY and not dead:
@@ -390,7 +397,7 @@ def _vtuple(v):
 
 def convert_ref(work, to, log):
     """Справочник папки, которую последней трогала версия старше REF_FORMAT,
-    переложить в новый вид; старый — в scout.md.bak."""
+    переложить в нынешний вид; прежний — в scout.md.bak."""
     from .pipeline import lpath
     sp = lpath(work, "scout.md", to)
     if not os.path.exists(sp):
@@ -404,7 +411,7 @@ def convert_ref(work, to, log):
         return
     with open(sp, encoding="utf-8") as f:
         txt = f.read()
-    new, n, dead = canon_ref(txt, to, legacy=True)
+    new, n, dead = canon_ref(txt, to, _vtuple(last) < _vtuple(REF_LEGACY))
     if new != txt:
         with open(sp + ".bak", "w", encoding="utf-8") as f:
             f.write(txt)

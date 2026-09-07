@@ -104,9 +104,12 @@ translation, adds footnotes and assembles the file.
   a cumulative plot digest and a shared list of accepted terms; the reference
   is two-tier: the registry — one row per entity, with the original, the
   translation, gender and a note — is merged by code without losses and has
-  no size cap — only the rows that occur in the chunk ride along (references
-  from earlier releases are converted to this layout automatically, with a
-  copy kept beside) — while every request carries just a short frame (narrator,
+  no size cap — only the rows that occur in the chunk ride along, an address
+  pair "who; to whom" only when both are in the chunk, and on a book with a
+  huge registry the rows are also held to a per-chunk cap: names and terms
+  first, then address pairs, the most-mentioned ahead (references from
+  earlier releases are converted to this layout automatically, with a copy
+  kept beside) — while every request carries just a short frame (narrator,
   prose style, danger spots), so a book of any size translates without
   bloating the requests;
 - **proposes footnotes** and flags claims that contradict reality without

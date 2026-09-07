@@ -164,6 +164,17 @@ def main():
        row("| Taylor — Danny | на «ты» |", "ADDRESS")[0]
        == "| Taylor; Danny | | на «ты» |",
        row("| Taylor — Danny | на «ты» |", "ADDRESS"))
+    ok("самодельная «кто | кому | форма» — оба имени в ключ",
+       row("| Snag | Nursery | на «ты», грубо |", "ADDRESS")[0]
+       == "| Snag; Nursery | | на «ты», грубо |",
+       row("| Snag | Nursery | на «ты», грубо |", "ADDRESS"))
+    ok("«кто | кому / кому | форма | почему» — имена без повторов",
+       row("| Byron; Kay | Byron — Kay | «ты» | сокомандники |", "ADDRESS")[0]
+       == "| Byron; Kay | | «ты» | сокомандники |",
+       row("| Byron; Kay | Byron — Kay | «ты» | сокомандники |", "ADDRESS"))
+    pair = "| Taylor; Danny | Тейлор; Дэнни | на «ты» |"
+    ok("пара по образцу не тронута",
+       row(pair, "ADDRESS") == (pair, False, False), row(pair, "ADDRESS"))
     dead = row("| Тейлор и Рейчел | на «ты» |", "ADDRESS")
     ok("строка без оригинала — мёртвая",
        dead == ("| Тейлор; Рейчел | на «ты» |", True, True), dead)
@@ -305,6 +316,26 @@ def main():
         R.convert_ref(work2, "ru", said.append)
         ok("папку новой версии не трогаем",
            open(sp2, encoding="utf-8").read() == OLD and not said, said)
+
+        # Папка между REF_LEGACY и REF_FORMAT: строки уже нового вида,
+        # перекладываются только обращения.
+        mid = ("## CHARACTERS — Персонажи\n\n| Taylor | Тейлор | | школьница |\n"
+               "\n## ADDRESS — Обращения\n\n| Кто → кому | Форма | Основание |\n"
+               "| Taylor | Danny | на «ты» |\n")
+        work4 = os.path.join(d, "mid.work")
+        os.makedirs(os.path.join(work4, "ru"))
+        sp4 = os.path.join(work4, "ru", "scout.md")
+        open(sp4, "w", encoding="utf-8").write(mid)
+        json.dump({"last": {"pipeline": R.REF_LEGACY + " abc"}},
+                  open(os.path.join(work4, "versions.json"), "w"))
+        said.clear()
+        R.convert_ref(work4, "ru", said.append)
+        got4 = open(sp4, encoding="utf-8").read()
+        ok("папка между выпусками — переложены только обращения",
+           got4 == mid.replace("| Taylor | Danny | на «ты» |",
+                               "| Taylor; Danny | | на «ты» |")
+           and len(said) == 1 and "1" in said[0], (got4, said))
+        said.clear()
 
         work3 = os.path.join(d, "bare.work")
         os.makedirs(os.path.join(work3, "ru"))

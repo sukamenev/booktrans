@@ -65,8 +65,8 @@ def main():
        "title_target = Великолепие" in frame, None)
     ok("строки собраны, шапки и линейки нет",
        len(rows) == 4 and not any("---" in k or "Оригинал" in k
-                                  for k, _ in rows),
-       [k for k, _ in rows])
+                                  for k, _, _ in rows),
+       [k for k, _, _ in rows])
 
     got = P.ref_rows_for(rows, "Michael Poole met the Qax envoy.")
     ok("строка с именем из куска попала",
@@ -109,7 +109,7 @@ def main():
 """
     frame, rows = P.split_ref(TWO)
     ok("карточка персонажа ключуется",
-       any("Клокблокер" in l for _, l in rows), rows)
+       any("Клокблокер" in l for _, l, _ in rows), rows)
     ok("карточка едет по оригинальному написанию",
        any("остряк" in l for l in P.ref_rows_for(rows, "Clockpicker grinned.")),
        None)
@@ -127,12 +127,13 @@ def main():
     ok("строка нового вида едет по оригиналу",
        any("остряк" in l for l in P.ref_rows_for(nrows, "Clockpicker grinned.")),
        nrows)
-    ok("пара ADDRESS едет по любому имени",
-       any("отец" in l for l in P.ref_rows_for(nrows, "Danny sighed."))
-       and any("отец" in l for l in P.ref_rows_for(nrows, "Taylor left.")),
+    ok("пара ADDRESS едет только с обоими именами",
+       not any("отец" in l for l in P.ref_rows_for(nrows, "Danny sighed."))
+       and any("отец" in l
+               for l in P.ref_rows_for(nrows, "Taylor left. Danny sighed.")),
        nrows)
     ok("кандидат в сноски ключуется",
-       any("PHO" in l for _, l in rows)
+       any("PHO" in l for _, l, _ in rows)
        and any("PHO" in l for l in P.ref_rows_for(rows, "Она открыла PHO.")),
        rows)
     ok("маркер в VOICES остаётся в костяке", "Рассказчик" in frame, frame)
@@ -173,6 +174,26 @@ def main():
        cut == ["|строка про Dense|", "|строка про Mid|"], cut)
     ok("просторный бюджет ничего не режет",
        P.ref_rows_for(rows, text, budget=4000) == [r[1] for r in rows], None)
+
+    # Обращение — пара, и едет только целиком: без второго имени в тексте
+    # строка переводчику ни к чему. Под бюджетом пары идут после имён. В
+    # прочих разделах «;» делит псевдонимы, а не пару; «Кто → кому» — шапка.
+    arows = P.split_ref("## CHARACTERS — Персонажи\n\n"
+                        "| Оригинал | Перевод |\n|---|---|\n"
+                        "| Dense | Денс |\n| Rare; Rar | Рар |\n\n"
+                        "## ADDRESS — Обращения\n\n"
+                        "| Кто → кому | Форма |\n|---|---|\n"
+                        "| Dense; Mid | ты |\n| Dense; Ghost | вы |\n")[1]
+    ok("раздел едет со строкой, шапка обращений — нет", [r[2] for r in arows]
+       == ["CHARACTERS", "CHARACTERS", "ADDRESS", "ADDRESS"], arows)
+    text = "Dense и Mid спорят. Dense зовёт Mid, Dense смеётся, Rar молчит."
+    ok("пара без второго имени в тексте не едет",
+       P.ref_rows_for(arows, text)
+       == ["| Dense | Денс |", "| Rare; Rar | Рар |", "| Dense; Mid | ты |"],
+       P.ref_rows_for(arows, text))
+    cut, n = P.ref_rows_cut(arows, text, budget=40)
+    ok("под бюджетом первыми имена, потом пара",
+       cut == ["| Dense | Денс |", "| Rare; Rar | Рар |"] and n == 3, (cut, n))
 
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0

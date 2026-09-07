@@ -25,7 +25,7 @@ from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    HUSH_MAX, HUSH_PAUSE,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
-                   REFUSE_ROW,
+                   REF_ROWS_BUDGET, REFUSE_ROW,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_CANON_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
                    SCOUT_WORDS, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
@@ -664,8 +664,9 @@ def _unbracket(inner):
 # Слова шапок таблиц: модель воспроизводит шапку из образца в промпте, и
 # без фильтра та въезжает в реестр строкой.
 _HEADER_KEYS = {"оригинал", "original", "имя", "name", "имя в оригинале",
-                "персонаж", "character", "термин", "term", "слово", "word",
-                "ключ", "key"}
+                "персонаж", "character", "персонажи", "characters", "термин",
+                "term", "слово", "word", "ключ", "key", "кто", "кому", "who",
+                "whom"}
 
 
 def _line_key(line, sec=None):
@@ -683,8 +684,9 @@ def _line_key(line, sec=None):
         m = _BULLET_KEY.match(line)
         if m:
             key = _unbracket(m.group(1).strip())
+    # «Кто → кому», «Кто; кому», «who to whom» — тоже шапка.
     if key and all(p.strip().lower() in _HEADER_KEYS
-                   for p in re.split(r"\s*/\s*", key)):
+                   for p in re.split(r"\s*[/;→]\s*|\s+(?:к|to)\s+", key)):
         return ""
     return key
 
@@ -744,7 +746,7 @@ def split_ref(text):
     системе только путает.
     """
     recs = _ref_scan(text)
-    rows = [(k, l) for _, _, k, l, kind in recs if kind == "row"]
+    rows = [(k, l, sec) for sec, _, k, l, kind in recs if kind == "row"]
     live, cur, has = set(), None, False
     for i, (_, _, _, line, kind) in enumerate(recs):
         if kind == "head":
@@ -760,38 +762,61 @@ def split_ref(text):
     return re.sub(r"\n{3,}", "\n\n", frame), rows
 
 
-def ref_rows_for(rows, text, budget=0):
-    """Строки справочника, чьи ключи встречаются в этом тексте.
+def ref_rows_cut(rows, text, budget=0):
+    """Строки справочника, чьи ключи встречаются в этом тексте, и сколько
+    их совпало до обрезки.
 
     Ключ — первая ячейка; составной («duo / trio») ловится любой частью.
     Совпадение — полной фразой в границах слова, как у сведения имён цикла,
     но без оглядки на регистр: пропущенная строка стоит разнобоя в имени,
-    лишняя — сотни знаков.
+    лишняя — сотни знаков. Обращение «кто; кому» едет, только когда в
+    тексте оба: пара без второго имени переводчику ни к чему, а у сиквела
+    таких на кусок сотни — две трети запроса.
 
-    `budget` — предел в знаках. У сиквела к середине книги совпадает
-    полтысячи строк на сотню тысяч знаков, и запрос перерастает
-    переносимость шлюза: модель молча возвращает пустоту. Первыми выживают
-    строки, чаще упомянутые в тексте; порядок уцелевших — прежний.
+    `budget` — предел в знаках. Первыми выживают имена и термины, за ними
+    обращения, внутри ряда — чаще упомянутые; порядок уцелевших — прежний.
     """
-    got = []
-    for key, line in rows:
-        hits = 0
-        for part in re.split(r"\s*[/,;]\s*", key):
-            if len(part) > 1:
-                hits += len(re.findall(
-                    rf"(?<![^\W\d_]){re.escape(part)}(?![^\W\d_])", text, re.I))
-        if hits:
-            got.append((hits, line))
+    got, low = [], text.lower()
+    for key, line, *sec in rows:
+        # Только обращение — пара; в остальных разделах «;» делит псевдонимы.
+        pair = sec == ["ADDRESS"]
+        sides = re.split(r"\s*;\s*", key) if pair else [key]
+        hits = []
+        for side in sides:
+            n = 0
+            for part in re.split(r"\s*[/,;]\s*", side):
+                # Регулярка с границами слова дорога: на реестре в пять тысяч
+                # строк — секунды на кусок; сперва дешёвая проверка вхождения.
+                if len(part) > 1 and part.lower() in low:
+                    n += len(re.findall(
+                        rf"(?<![^\W\d_]){re.escape(part)}(?![^\W\d_])", text, re.I))
+            hits.append(n)
+        if all(hits) if pair else any(hits):
+            got.append(((pair, -sum(hits)), line))
+    n = len(got)
     if budget and sum(len(l) + 1 for _, l in got) > budget:
         keep, size = set(), 0
-        for i in sorted(range(len(got)), key=lambda j: -got[j][0]):
+        for i in sorted(range(n), key=lambda j: got[j][0]):
             need = len(got[i][1]) + 1
             # Не break: после длинной строки короткая ещё может влезть.
             if size + need <= budget:
                 keep.add(i)
                 size += need
         got = [g for i, g in enumerate(got) if i in keep]
-    return [l for _, l in got]
+    return [l for _, l in got], n
+
+
+def ref_rows_for(rows, text, budget=0):
+    return ref_rows_cut(rows, text, budget)[0]
+
+
+def chunk_refs(rows, text, log, lock=None):
+    """Строки справочника к куску в пределах REF_ROWS_BUDGET, об обрезке — в лог."""
+    refs, n = ref_rows_cut(rows, text, REF_ROWS_BUDGET)
+    if len(refs) < n:
+        with lock or threading.Lock():
+            log("    " + T("refs_trim", len(refs), n))
+    return refs
 
 
 def _dump_keeping_time(d, p):
@@ -1330,7 +1355,7 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         here = " ".join(b["text"] for b in translatable(c["blocks"]))
         prompt = translate_prompt(c, nxt, summary, tail,
                                   accumulated_terms(state, idx, here),
-                                  ref_rows_for(ref_rows, here), task)
+                                  chunk_refs(ref_rows, here, log), task)
         canon = verse_canon(state, c["blocks"])
         if canon:
             prompt += ("\n\n---\n\n" + lang.prompt("verse_canon")[0] + "\n\n"
@@ -1723,7 +1748,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         if terms:
             parts.append(
                 lang.prompt("translate_hint_terms")[0] + "\n\n" + "\n".join(terms))
-        refs = ref_rows_for(ref_rows, src_txt)
+        refs = chunk_refs(ref_rows, src_txt, log, lock)
         if refs:
             parts.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
         parts.append(lang.prompt("edit_fragment")[0] + "\n\n" + "\n\n".join(pairs))
@@ -2122,7 +2147,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             pieces.append(lang.prompt("verify_sweep")[0])
         if remark:
             pieces.append(lang.prompt("verify_remarks")[0] + "\n\n" + remark)
-        refs = ref_rows_for(ref_rows, " ".join(orig[i] for i in ids))
+        refs = chunk_refs(ref_rows, " ".join(orig[i] for i in ids), log, lock)
         if refs:
             pieces.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
         pieces.append(lang.prompt("verify_pairs")[0] + "\n\n" + "\n\n".join(rows))
@@ -2249,8 +2274,8 @@ def notes(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         if already:
             hint_already, _ = lang.prompt("edit_hint_already")
             parts.append(hint_already + "\n\n" + "\n".join(sorted(set(already))))
-        refs = ref_rows_for(ref_rows, " ".join(
-            b["text"] for b in translatable(c["blocks"])))
+        refs = chunk_refs(ref_rows, " ".join(
+            b["text"] for b in translatable(c["blocks"])), log, lock)
         if refs:
             parts.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
         parts.append(lang.prompt("edit_fragment")[0] + "\n\n" + "\n\n".join(pairs))
@@ -3497,7 +3522,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
         for sec, _, key, line, kind in _ref_scan(_headify(res)):
             gk = (sec, _norm_key(key))
             if kind == "row" and gk[1] and gk[1] not in liked:
-                known.setdefault(gk, (key, line))
+                known.setdefault(gk, (key, line, sec))
 
     for f in findings:
         if f:                 # в кэше волн место неразобранной части — null
@@ -3536,12 +3561,10 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint += "\n\n" + hint_meta.format(meta="\n".join(meta_lines))
 
         pairs = canon_rows + list(known.values())
-        crows = ref_rows_for(pairs, text)
-        if sum(len(c) + 1 for c in crows) > SCOUT_CANON_BUDGET:
-            cut = ref_rows_for(pairs, text, SCOUT_CANON_BUDGET)
+        crows, n = ref_rows_cut(pairs, text, SCOUT_CANON_BUDGET)
+        if len(crows) < n:
             with lock:
-                log("    " + T("canon_trim", len(cut), len(crows)))
-            crows = cut
+                log("    " + T("canon_trim", len(crows), n))
         canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
                  + "\n".join(crows)) if crows else ""
         at = (lang.prompt("scout_part_at")[0].format(chapter=starts[i - 1])
