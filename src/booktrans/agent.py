@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 
 from .lang import T
-from .tune import config_dir
+from .tune import AGY_CAP, config_dir
 
 
 class AgentError(RuntimeError):
@@ -624,6 +624,10 @@ class AgyAgent(Agent):
 
     def run(self, system, user, image=None):
         payload = f"{system}\n\n---\n\n{user}" if system else user
+        # Длинное сообщение agy режет молча, и модель отвечает на обрубок.
+        size = len(payload.encode())
+        if size > AGY_CAP:
+            raise Fatal(T("agy_cap", size // 1000, AGY_CAP // 1000))
         # Свой срок у agy — пять минут, и думающая модель на большом куске в
         # него не укладывалась: ответ обрывался на полуслове, а выглядело как
         # отказ. Срок должен быть один, наш.

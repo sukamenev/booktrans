@@ -165,6 +165,7 @@
  "doc_charset": "rare txt encodings; the common ones are detected without it",
  "doc_agent": "the {0} agent: it is what translates the book, nothing works without it",
  "doc_agent_how": "install the \"{0}\" agent CLI and sign in to it once",
+ "agy_cap": "agy silently cuts messages over {1} KB and this request is {0} KB; the chunk goes to a spare model",
  "or_silent": "openrouter: no answer in {0} s",
  "or_filter": "openrouter: {0} — the provider's filter rejected the request",
  "doc_or_key": "OpenRouter key: every request goes through it, nothing works without it",

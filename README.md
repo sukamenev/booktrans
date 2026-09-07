@@ -474,7 +474,10 @@ A 190,000-word novel, roughly 100 chunks.
 **With Gemini, always set a fallback model.** A scene of physical intimacy or
 cruelty it breaks off silently mid-sentence; the pipeline recognises that and
 hands the chunk to the next model of the chain. The `--agent agy` set already
-carries one.
+carries one. Antigravity also silently cuts any message longer than about
+190 KB — on a sequel with a huge reference a chunk request can grow past that,
+and the model then answers a stub; such a request is not sent at all and the
+chunk goes to the next model of the chain.
 
 **Opus takes on anything but is slow**: a hundred-chunk book takes some ten
 hours — translation is sequential by design, each chunk building on the

@@ -1749,6 +1749,10 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
 
         def parse(o):
             res, tail = parse_blocks(o, allowed=set(draft), extra_tag="NOTES")
+            # Без единого маркера это не «править нечего», а отписка: модель
+            # на обрубок запроса просила прислать текст, и кусок лёг готовым.
+            if not res and "[[[NOTES]]]" not in o:
+                raise ValueError("ответ без разметки: ни блоков, ни [[[NOTES]]]")
             swap = _swap_edit(res, draft)
             if swap:
                 raise ValueError(
