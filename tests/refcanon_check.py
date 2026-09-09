@@ -195,6 +195,27 @@ def main():
        == "| Сыон / Scion | | | з |",
        R.canon_row("| Сыон / Scion | з |", "CHARACTERS", None))
 
+    # RISK: слово с разными значениями — строкой реестра в любой старой
+    # записи; INJECTED и проза о сцене — прозой; второй RISK влит в первый.
+    RISK = ("## RISK — Опасные места\n\nINJECTED: false\n\n"
+            "- `power`: сила / власть\n**bug / Bug:** мелкие существа\n"
+            "- **Master / master** — класс сил / хозяин\nsuit: костюм / экзокостюм\n"
+            "`the Wards` vs `the Wardens`: Стражи vs Хранители\n"
+            "Сцена суда: переводить сдержанно.\n| Alice | прозвище Райли |\n\n"
+            "## NAMES — Имена\n\n| Bob | Боб | | |\n\n## RISK\n\n"
+            "| cell | | телефон / камера |\n")
+    rnew, rn, _ = R.canon_ref(RISK, "ru")
+    ok("слова RISK — строками реестра", rn == 5 and all(
+        x in rnew for x in ("| power | | сила / власть |", "| bug / Bug | | мелкие существа |",
+                            "| Master / master | | класс сил / хозяин |",
+                            "| suit | | костюм / экзокостюм |", "| Alice | | прозвище Райли |")),
+       (rn, rnew))
+    ok("INJECTED, проза о сцене и составная запись — прозой",
+       all(x in rnew for x in ("INJECTED: false", "Сцена суда: переводить сдержанно.",
+                               "`the Wards` vs `the Wardens`: Стражи vs Хранители")), rnew)
+    ok("второй RISK влит в первый",
+       rnew.count("## RISK") == 1 and rnew.index("| cell |") < rnew.index("## NAMES"), rnew)
+
     new, n, dd = R.canon_ref(OLD, "ru", legacy=True)
     ok("переложены все строки реестра", n == 19 and dd == 2, (n, dd))
     ok("VOICES не тронут", "| Рассказчик | Тейлор, 1-е лицо |" in new, new)

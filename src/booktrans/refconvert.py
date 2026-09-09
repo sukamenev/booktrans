@@ -19,7 +19,7 @@ from .lang import T
 
 # Выпуск, с которого справочник пишется в нынешнем виде; папку, которую
 # последней трогала версия старше, convert_ref перекладывает при открытии.
-REF_FORMAT = "1.10.19"
+REF_FORMAT = "1.10.22"
 # До этого выпуска строки таблиц были вида «| ключ | содержимое |»: такой
 # справочник перекладывается глубже (legacy у canon_row).
 REF_LEGACY = "1.10.9"
@@ -39,6 +39,27 @@ _OLD_TITLES = {
 }
 _OLD_HEAD = re.compile(r"(#{1,4}\s*)(" + "|".join(_OLD_TITLES)
                        + r")(?![^\W\d_])", re.I)
+
+
+# Слово с разными значениями в старом RISK писалось прозой — «`power`: …»,
+# «- **power** — …», «power: …» — и ехало в каждый запрос. Теперь это
+# строка реестра, и едет она туда, где слово встречается.
+_RISK_LINE = re.compile(
+    r"\s*(?:[-*•]\s+)?(?:`([^`]{1,60})`\s*[:—–]|\*\*([^*]{1,60}?)(?::\*\*|\*\*\s*[:—–])"
+    r"|([^`*|:—–]{1,60}?)\s*:)\s+(\S.*)$")
+
+
+def _risk_row(line, tgt):
+    """Строка RISK о слове оригинала — строкой таблицы; проза о сцене
+    («Сцена суда: переводить сдержанно») остаётся прозой."""
+    m = _RISK_LINE.match(line)
+    if not m or not tgt or line.lstrip().startswith("INJECTED"):
+        return None
+    key = (m.group(1) or m.group(2) or m.group(3)).strip()
+    if len(key.split()) > 6 or not re.search(r"[^\W\d_]", tgt.sub("", key)):
+        return None
+    from .pipeline import _row
+    return _row([key, "", m.group(4).strip()])
 
 
 def _key_heads(text):
@@ -321,7 +342,7 @@ def canon_ref(text, to, legacy=False):
     переложено, сколько мёртвых). `legacy` — справочник старой версии:
     строки старых таблиц перекладываются целиком, а раздел, оставшийся без
     строк, убирается — см. canon_row."""
-    from .pipeline import REF_KEYED, _cells, _ref_scan, _row
+    from .pipeline import REF_KEYED, _cells, _ref_scan, _row, join_sections
     tgt = _script_re(to)
     lines, kinds, rows, n, dead = [], [], [], 0, 0
     skip, tail = False, None
@@ -337,6 +358,12 @@ def canon_ref(text, to, legacy=False):
             n += changed
             rows.append((len(lines), sec, is_dead))
             tail = len(lines)
+        elif sec == "RISK" and kind == "frame" and (fixed := _risk_row(line, tgt)):
+            line, kind = fixed, "row"
+            n += 1
+        elif sec == "RISK" and kind == "row" and len(_cells(line)) == 2:
+            line = _row([_cells(line)[0], "", _cells(line)[1]])
+            n += 1
         elif (legacy and tail is not None and kind == "frame"
               and sec in REF_KEYED and re.match(r"\s+\S", line)):
             # Подпункт карточки «  - *Выбор слов:* …» — в её содержимое.
@@ -385,7 +412,7 @@ def canon_ref(text, to, legacy=False):
                     lines[h] = None
             break
     res = "\n".join(lines[i] for i in order if lines[i] is not None)
-    res = re.sub(r"\n{3,}", "\n\n", res)
+    res = join_sections(re.sub(r"\n{3,}", "\n\n", res))
     if text.endswith("\n") and not res.endswith("\n"):
         res += "\n"
     return res, n, dead

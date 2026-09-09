@@ -138,6 +138,11 @@ def main():
        rows)
     ok("маркер в VOICES остаётся в костяке", "Рассказчик" in frame, frame)
     ok("маркер в RISK остаётся в костяке", "сцену суда" in frame, frame)
+    rrows = P.split_ref("## RISK — Опасные места\n\nINJECTED: false\n\n"
+                        "| power | сила; власть | сила — способность кейпа |\n")[1]
+    ok("слово из RISK едет по упоминанию",
+       any("кейпа" in l for l in P.ref_rows_for(rrows, "The power went out."))
+       and not P.ref_rows_for(rrows, "Lights out."), rrows)
     ok("шапка раздела из одних строк выпала из костяка",
        "## FOOTNOTES" not in frame and "## CHARACTERS" in frame, frame)
     # Скобочная альтернатива в ключе таблицы тоже распахивается: строка

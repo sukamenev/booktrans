@@ -704,6 +704,35 @@ def _norm_key(key):
     return " / ".join(sorted(parts))
 
 
+_SEC_HEAD = re.compile(r"#{1,4}\s*([A-Z]{2,})\b")
+
+
+def join_sections(text):
+    """Раздел с тем же ключом второй раз — его строки переезжают в первый.
+
+    Сведение дописывает реестр в хвост, и раздел, у которого есть и проза,
+    и строки, выходил в файле дважды; повторная шапка путает и читателя,
+    и пересжатие."""
+    blocks, at, cur, dup = [[]], {}, None, False
+    for line in text.split("\n"):
+        m = _SEC_HEAD.match(line.strip())
+        if m and m.group(1) in at:
+            cur, dup = blocks[at[m.group(1)]], True
+            continue
+        if m:
+            at[m.group(1)] = len(blocks)
+            blocks.append([line])
+            cur = blocks[-1]
+            continue
+        (blocks[0] if cur is None else cur).append(line)
+    if not dup:
+        return text
+    out = "\n\n".join("\n".join(b).strip("\n") for b in blocks if "".join(b).strip())
+    # Переехавшие строки таблицы — вплотную к своим, без разрыва.
+    out = re.sub(r"(\|\n)\n+(?=\|)", r"\1", re.sub(r"\n{3,}", "\n\n", out))
+    return out + ("\n" if text.endswith("\n") else "")
+
+
 def _ref_scan(text):
     """Разметка справочника построчно: (раздел, заголовок, ключ, строка, род).
 
@@ -3689,7 +3718,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     merged = split_ref(_headify(merged))[0]
     registry = _render_registry(order, groups, heads_map)
     if registry:
-        merged = merged.rstrip() + "\n\n" + registry + "\n"
+        merged = join_sections(merged.rstrip() + "\n\n" + registry + "\n")
     open(mkparent(out_path), "w", encoding="utf-8").write(merged)
     dead = canon_ref(merged, to)[2]
     if dead:
@@ -3914,11 +3943,14 @@ def _forked(merged, to):
     if not rng:
         return []
     has_target = re.compile(rf"[{rng}]")
-    sep = re.compile(r"\s/\s|\bили\b|\bor\b|\bversus\b|\bvs\.?\b")
+    sep = re.compile(r"\s/\s|;|\bили\b|\bor\b|\bversus\b|\bvs\.?\b")
+    # Кандидат в сноску тоже требует одного перевода; RISK — нет: там слово
+    # с разными значениями по замыслу.
     out, inside = [], False
     for line in merged.splitlines():
         if line.startswith("#"):
-            inside = bool(_DOMAIN.match(line.strip()))
+            inside = bool(_DOMAIN.match(line.strip())
+                          or re.match(r"#{1,4}\s*FOOTNOTES\b", line.strip()))
             continue
         if not inside or line.count("|") < 3 or "---" in line:
             continue
