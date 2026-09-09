@@ -196,7 +196,7 @@ def main():
        R.canon_row("| Сыон / Scion | з |", "CHARACTERS", None))
 
     new, n, dd = R.canon_ref(OLD, "ru", legacy=True)
-    ok("переложены все строки реестра", n == 20 and dd == 2, (n, dd))
+    ok("переложены все строки реестра", n == 19 and dd == 2, (n, dd))
     ok("VOICES не тронут", "| Рассказчик | Тейлор, 1-е лицо |" in new, new)
     ok("шапка старой таблицы выброшена",
        "| Оригинал |" not in new and "|---|" not in new, new)
@@ -299,7 +299,7 @@ def main():
         ok("копия старого справочника рядом",
            open(sp + ".bak", encoding="utf-8").read() == OLD)
         ok("в логе — сколько переложено и сколько мёртвых",
-           len(said) == 2 and "20" in said[0] and "2" in said[1], said)
+           len(said) == 2 and "19" in said[0] and "2" in said[1], said)
         said.clear()
         json.dump({"last": {"pipeline": R.REF_FORMAT + " abc"}},   # note_version
                   open(os.path.join(work, "versions.json"), "w"))

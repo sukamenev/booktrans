@@ -321,7 +321,7 @@ def canon_ref(text, to, legacy=False):
     переложено, сколько мёртвых). `legacy` — справочник старой версии:
     строки старых таблиц перекладываются целиком, а раздел, оставшийся без
     строк, убирается — см. canon_row."""
-    from .pipeline import REF_ENTITY, REF_KEYED, _cells, _ref_scan, _row
+    from .pipeline import REF_KEYED, _cells, _ref_scan, _row
     tgt = _script_re(to)
     lines, kinds, rows, n, dead = [], [], [], 0, 0
     skip, tail = False, None
@@ -330,7 +330,7 @@ def canon_ref(text, to, legacy=False):
     for sec, _head, _key, line, kind in _ref_scan(text):
         if kind == "head":
             skip = legacy and line.strip() == _ONETERM
-        if skip or (legacy and kind == "junk" and sec in REF_ENTITY):
+        if skip or (legacy and kind == "junk" and sec in REF_KEYED):
             continue
         if kind == "row" and sec in REF_KEYED:
             line, changed, is_dead = canon_row(line, sec, tgt, legacy)
