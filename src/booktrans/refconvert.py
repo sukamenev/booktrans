@@ -56,7 +56,8 @@ def _risk_row(line, tgt):
     if not m or not tgt or line.lstrip().startswith("INJECTED"):
         return None
     key = (m.group(1) or m.group(2) or m.group(3)).strip()
-    if len(key.split()) > 6 or not re.search(r"[^\W\d_]", tgt.sub("", key)):
+    if (len(re.findall(r"[^\W\d_]+", key)) > 6
+            or not re.search(r"[^\W\d_]", tgt.sub("", key))):
         return None
     from .pipeline import _row
     return _row([key, "", m.group(4).strip()])
