@@ -1003,6 +1003,36 @@ def mkparent(path):
 BY_BLOCK = ("tr", "src", "edits")
 
 
+def chunk_ranges(idx):
+    """Номера кусков строкой для --chunks: 5,6,7 и диапазоны 41-93."""
+    out, run = [], []
+    for i in sorted(set(idx)) + [None]:
+        if run and (i is None or i != run[-1] + 1):
+            out.append(f"{run[0]}-{run[-1]}" if len(run) > 1 else str(run[0]))
+            run = []
+        run.append(i)
+    return ",".join(out)
+
+
+def pass_gaps(work, chunks, to=""):
+    """Проходы, начатые и не доведённые до конца: [(проход, сделано, всего,
+    номера кусков без результата)]. Кусок без файла правки не правлен —
+    так бывает, когда --self-edit never оставил очередь пустой; файл с
+    отметкой обрыва — правлен наполовину. Проход без единого файла не
+    начинался: книгу правят не всегда, и это не недоделка."""
+    out, want = [], [c["index"] for c in chunks]
+    for sub in ("tr", "ed", "vf"):
+        done = set()
+        for _, p in chunk_files(lpath(work, sub, to)):
+            x = json.load(open(p, encoding="utf-8"))
+            if not (sub == "ed" and x.get("stopped_at")):
+                done.add(int(x.get("index") or os.path.basename(p)[:4]))
+        missing = [i for i in want if i not in done]
+        if done and missing:
+            out.append((sub, len(want) - len(missing), len(want), missing))
+    return out
+
+
 def chunk_files(d):
     """Файлы кусков в порядке записи: старые раньше, свежие позже.
 

@@ -359,6 +359,11 @@ in `work/structure.json`. If the book genuinely has no chapters, use
 | **assembly** | book with footnotes, images, structure | |
 | **checks** | completeness, numbers, lengths, stray source text, footnote references, terminology | |
 
+A pass begun but not finished — a chunk left without an editor under
+`--self-edit never`, or an edit that broke off midway — does not stop the
+pipeline: the book is built, but the run ends with "WORK NOT FINISHED", a
+per-pass chunk count and a ready-made `--chunks` for the next run.
+
 Verification is full-text by default: the verifier receives every
 original–translation pair and, beyond the remarks, sweeps them for gross
 meaning errors — omissions, inverted sense, foreign numbers and measures,

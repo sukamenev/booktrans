@@ -145,7 +145,27 @@ class Run:
         self.ocr_fixes()
         for name in PASSES:
             if name in self.steps and not getattr(self, "step_" + name)():
-                return
+                break
+        self.verdict()
+
+    def verdict(self):
+        """Последнее слово прогона. Начатый и недоведённый проход делает
+        книгу незаконченной, а собирается она всё равно: промежуточное
+        чтение нужнее чистого статуса. Молчать об этом итог не должен."""
+        if not self.chunks:
+            return
+        gaps = pipeline.pass_gaps(self.work, self.chunks, self.args.to)
+        if not gaps:
+            return
+        T, log = self.T, self.log
+        log("")
+        log(T("run_unfinished_built" if "build" in self.steps
+              else "run_unfinished"))
+        left = set()
+        for sub, done, total, missing in gaps:
+            log("  " + T("pass_gap", T(f"pass_{sub}"), done, total, len(missing)))
+            left |= set(missing)
+        log("  " + T("run_unfinished_hint", pipeline.chunk_ranges(left)))
 
     # ------------------------------------------------------------ приём
 
