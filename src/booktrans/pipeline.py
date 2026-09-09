@@ -2218,17 +2218,26 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
         want, need = set(ids), set(must)
         size = {i: len(orig[i]) for i in ids if i in orig}
-        res = None
-        for m in [agent] + [f for f in _backups(fallback) if f is not agent]:
-            try:
-                res, meta, dt = _run(m, system, prompt, retries,
-                                     lambda o: _parse_verify(o, want, need,
-                                                             size, snap), log)
-                break
-            except (Refused, RuntimeError, Fatal, ValueError) as e:
-                with lock:
-                    log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+        res, spares = None, [f for f in _backups(fallback) if f is not agent]
+        parse = lambda o: _parse_verify(o, want, need, size, snap)  # noqa: E731
+        # Вся цепочка под лимитом — переждать, как перевод и редактура:
+        # иначе сверка за секунду пробегала оставшиеся куски, объявляя каждый
+        # пропущенным, и книга собиралась несверенной.
+        try:
+            res, meta, dt = _run_patient(agent, spares, system, prompt, retries,
+                                         parse, log, lock)
+        except (Refused, RuntimeError, Fatal, ValueError) as e:
+            with lock:
+                log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
                               else T("chunk_failed", e)))
+            for m in spares:
+                try:
+                    res, meta, dt = _run(m, system, prompt, retries, parse, log)
+                    break
+                except (Refused, RuntimeError, Fatal, ValueError) as e:
+                    with lock:
+                        log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                                  else T("chunk_failed", e)))
         if res is None:
             return
         verdicts, notes_, fixes = res
