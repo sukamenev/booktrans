@@ -106,15 +106,18 @@ WORDNUM = {
         1000: r"тысяч",
     },
     "en": {
-        1: r"\bone\b", 2: r"\btwo\b", 3: r"\bthree\b", 4: r"\bfour\b",
-        5: r"\bfive\b", 6: r"\bsix\b", 7: r"\bseven\b", 8: r"\beight\b",
-        9: r"\bnine\b", 10: r"\bten\b", 11: r"\beleven\b", 12: r"\btwelve\b",
-        13: r"\bthirteen\b", 14: r"\bfourteen\b", 15: r"\bfifteen\b",
-        16: r"\bsixteen\b", 17: r"\bseventeen\b", 18: r"\beighteen\b",
-        19: r"\bnineteen\b", 20: r"\btwenty\b", 30: r"\bthirty\b",
-        40: r"\bforty\b", 50: r"\bfifty\b", 60: r"\bsixty\b",
-        70: r"\bseventy\b", 80: r"\beighty\b", 90: r"\bninety\b",
-        100: r"\bhundred\b", 1000: r"\bthousand\b",
+        # Множественное тоже число: «Case Fifty-Threes», «the Seventies».
+        1: r"\bone\b", 2: r"\btwos?\b", 3: r"\bthrees?\b", 4: r"\bfours?\b",
+        5: r"\bfives?\b", 6: r"\bsix(?:es)?\b", 7: r"\bsevens?\b",
+        8: r"\beights?\b", 9: r"\bnines?\b", 10: r"\btens?\b",
+        11: r"\belevens?\b", 12: r"\btwelves?\b", 13: r"\bthirteens?\b",
+        14: r"\bfourteens?\b", 15: r"\bfifteens?\b", 16: r"\bsixteens?\b",
+        17: r"\bseventeens?\b", 18: r"\beighteens?\b", 19: r"\bnineteens?\b",
+        20: r"\btwent(?:y|ies)\b", 30: r"\bthirt(?:y|ies)\b",
+        40: r"\bfort(?:y|ies)\b", 50: r"\bfift(?:y|ies)\b",
+        60: r"\bsixt(?:y|ies)\b", 70: r"\bsevent(?:y|ies)\b",
+        80: r"\beight(?:y|ies)\b", 90: r"\bninet(?:y|ies)\b",
+        100: r"\bhundreds?\b", 1000: r"\bthousands?\b",
     },
 }
 # Своя таблица есть не у всякого языка, и это не беда: без неё проверка
@@ -139,14 +142,15 @@ def spelled_out(text, n, to):
         return False
 
     def places(x):
-        """Разряды числа: 45 → [40, 5], 160 → [100, 60]."""
-        out = []
-        for step in (100, 10, 1):
-            cur = x // step * step
-            if cur:
-                out.append(cur)
-                x -= cur
-        return out
+        """Разряды числа: 45 → [40, 5], 367 → [300, 60, 7], а где сотни не
+        своё слово — [3, 100, 60, 7]; 15 — одно слово, не «десять пять»."""
+        out, h = [], x // 100 * 100
+        if h:
+            out += [h] if h in table else [h // 100, 100]
+            x -= h
+        if 11 <= x <= 19:
+            return out + [x]
+        return out + [p for p in (x // 10 * 10, x % 10) if p]
 
     parts = []
     if n >= 1000:

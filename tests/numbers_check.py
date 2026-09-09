@@ -75,6 +75,14 @@ WORDNUM = [
     ("однако он ушёл", "1", "ru", False),
     ("он открыл двери", "2", "ru", False),
     ("forty-five degrees to the left", "45", "en", True),
+    # Одиннадцать–девятнадцать — одно слово, а не «десять» и «пять»; сотни
+    # по-английски — «three hundred», своего слова у них нет.
+    ("Case Fifteen was closed", "15", "en", True),
+    ("three hundred and sixty-seven centimeters", "367", "en", True),
+    ("девице почти восемнадцать", "18", "ru", True),
+    ("двести семь шагов", "207", "ru", True),
+    ("Case Fifty-Threes and Case Seventies", "53", "en", True),
+    ("Case Fifty-Threes and Case Seventies", "70", "en", True),
     # Языка нет в таблице — правило молчит, и число будет названо, как прежде.
     ("fünfundvierzig Grad", "45", "de", False),
 ]
@@ -91,6 +99,25 @@ SPELLED = [
     ("The chapter cites 40 studies on sleep.", "40", False),
     ("In 1980 the study began, and it ran for years.", "1980", False),
     ("They walked 90 kilometres that week.", "90", False),
+    # Век, азы «Parahumans 101», порядковое «5th» — по-русски слова.
+    ("Then came the 1800s, and a new era.", "1800", True),
+    ("That was Parahumans 101, class one.", "101", True),
+    ("The 5th Corner Recorder", "5", True),
+    ("Kind of 90’s bad boy, with the long hair", "90", True),
+    # Десятилетие рядом не прощает соседнее число.
+    ("Back in the 1980s, 40 studies appeared.", "40", False),
+]
+
+# (оригинал, перевод, число, обратная сторона, вычитается ли как час,
+# переписанный по 24-часовому кругу).
+CLOCK = [
+    ("2pm at the front doors", "В 14:00 у входа", "2", False, True),
+    ("9:41 PM, two vehicles", "21:41, две машины", "9", False, True),
+    ("12:30 am the same night", "в 00:30 той же ночью", "12", False, True),
+    ("2 pills at noon", "2 таблетки в полдень", "2", False, False),
+    ("2pm at the front doors", "В 14:00 у входа", "14", True, True),
+    ("2pm at the front doors", "В 14:00 у входа", "00", True, True),
+    ("at 2pm", "в 16:00", "16", True, False),
 ]
 
 
@@ -118,6 +145,10 @@ MEASURE = [
      True, True),
     # Число не при мере: пересчёт рядом не оправдывает его пропажу.
     ("in 1997 he weighed 165 pounds", "тогда он весил 75 кг", "1997", False, False),
+    # Дробь: «2,3 килограмма» — это 2 и 3, обе половины стоят перед мерой.
+    ("the five pound cell phone", "телефон весом в 2,3 килограмма", "2", True, True),
+    ("the five pound cell phone", "телефон весом в 2,3 килограмма", "3", True, True),
+    ("a 5.5 foot gap in the wall", "просвет в 1,7 метра в стене", "5", False, True),
 ]
 
 
@@ -169,6 +200,13 @@ def main():
         print(f"    {'вычтено ' if got else 'засчитано'}  {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}"
               f"  [{num}] {s[:34]} → {t[:26]}")
         bad += not ok
+    print("  час по 24-часовому кругу:")
+    for s, t, num, back, want in CLOCK:
+        got = B._clock(s, t, num, back=back)
+        ok = got == want
+        print(f"    {'вычтено ' if got else 'засчитано'}  {'совпадает' if ok else 'РАСХОЖДЕНИЕ'}"
+              f"  [{num}] {s[:34]} → {t[:26]}")
+        bad += not ok
     print("  степень, восстановленная переводом:")
     for t, num, want in POWER:
         got = B._power(t, num)
@@ -188,10 +226,15 @@ def main():
             # «0,4.<sup>116</sup>» — точка тут конец фразы, а не разделитель
             # разрядов: склеивать 4 и 116 в 4116 нельзя.
             ("сноска не склеивается с числом",
-             set(B._nums("норма 0,4.<sup>116</sup> Дальше текст.")) == {"0", "4", "116"})):
+             set(B._nums("норма 0,4.<sup>116</sup> Дальше текст.")) == {"0", "4", "116"}),
+            # Указатель сноски «[^1]» — не число: на книге с тремя сотнями
+            # сносок он один давал почти весь раздел «появились цифры».
+            ("указатель сноски — не число",
+             set(B._nums("Горошек[^1]? Через 2 минуты.")) == {"2"})):
         print(f"    {'совпадает' if cond else 'РАСХОЖДЕНИЕ':10}  {name}")
         bad += not cond
-    n = len(COMPOUND) + len(OCR) + len(SPELLED) + len(MEASURE) + len(POWER) + 4
+    n = (len(COMPOUND) + len(WORDNUM) + len(OCR) + len(SPELLED) + len(MEASURE)
+         + len(CLOCK) + len(POWER) + 5)
     print(f"\nслучаев: {n}   с расхождениями: {bad}")
     return 1 if bad else 0
 

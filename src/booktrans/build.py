@@ -673,6 +673,8 @@ def _nums(t, group=True):
     # «0,4.116», и разделитель разрядов склеивает число с номером сноски в
     # несуществующее 4116 — проверка ругалась на здоровый перевод.
     t = strip(t, " ")
+    # Указатель сноски `[^1]` — не число текста.
+    t = re.sub(r"\[\^\d+\]", " ", t)
     if group:
         t = GROUPED.sub(lambda m: GSEP.sub("", m.group()), t)
     return Counter(re.findall(r"\d+", t))
@@ -705,7 +707,9 @@ def _compound(t, n):
 # его не страшно; а вот тонуть настоящей потере среди сорока таких строк —
 # страшно: раздел перестают читать.
 SPELLED = (r"(?i)\b(?:part|chapter|book|volume|section|step|rule|principle)\s+{n}\b",
-           r"\b(?:19|20)\d0s\b", r"[’']{n}0?s\b")
+           # Десятилетие и век, азы «Parahumans 101», порядковое «5th»: словом.
+           r"\b{n}[’']?s\b", r"[’']{n}0?s\b", r"(?i)\b[a-z]{2,}\s+(?={n}\b)101\b",
+           r"\b{n}(?:st|nd|rd|th)\b")
 
 
 def _spelled(s, n):
@@ -746,11 +750,30 @@ def _measure(s, t, n, back=False):
     Число, стоящее перед самой мерой, ищем точно; остальные числа блока
     правило не покрывает, и потеря среди них останется видна.
     """
+    # Дробь «2,3 килограмма» разбирается на 2 и 3: обе половины — перед мерой.
+    num = rf"(?<!\d){re.escape(n)}(?:[.,]\d+)?{GAP}"
     if back:       # число появилось в переводе: перед единицей СИ
-        return bool(re.search(rf"(?<!\d){re.escape(n)}{GAP}{METRIC}", t, re.I)
-                    and HAS_IMPERIAL.search(s))
-    return bool(re.search(rf"(?<!\d){re.escape(n)}{GAP}{IMPERIAL}", s, re.I)
-                and HAS_METRIC.search(t))
+        return bool(re.search(num + METRIC, t, re.I) and HAS_IMPERIAL.search(s))
+    return bool(re.search(num + IMPERIAL, s, re.I) and HAS_METRIC.search(t))
+
+
+# Время суток: английский пишет «2pm», «9:41 PM», русский — «14:00», «21:41».
+# Час меняется, и проверка видела тут и пропажу цифры, и появление новой.
+AMPM = re.compile(r"(?<![\d:])(\d{1,2})(:\d\d)?\s*([ap])\.?m\b", re.I)
+
+
+def _clock(s, t, n, back=False):
+    """Число — час 12-часовой записи, переписанный по 24-часовому кругу."""
+    seen = set()
+    for h, mins, ap in AMPM.findall(s):
+        if not 1 <= int(h) <= 12:
+            continue
+        h24 = int(h) % 12 + (12 if ap.lower() == "p" else 0)
+        if back:        # новое число перевода — этот час или его «:00»
+            seen |= {str(h24), f"{h24:02d}"} | (set() if mins else {"00"})
+        elif h == n and {str(h24), f"{h24:02d}"} & set(_nums(t)):
+            return True
+    return back and n in seen
 
 
 def _ocr_digit(s, n):
@@ -1057,7 +1080,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
 
     log(T("qa2"))
     lost, junk, word, gained = [], set(), set(), []
-    spelled, si, sup = set(), set(), set()
+    spelled, si, sup, clock = set(), set(), set(), set()
     for i, s in src.items():
         if i not in tr:
             continue
@@ -1078,6 +1101,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
                                       or lang.spelled_out(tr[i], x, to))]
         si |= {i for x in bad if _measure(s, tr[i], x)}
         bad = [x for x in bad if not _measure(s, tr[i], x)]
+        clock |= {i for x in bad if _clock(s, tr[i], x)}
+        bad = [x for x in bad if not _clock(s, tr[i], x)]
         sup |= {i for x in bad if _power(tr[i], x)}
         bad = [x for x in bad if not _power(tr[i], x)]
         if bad:
@@ -1095,6 +1120,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         new = [x for x in new if not lang.spelled_out(s, x, src_lang)]
         si |= {i for x in new if _measure(s, tr[i], x, back=True)}
         new = [x for x in new if not _measure(s, tr[i], x, back=True)]
+        clock |= {i for x in new if _clock(s, tr[i], x, back=True)}
+        new = [x for x in new if not _clock(s, tr[i], x, back=True)]
         if new:
             gained.append((i, new))
     if lost:
@@ -1113,6 +1140,8 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
         log("   " + T("qa2_spelled", len(spelled)))
     if si:
         log("   " + T("qa2_si", len(si)))
+    if clock:
+        log("   " + T("qa2_clock", len(clock)))
     if sup:
         log("   " + T("qa2_sup", len(sup)))
     if gained:
