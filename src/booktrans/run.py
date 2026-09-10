@@ -567,7 +567,7 @@ class Run:
             self.work, self.chunks, self.models.first("verifier"),
             self.sysprompt(lean=True), self.task("verify"), a.retries, log,
             self.only_chunks, fallback=self.models.rest("verifier"), to=a.to,
-            jobs=a.jobs, full=a.full_verify)
+            jobs=a.jobs, full=a.full_verify, self_edit=a.self_edit)
         log("  " + (T("done_verify", d, s, fn, fx) if d or s
                     else T("nothing_verify")))
         return True

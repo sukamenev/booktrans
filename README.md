@@ -911,7 +911,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes
 --scout-jobs N        threads for scouting parts (off by default — see "Scouting can too")
---self-edit X         the chunk's translator in the editor queue: allow — as given, last — moves to the end, never — struck out (chunk may stay unedited)
+--self-edit X         the chunk's translator in the editor and verifier queues: allow — as given, last — moves to the end, never — struck out (chunk may stay unedited and unverified)
 --no-full-verify      narrow verification: only the paragraphs named in editor remarks, no sweep of every pair for gross meaning and language errors
 --refresh             after hand-editing translations, recompute edit/verify readiness fingerprints and exit: cleanly applying work stays done, orphans honestly redo
 --wait SEC            wait on rate limits (0 — fail at once)

@@ -174,6 +174,22 @@ def main():
                      lambda *a, **k: None, jobs=2)[0]
     ok("повторная сверка пропущена по отпечаткам", done2 == 0, done2)
 
+    # Судья в собственном деле: сверщик с моделью переводчика при
+    # --self-edit never вычёркивается, кусок ждёт другого сверщика; запасной
+    # другой модели берёт его.
+    _sh.rmtree(f"{d}/vf")
+
+    class SelfJudge(Judge):
+        model = "стенд"
+
+    done3 = P.verify(d, chunks2, SelfJudge(), "", "задание", 1,
+                     lambda *a, **k: None, self_edit="never")[0]
+    ok("переводчик не сверяет своё при never",
+       done3 == 0 and not os.listdir(f"{d}/vf"), done3)
+    done4 = P.verify(d, chunks2, SelfJudge(), "", "задание", 1,
+                     lambda *a, **k: None, fallback=[Judge()], self_edit="never")[0]
+    ok("запасной сверщик другой модели берёт кусок", done4 == 2, done4)
+
     # Очередь сверки — по номерам кусков, а не по возрасту файлов: ручная
     # правка одного куска не тасует порядок.
     order = []

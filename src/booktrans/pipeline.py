@@ -2089,7 +2089,7 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
 
 
 def verify(work, chunks, agent, system, task, retries, log, only=None,
-           fallback=None, to="", jobs=1, full=False):
+           fallback=None, to="", jobs=1, full=False, self_edit="allow"):
     """Сверка замечаний редактора с оригиналом.
 
     С `full` кусок сверяется целиком: сверщику идут все пары «оригинал —
@@ -2119,6 +2119,13 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             orig[b["id"]] = b["text"]
     by_index = {c["index"]: c for c in chunks}
     cur, _ = all_translations(work, to)
+    # Переводчик каждого блока: судьёй в собственном деле ему не быть, и
+    # очередь сверщиков подчиняется тому же --self-edit, что и редакторов.
+    whose = {}
+    for _, p_ in chunk_files(lpath(work, "tr", to)):
+        x = json.load(open(p_, encoding="utf-8"))
+        for k in x.get("tr", {}):
+            whose[k] = x.get("model") or ""
     # Строки таблиц справочника — по оригиналам спорных блоков, см. split_ref.
     rp = lpath(work, "scout.md", to)
     ref_rows = split_ref(open(rp, encoding="utf-8").read())[1] \
@@ -2201,6 +2208,13 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
                     return
             snap = {i: cur[i] for i in ids}
         who = ((by_index.get(idx) or {}).get("label") or "—")[:24]
+        row = _edit_row(agent, [f for f in _backups(fallback) if f is not agent],
+                        whose.get(ids[0], ""), False, self_edit)
+        if not row:
+            with lock:
+                log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_self_only"))
+            return
+        mine, spares = row[0], row[1:]
         rows = [pair_tpl.format(id=i, orig=orig[i], tr=snap[i]) for i in ids]
         pieces = [task]
         if full:
@@ -2218,13 +2232,13 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
         want, need = set(ids), set(must)
         size = {i: len(orig[i]) for i in ids if i in orig}
-        res, spares = None, [f for f in _backups(fallback) if f is not agent]
+        res = None
         parse = lambda o: _parse_verify(o, want, need, size, snap)  # noqa: E731
         # Вся цепочка под лимитом — переждать, как перевод и редактура:
         # иначе сверка за секунду пробегала оставшиеся куски, объявляя каждый
         # пропущенным, и книга собиралась несверенной.
         try:
-            res, meta, dt = _run_patient(agent, spares, system, prompt, retries,
+            res, meta, dt = _run_patient(mine, spares, system, prompt, retries,
                                          parse, log, lock)
         except (Refused, RuntimeError, Fatal, ValueError) as e:
             with lock:
