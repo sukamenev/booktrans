@@ -195,9 +195,32 @@ def _plain(s):
 
 
 def _br_parts(text):
-    """Абзац по переносам строк: для форматов, где у абзаца нет <br/>."""
-    parts = [p.strip() for p in re.split(r"<br\s*/?>", text)]
-    return [p for p in parts if p] or [text]
+    """Абзац по переносам строк: для форматов, где у абзаца нет <br/>.
+
+    Разметка, открытая до переноса, закрывается в конце части и открывается
+    заново в начале следующей: курсив через перенос иначе давал fb2 с
+    незакрытым тегом в одном абзаце и лишним — в другом.
+    """
+    parts, carry = [], []
+    for raw in re.split(r"<br\s*/?>", text):
+        part = raw.strip()
+        if not part:
+            continue
+        stack = list(carry)
+        for m in re.finditer(r"</?([a-zA-Z]\w*)[^>]*>", part):
+            if m.group(0).endswith("/>"):
+                continue
+            name = m.group(1)
+            if not m.group(0).startswith("</"):
+                stack.append(name)
+            elif name in stack:
+                while stack[-1] != name:
+                    stack.pop()
+                stack.pop()
+        parts.append("".join(f"<{t}>" for t in carry) + part
+                     + "".join(f"</{t}>" for t in reversed(stack)))
+        carry = stack
+    return parts or [text]
 
 
 def _md_inline(s):

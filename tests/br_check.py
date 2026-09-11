@@ -54,6 +54,9 @@ def main():
        P.fingerprint("а б") != P.fingerprint("а<br>б"), None)
     ok("абзац по переносам", O._br_parts("а<br>б<br/> <br>в") == ["а", "б", "в"],
        O._br_parts("а<br>б<br/> <br>в"))
+    got = O._br_parts("<i>раз<br>два<br><b>три</b></i> конец")
+    ok("разметка через перенос закрывается и открывается заново",
+       got == ["<i>раз</i>", "<i>два</i>", "<i><b>три</b></i> конец"], got)
 
     p = os.path.join(d, "b.html")
     O.write_html(p, META, ITEMS, {}, {}, "Прим.:", {})
