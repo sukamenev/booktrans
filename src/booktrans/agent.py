@@ -451,13 +451,13 @@ class ClaudeAgent(Agent):
     def default_model(self):
         if "claude" not in Agent._default_cache:
             try:
-                r = subprocess.run(["claude", "-p", "hi"], capture_output=True, text=True, timeout=15)
+                r = subprocess.run(["claude", "-p", "hi", "--output-format", "json"], capture_output=True, text=True, timeout=15)
                 env = json.loads(r.stdout)
                 usage = env.get("modelUsage") or {}
                 main = {k: v for k, v in usage.items() if not k.startswith("claude-haiku")}
-                Agent._default_cache["claude"] = list(main)[0] if main else "claude-3-5-sonnet-20240620"
+                Agent._default_cache["claude"] = list(main)[0] if main else ""
             except Exception:
-                Agent._default_cache["claude"] = "claude-3-5-sonnet-20240620"
+                Agent._default_cache["claude"] = ""
         return Agent._default_cache["claude"]
 
     def __init__(self, model=None, timeout=1800, tools="", effort=None):
