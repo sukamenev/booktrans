@@ -192,6 +192,13 @@ Three lines to look at:
 
 ## Working out the markup
 
+A line break inside a paragraph — chat lines, the lines of a letter, a forum
+post with `<br/>` in epub or html — survives as `<br>` markup, passes through
+translation and editing, and comes out in every format in its own way:
+`<br/>` in epub and html, adjacent paragraphs in fb2, `\newline` in TeX and
+pdf, a hard break in markdown, a newline in txt. Nothing is taken from pdf or
+OCR text: line breaks there divide columns and typeset lines, not the text.
+
 Every publisher lays a book out differently: a heading may be `<h1>`, or
 `<p class="CN">`, or `<p class="Chap-Title-ct">`. Worse, **the same class
 means different things in different books**: in one, `TNI` is unindented

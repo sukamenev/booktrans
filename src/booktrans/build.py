@@ -414,6 +414,7 @@ def esc(s, links=None, notes_map=None):
     import html as _html
     s = _html.unescape(s)
     s = escape(s)
+    s = re.sub(r"&lt;br\s*/?&gt;", " ", s)       # внутри <p> fb2 переноса нет
     for src, dst in FB2_INLINE.items():
         s = s.replace(f"&lt;{src}&gt;", f"<{dst}>").replace(f"&lt;/{src}&gt;", f"</{dst}>")
     if links:

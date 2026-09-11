@@ -123,8 +123,8 @@ def main():
     ok("висячий дефис не тронут",
        any("short- or long-term" in t for k, t in kinds),
        [t for k, t in kinds if "short-" in t])
-    ok("<br> не склеивает слова",
-       any("с переносом" in t for k, t in kinds),
+    ok("<br> — перенос строки, слова не склеены",
+       any("с<br>переносом" in t for k, t in kinds),
        [t for k, t in kinds if "перенос" in t])
 
     ok("сноска со ссылкой — сноска",

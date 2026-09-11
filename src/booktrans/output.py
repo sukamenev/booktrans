@@ -132,6 +132,9 @@ def _autolink(s, tag):
 def _inline(s, table, links=None):
     """Экранирует текст, разворачивая разрешённую разметку и ссылки."""
     s = escape(s)
+    # Перенос строки внутри абзаца: в html — <br/>, в fb2 внутри <p> его
+    # нет — абзац делится заранее (см. _br_parts), остаток — пробел.
+    s = re.sub(r"&lt;br\s*/?&gt;", " " if table is FB2_INLINE else "<br/>", s)
     for src, dst in table.items():
         s = s.replace(f"&lt;{src}&gt;", f"<{dst}>").replace(f"&lt;/{src}&gt;", f"</{dst}>")
     if links:
@@ -188,7 +191,13 @@ def _balance(s):
 
 
 def _plain(s):
-    return re.sub(r"<[^>]+>", "", s)
+    return re.sub(r"<[^>]+>", "", re.sub(r"<br\s*/?>", "\n", s))
+
+
+def _br_parts(text):
+    """Абзац по переносам строк: для форматов, где у абзаца нет <br/>."""
+    parts = [p.strip() for p in re.split(r"<br\s*/?>", text)]
+    return [p for p in parts if p] or [text]
 
 
 def _md_inline(s):
@@ -329,6 +338,7 @@ def _md(s, links=None):
                 for c in MD_KEEP.split(s))
     for src, mark in MD_MARK.items():
         s = s.replace(f"<{src}>", mark).replace(f"</{src}>", mark)
+    s = re.sub(r"<br\s*/?>", "  \n", s)          # жёсткий перенос markdown
     for i, url in enumerate(links or (), 1):
         s = re.sub(rf"<a{i}>(.*?)</a{i}>", lambda m: f"[{m.group(1)}]({url})",
                    s, flags=re.S)
@@ -873,12 +883,21 @@ def _tex(s, links=None, notes_dict=None):
 
     s = re.sub(r'(https?://[a-zA-Z0-9./\-?=_&]+[a-zA-Z0-9/])', hide_bare_url, s)
 
+    # Перенос строки внутри абзаца. Крайние снимаем: на переносе в конце
+    # абзаца TeX падает («no line here to end»).
+    s = re.sub(r"^(?:\s*<br\s*/?>)+|(?:<br\s*/?>\s*)+$", "", s)
+
+    def hide_br(m):
+        marks[len(marks)] = r"\newline{}"
+        return f"\x00{len(marks) - 1}\x00"
+
+    s = re.sub(r"<br\s*/?>", hide_br, s)
     s = re.sub(r"</?(?:%s|a\d+)>" % "|".join(TEX_INLINE), hide, s)
     s = "".join(TEX_ESC.get(c, c) for c in s)
 
     def back(m):
         t = marks[int(m.group(1))]
-        if t.startswith("$") or t.startswith(r"\footnote") or t.startswith(r"\href") or t.startswith(r"\url") or t == "}":
+        if t.startswith(("$", r"\footnote", r"\href", r"\url", r"\newline")) or t == "}":
             return t
         name = re.match(r"</?([a-z]+)", t).group(1)
         close = t.startswith("</")
@@ -1492,8 +1511,13 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
             if b["id"] in nid:
                 num = next(n for k, n, _, _ in note_seq if k == nid[b["id"]])
                 a = f'<a l:href="#{nid[b["id"]]}" type="note">[{num}]</a>'
-            body, a = _anchored(esc(text, b.get('links'), notes_map), b["id"], a)
-            w(f"<p{aid(b)}>{body}{a}</p>")
+            # Перенос строки внутри абзаца: у <p> в fb2 нет <br/>, строки
+            # выходят соседними абзацами; знак сноски — где его метка, иначе
+            # на последней.
+            parts = _br_parts(text)
+            for k, part in enumerate(parts):
+                body, a = _anchored(esc(part, b.get('links'), notes_map), b["id"], a)
+                w(f"<p{aid(b) if k == 0 else ''}>{body}{a if k == len(parts) - 1 else ''}</p>")
     close_poem()
     if open_sec:
         w("</section>")

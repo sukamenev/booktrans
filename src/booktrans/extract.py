@@ -209,7 +209,12 @@ def _inner(el, keep=KEEP_INLINE, note=False):
                     out.append(ch.text)
                 walk(ch)
                 out.append(f"</{t}>")
-            elif tag in ("br", "td", "th", "tr", "li", "p", "div"):
+            elif tag == "br":
+                # Перенос строки внутри абзаца — разметка, а не пробел:
+                # чат, форум и письмо теряли строки ещё до перевода.
+                out.append("<br>")
+                walk(ch)
+            elif tag in ("td", "th", "tr", "li", "p", "div"):
                 # Соседние ячейки и абзацы, попавшие внутрь одного блока,
                 # разделяем пробелом: иначе слова по краям склеятся.
                 out.append(" ")
@@ -250,6 +255,9 @@ def _inner(el, keep=KEEP_INLINE, note=False):
     # перенос: по этому их и различаем.
     txt = re.sub(r"(?<=[^\W\d_])-[ \t]*\n\s*(?=[^\W\d_])", "-", txt)
     txt = re.sub(r"\s+", " ", txt).strip()
+    # Переносы: сдвоенные — один, крайние — ни к чему, пробелы вокруг — тоже.
+    txt = re.sub(r"(?:\s*<br>\s*)+", "<br>", txt)
+    txt = re.sub(r"^<br>|<br>$", "", txt)
     if note:
         txt = NOTE_HEAD.sub("", txt).strip()
         # «Проект Гутенберг» заворачивает тело сноски в квадратные скобки —
@@ -3003,7 +3011,8 @@ def _mark_refs(blocks):
 def strip_tags(s):
     # Тег начинается с буквы или косой черты: знак «меньше» в тексте
     # («under <13 μmol/L») тегом не считается и текст за собой не уносит.
-    return re.sub(r"</?[a-zA-Z][^>]*>", "", s).strip()
+    # Перенос строки — пробел, иначе слова по его краям слипаются.
+    return re.sub(r"</?[a-zA-Z][^>]*>", "", re.sub(r"<br\s*/?>", " ", s)).strip()
 
 
 def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None):
