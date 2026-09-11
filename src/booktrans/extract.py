@@ -2735,11 +2735,22 @@ def _refs_span(blocks):
 # библиографию: по ней читатель ищет издание.
 NOTE_CITE = re.compile(r"^.{0,100}?[:—]\s+[A-ZА-ЯЁ][^\n]{0,140}?,")
 NOTE_PAGE = re.compile(r"\b\d+[:–—-]\d+|\bp{1,2}\.\s*\d+|\b\d{1,4}\.$")
+# Дата перед двоеточием — подпись реплики («► Имя Replied on July 6th,
+# 2011: текст»), а не лемма ссылки: по ней форумная интерлюдия целиком
+# уходила в «не переводить».
+NOTE_STAMP = re.compile(
+    r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}"
+    r"(?:st|nd|rd|th)?,?\s+\d{4}\s*[:—]|"
+    r"\b\d{1,2}\s+(?:янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек)[а-я]*"
+    r"\s+\d{4}(?:\s*г\.)?\s*[:—]", re.I)
 
 
 def _looks_cite(text):
     t = " ".join(strip_tags(text).split())
-    return bool(NOTE_CITE.match(t)) and bool(REFS_YEAR.search(t) or NOTE_PAGE.search(t))
+    m = NOTE_CITE.match(t)
+    if not m or NOTE_STAMP.search(t[:m.end()]):
+        return False
+    return bool(REFS_YEAR.search(t) or NOTE_PAGE.search(t))
 
 
 def _mark_cites(blocks):

@@ -148,6 +148,18 @@ CASES = [
      blocks(cites(4) + ["Известия института, том 9, с. 63-75."] + cites(4, first=5)),
      9),
 
+    # Форумная переписка из романа: «► Имя (звание) Replied on July 6th,
+    # 2011: текст» — двоеточие, год и запятая, как у ссылки. Версия 1.9.83
+    # приняла семьдесят таких постов за концевые ссылки, и интерлюдия
+    # вышла на языке оригинала.
+    ("форумная переписка — не ссылки", blocks(
+        [f"► {who} (Brockton Bay Refugee) Replied on July {6 + i % 2}th, 2011: "
+         f"The theory makes sense, but the numbers are off. Huge cleanup, "
+         f"and nobody says who pays for it."
+         for i, who in enumerate(["Ekul", "AverageAlexandros", "Lolitup",
+                                  "XxVoid_CowboyxX", "Robby", "TheGnat",
+                                  "Chrome", "TRJ"])]), 0),
+
     # А вот наружу ряд не растёт: проза за последней записью остаётся прозой.
     ("проза после ряда не цепляется", blocks(cites(8) + [PROSE] * 3), 8),
 
