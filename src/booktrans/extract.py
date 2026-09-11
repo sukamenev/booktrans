@@ -3008,6 +3008,54 @@ def _mark_refs(blocks):
     return n
 
 
+def _asis_runs(blocks):
+    """Ряды подряд идущих блоков «не переводить»: (от, до) по индексам.
+    Код и выброшенные разделы не в счёт — там решение не спорное."""
+    runs, start = [], None
+    for i, b in enumerate(blocks):
+        hit = bool(b.get("asis")) and not b.get("drop") and b["kind"] in ("p", "note")
+        if hit and start is None:
+            start = i
+        if not hit and start is not None:
+            runs.append((start, i - 1))
+            start = None
+    if start is not None:
+        runs.append((start, len(blocks) - 1))
+    return runs
+
+
+def confirm_asis(blocks, ask, log=None):
+    """Кандидатов «не переводить» подтверждает модель разметки.
+
+    Правила находят ряды дёшево и библиографию на тысячу записей ловят
+    целиком, но форумный пост с датой и двоеточием им не отличить от
+    ссылки — и интерлюдия уходила из перевода. Один вопрос на ряд с его
+    началом, серединой и концом; ответ «текст» снимает пометку. Сбой
+    модели или невнятный ответ оставляют решение правил.
+    """
+    from . import lang
+    tpl, _ = lang.prompt("asis_confirm")
+    n = 0
+    for lo, hi in _asis_runs(blocks):
+        run = blocks[lo:hi + 1]
+        mid = len(run) // 2
+        pick = run if len(run) <= 8 else run[:3] + run[mid - 1:mid + 1] + run[-3:]
+        sample = "\n\n".join(strip_tags(b["text"])[:300] for b in pick)
+        try:
+            ans = (ask(tpl.format(n=len(run), sample=sample)) or "").upper()
+        except Exception:                                # noqa: BLE001
+            ans = ""
+        text = "ТЕКСТ" in ans and "СПРАВОЧ" not in ans
+        if text:
+            for b in run:
+                b.pop("asis", None)
+            n += len(run)
+        if log:
+            log("  " + lang.T("asis_confirm", run[0]["id"], run[-1]["id"], len(run),
+                              lang.T("asis_text" if text else "asis_ref")))
+    return n
+
+
 def strip_tags(s):
     # Тег начинается с буквы или косой черты: знак «меньше» в тексте
     # («under <13 μmol/L») тегом не считается и текст за собой не уносит.
@@ -3015,7 +3063,8 @@ def strip_tags(s):
     return re.sub(r"</?[a-zA-Z][^>]*>", "", re.sub(r"<br\s*/?>", " ", s)).strip()
 
 
-def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None):
+def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None,
+              confirm=None, log=None):
     """Прочитать книгу любого поддерживаемого формата.
 
     `encoding` — если человек указал кодировку руками; `ask` — вызов модели,
@@ -3032,6 +3081,8 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None
         for b in blocks:
             if b["kind"] == "code":
                 b["asis"] = True      # код в перевод не идёт; см. code.py
+        if confirm:
+            confirm_asis(blocks, confirm, log)
         return meta, blocks, cover, images
     except BadBook:
         raise

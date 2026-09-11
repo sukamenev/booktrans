@@ -223,7 +223,7 @@ class Run:
         try:
             self.meta, self.blocks, self.cover, self.images = extract.read_book(
                 a.book, styles_map, a.encoding, self.ask_model, marks,
-                agent=self.ocr_agent)
+                agent=self.ocr_agent, confirm=self.confirm_asis, log=log)
         except extract.BadBook as e:
             sys.exit(f"\n  {e}")
         json.dump({"meta": self.meta, "blocks": self.blocks},
@@ -422,6 +422,11 @@ class Run:
         pipeline.apply_fixes(self.work, self.blocks, self.log)
 
     # ---------------------------------------------------------- промпты
+
+    def confirm_asis(self, prompt):
+        """Модель разметки судит кандидата «не переводить»: см.
+        extract.confirm_asis. Модель та же, что решает стили заголовков."""
+        return self.models.first("formatter").run(pipeline._text_only(), prompt)[0]
 
     def ask_model(self, prompt):
         """Спросить модель — этим разрешаются споры о кодировке файла.

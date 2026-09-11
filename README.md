@@ -199,6 +199,13 @@ translation and editing, and comes out in every format in its own way:
 pdf, a hard break in markdown, a newline in txt. Nothing is taken from pdf or
 OCR text: line breaks there divide columns and typeset lines, not the text.
 
+Blocks that the rules take for a bibliography, end-note citations or an
+index — and would leave untranslated — are first confirmed by the markup
+model: one question per run, showing its head, middle and tail; the answer
+"text" sends the run back to translation. A forum thread with dates and
+colons looks like citations, and without this a whole interlude came out
+in the source language.
+
 Every publisher lays a book out differently: a heading may be `<h1>`, or
 `<p class="CN">`, or `<p class="Chap-Title-ct">`. Worse, **the same class
 means different things in different books**: in one, `TNI` is unindented
