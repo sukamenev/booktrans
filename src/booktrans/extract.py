@@ -3008,6 +3008,10 @@ def _mark_refs(blocks):
     return n
 
 
+# Ряд «не переводить» короче этого — модели целиком; длиннее — выдержками.
+ASIS_FULL = 12000
+
+
 def _asis_runs(blocks):
     """Ряды подряд идущих блоков «не переводить»: (от, до) по индексам.
     Код и выброшенные разделы не в счёт — там решение не спорное."""
@@ -3038,9 +3042,14 @@ def confirm_asis(blocks, ask, log=None):
     n = 0
     for lo, hi in _asis_runs(blocks):
         run = blocks[lo:hi + 1]
-        mid = len(run) // 2
-        pick = run if len(run) <= 8 else run[:3] + run[mid - 1:mid + 1] + run[-3:]
-        sample = "\n\n".join(strip_tags(b["text"])[:300] for b in pick)
+        # Короткий ряд — целиком; библиографию на тысячу записей — по
+        # началу, середине и концу: решение по ним то же, а вход дешевле.
+        texts = [strip_tags(b["text"]) for b in run]
+        if sum(map(len, texts)) > ASIS_FULL:
+            mid = len(run) // 2
+            texts = ([t[:300] for t in texts[:3]] + ["…"] + [t[:300] for t in texts[mid - 1:mid + 1]]
+                     + ["…"] + [t[:300] for t in texts[-3:]])
+        sample = "\n\n".join(texts)
         try:
             ans = (ask(tpl.format(n=len(run), sample=sample)) or "").upper()
         except Exception:                                # noqa: BLE001

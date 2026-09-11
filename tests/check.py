@@ -27,7 +27,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 from booktrans import extract as E, lang as G          # noqa: E402
 
 FIELDS = ("язык", "абзацев", "стихов", "заголовков", "сносок",
-          "со_ссылками", "картинок", "обложка", "слов", "ссылок", "как_есть")
+          "со_ссылками", "картинок", "обложка", "слов", "ссылок", "как_есть",
+          "переносов")
 
 
 def measure(path):
@@ -48,6 +49,8 @@ def measure(path):
         "сносок": len(nt), "со_ссылками": len(lk), "картинок": len(imgs),
         "обложка": bool(cover),
         "слов": sum(len(b["text"].split()) for b in ps + vs),
+        # Переносы строк внутри абзаца: чат и форум, набранные через <br/>.
+        "переносов": sum(1 for b in ps if "<br>" in b["text"]),
     }
 
 
@@ -132,9 +135,16 @@ def others():
     """Соседние проверки. Каждая — отдельный процесс: они правят настройки и
     подменяют `time.sleep`, и в одном процессе мешали бы друг другу."""
     bad, ran = 0, 0
-    for path in sorted(glob.glob(os.path.join(HERE, "*_check.py"))):
+    paths = sorted(glob.glob(os.path.join(HERE, "*_check.py")))
+    # Процессы независимы, и на четырёх ядрах прогон впятеро короче;
+    # отчёт печатается в прежнем порядке, по готовности всех.
+    with cf.ThreadPoolExecutor(max_workers=max(os.cpu_count() or 2, 2)) as pool:
+        runs = dict(zip(paths, pool.map(
+            lambda p: subprocess.run([sys.executable, p], capture_output=True, text=True),
+            paths)))
+    for path in paths:
         name = os.path.basename(path)[:-3]
-        r = subprocess.run([sys.executable, path], capture_output=True, text=True)
+        r = runs[path]
         tail = [l for l in r.stdout.splitlines() if l.strip()]
         ran += 1
         if r.returncode == 0:

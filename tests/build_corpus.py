@@ -10,8 +10,8 @@ import os, re, shutil, subprocess, sys, zipfile
 import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.dirname(HERE))
-from lib import extract as E
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
+from booktrans import extract as E
 
 # ОТКУДА брать книги. Набор собирается из чужих книг, поэтому в репозиторий
 # они не попадают и пути у каждого свои. Порядок такой: переменная окружения,
@@ -54,6 +54,68 @@ for name, path in (("BT_BOOKS", T), ("BT_LIB", B)):
         sys.exit(f"нет папки {path}\n"
                  f"Задайте {name} в окружении или в {HERE}/corpus.paths")
 WORDS = 600
+
+
+def synthetic(dst):
+    """Книга, собранная из ничего: чат через <br/>, форум с датами, стихи,
+    концевые ссылки и библиография. Чужого текста в ней нет, а значит она
+    проверяет ровно те правила, что ошибались на живых книгах: перенос
+    строки внутри абзаца и «не переводить» по датам и двоеточиям."""
+    prose = ("The harbour woke slowly that morning, and the gulls argued over "
+             "the same crust for the better part of an hour while the ferry "
+             "waited for a passenger who never came. ") * 3
+    chat = ("<p><b>Ann:</b> are you there<br/><b>Bob:</b> yes, give me a minute"
+            "<br/><b>Ann:</b> the ferry is leaving<br/><b>Bob:</b> coming</p>")
+    forum = "".join(
+        f"<p>► <b>{who}</b> (Harbour Regular) Replied on July {6 + i % 2}th, 2011: "
+        f"The theory makes sense, but the numbers are off, and nobody says who "
+        f"pays for the cleanup.</p>"
+        for i, who in enumerate(["Ekul", "AverageAlexandros", "Lolitup", "Robby",
+                                 "TheGnat", "Chrome", "TRJ", "Nod"]))
+    cites = "".join(
+        f'<p>"a phrase number {i}": Hans Moravec, Mind Children: The Future of '
+        f'Robot Intelligence (Harvard University Press, {1980 + i}), {i * 7}.</p>'
+        for i in range(1, 9))
+    bib = "".join(
+        f"<p>{i}. Lilly, J. C. {1950 + i}. On the whales, part {i}. "
+        f"Journal of Marine Talk {i}: {i * 3}–{i * 3 + 9}.</p>" for i in range(1, 9))
+    chapters = [
+        ("Chapter One", "<p>" + prose + "</p>" * 1 + "<p>" + prose + "</p>" + chat
+         + "<p>" + prose + "</p>"),
+        ("Chapter Two", "<p>" + prose + "</p>" + forum + "<p>" + prose + "</p>"),
+        ("Notes", cites),
+        ("Bibliography", bib),
+    ]
+    files = {}
+    for i, (title, body) in enumerate(chapters, 1):
+        files[f"OEBPS/ch{i}.xhtml"] = (
+            '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">'
+            f"<head><title>{title}</title></head><body><h1>{title}</h1>{body}</body></html>")
+    items = "".join(f'<item id="ch{i}" href="ch{i}.xhtml" media-type="application/xhtml+xml"/>'
+                    for i in range(1, len(chapters) + 1))
+    refs = "".join(f'<itemref idref="ch{i}"/>' for i in range(1, len(chapters) + 1))
+    files["OEBPS/content.opf"] = (
+        '<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" '
+        'version="2.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        '<dc:title>Harbour Notes</dc:title><dc:creator>Nobody</dc:creator><dc:language>en</dc:language>'
+        '<dc:identifier id="id">urn:uuid:synthetic-harbour</dc:identifier></metadata>'
+        f'<manifest>{items}</manifest><spine>{refs}</spine></package>')
+    files["META-INF/container.xml"] = (
+        '<?xml version="1.0"?><container version="1.0" '
+        'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+        '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
+        '</rootfiles></container>')
+    with zipfile.ZipFile(dst, "w") as o:
+        o.writestr("mimetype", "application/epub+zip", zipfile.ZIP_STORED)
+        for n, d in files.items():
+            o.writestr(n, d)
+
+
+if "--synthetic" in sys.argv:
+    os.makedirs(OUT, exist_ok=True)
+    synthetic(os.path.join(OUT, "13_synthetic_markup_en.epub"))
+    print("собрана только синтетическая книга")
+    sys.exit(0)
 shutil.rmtree(OUT, ignore_errors=True); os.makedirs(OUT)
 
 
