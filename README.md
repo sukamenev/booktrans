@@ -378,6 +378,16 @@ A pass begun but not finished — a chunk left without an editor under
 pipeline: the book is built, but the run ends with "WORK NOT FINISHED", a
 per-pass chunk count and a ready-made `--chunks` for the next run.
 
+Verification adds its own remarks to the editor's: from the CHARACTERS and
+NAMES rows it finds paragraphs where a name is in the original but no form
+of the accepted translation is in the translation, and asks the verifier
+either to fix the name per the reference or to dismiss the alarm. A
+paragraph may carry several remarks — they are then numbered
+(`s11.b0051#2`) and each gets its own verdict, with one corrected paragraph.
+A rename in the reference thus reaches the text by itself: the affected
+chunks are re-verified, and the remainder shows in the "Names per the
+reference" check.
+
 Verification is full-text by default: the verifier receives every
 original–translation pair and, beyond the remarks, sweeps them for gross
 meaning errors — omissions, inverted sense, foreign numbers and measures,

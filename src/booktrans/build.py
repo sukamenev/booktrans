@@ -1249,6 +1249,30 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     # Служебная речь в готовом тексте: идентификаторы блоков и маркеры
     # конвертов не имеют права дожить до сборки. На живой книге отчёт
     # сверщика приклеился к исправлению абзаца и уехал к читателю.
+    # Имена по справочнику: оригинал в блоке есть, перевода нет ни в одной
+    # форме. Сверка получает то же самое замечанием и чинит или снимает;
+    # здесь — остаток после неё, глазами.
+    log(T("qa8"))
+    rp = lpath(work, "scout.md", to)
+    if os.path.exists(rp):
+        from .pipeline import name_gaps, split_ref
+        rows = split_ref(open(rp, encoding="utf-8").read())[1]
+        gaps = name_gaps(rows, src, tr)
+        per = Counter()
+        for i, pairs in gaps.items():
+            for o, t in pairs:
+                per[(o, t)] += 1
+        if per:
+            log("   " + T("qa8_bad", sum(per.values()), len(gaps)))
+            for (o, t), n in per.most_common(8):
+                ex = next(i for i, ps in gaps.items() if (o, t) in ps)
+                log(f"     {o} → «{t}»: {n} ({ex})")
+            _more(log, len(per) - 8, T)
+        else:
+            log("   " + T("qa8_ok"))
+    else:
+        log("   " + T("qa8_none"))
+
     log(T("qa7"))
     svc = re.compile(r"\bs\d+\.b\d+\b|\bb\d{4}\b|\[\[\[")
     dirty = [i for i, t in tr.items() if i in src and svc.search(t)]

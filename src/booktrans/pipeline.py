@@ -1999,6 +1999,97 @@ def all_translations(work, to=""):
 NO_NOTES = ("нет", "none", "keine", "aucune", "无", "なし", "-", "—")
 
 
+def name_stem(trans, decl=""):
+    """Основа перевода имени для поиска любой его формы в тексте.
+
+    Точная морфология не нужна: находка лишь зовёт сверщика, и ложная
+    тревога стоит одной строки. Формы, названные разведкой в ячейке рода
+    («склоняется: Лощина, Лощины»), дают общий префикс; без них — самое
+    длинное слово имени без конечной гласной. Короче четырёх букв основу не
+    режем: имя ищется целиком."""
+    words = [w for w in re.split(r"[\s,;/]+", trans) if re.search(r"[^\W\d_]", w)]
+    if not words:
+        return ""
+    head = max(words, key=len)
+    forms = [head] + [w for w in re.findall(r"[^\W\d_]+", decl or "")
+                      if len(w) > 3 and w[:3].casefold() == head[:3].casefold()]
+    stem = os.path.commonprefix([f.casefold() for f in forms])
+    if len(stem) >= 4 and len(forms) > 1:
+        return stem
+    cut = re.sub(r"[аеёиоуыэюяйь]$", "", head.casefold())
+    return cut if len(cut) >= 4 else head.casefold()
+
+
+def name_gaps(rows, srcs, cur):
+    """Блоки, где имя из справочника в оригинале есть, а его перевод — нет.
+
+    По строкам CHARACTERS и NAMES: {id блока: [(оригинал, перевод), …]}.
+    Это повод для замечания сверщику, а не приговор: у имени с неправильным
+    склонением («Рот — Рта») основа не найдётся, и сверщик снимет тревогу.
+    """
+    gaps = {}
+    for key, line, *sec in rows:
+        if sec and sec[0] not in ("CHARACTERS", "NAMES"):
+            continue
+        cells = _cells(line)
+        if len(cells) < 2 or not cells[1] or not re.search(r"[^\W\d_]", cells[1]):
+            continue
+        origs = [o for o in re.split(r"\s*[;/]\s*", key)
+                 if len(o) >= 3 and any(ch.isupper() for ch in o)]
+        trans = [t for t in re.split(r"\s*[;/]\s*", cells[1]) if t.strip()]
+        if not origs or not trans or trans[0].casefold() == origs[0].casefold():
+            continue
+        stems = [name_stem(t, cells[2] if len(cells) > 3 else "") for t in trans]
+        stems = [s for s in stems if s]
+        if not stems:
+            continue
+        pats = [re.compile(rf"(?<![^\W\d_]){re.escape(o)}(?![^\W\d_])") for o in origs]
+        for i, s in srcs.items():
+            if i not in cur:
+                continue
+            hit = next((o for o, p in zip(origs, pats) if p.search(s)), None)
+            if hit is None:
+                continue
+            low = cur[i].casefold()
+            if not any(st in low for st in stems):
+                gaps.setdefault(i, []).append((hit, trans[0]))
+    return gaps
+
+
+def claims_text(notes, gaps, ids):
+    """Замечания к куску одной строкой на претензию, с адресом блока.
+
+    К блоку может быть несколько претензий — редактора и конвейера; тогда
+    они нумеруются: `s11.b0051#1`, `#2`, и сверщик отвечает на каждую.
+    Одна претензия адресуется по-старому, голым идентификатором. Текст
+    замечаний редактора остаётся как есть, строки конвейера — за ним: без
+    находок отпечаток сверки прежний, и старые куски не пересверяются.
+    """
+    tpl = lang.prompt("verify_name_gap")[0].strip()
+    extra = [f"{i}: " + tpl.format(orig=o, trans=t)
+             for i in ids for o, t in gaps.get(i, [])]
+    raw = (notes or "").strip()
+    if extra:
+        raw = (raw + "\n" if raw else "") + "\n".join(extra)
+    per = {}
+    for ln in raw.splitlines():
+        for i in ids:
+            if i in ln:
+                per.setdefault(i, []).append(ln.strip())
+    shown, claims = [], []
+    for i in ids:
+        cl = per.get(i) or []
+        if len(cl) == 1:
+            shown.append(cl[0])
+            claims.append(i)
+            continue
+        for n, ln in enumerate(cl, 1):
+            body = re.sub(rf"^\s*{re.escape(i)}\s*[:—-]\s*", "", ln)
+            shown.append(f"{i}#{n}: {body}")
+            claims.append(f"{i}#{n}")
+    return raw, "\n".join(shown), claims
+
+
 def has_notes(t):
     t = (t or "").strip()
     return bool(t) and len(t) > 12 and t.lower().rstrip(".") not in NO_NOTES
@@ -2029,16 +2120,22 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
     `size` — длины оригиналов: исправление, вдвое переросшее оригинал, несёт
     лишнюю речь вокруг абзаца, и её не выдаёт ни идентификатор, ни язык.
     """
+    # Претензия адресуется блоком или блоком с номером (`s11.b0051#2`);
+    # вердикт — на претензию, вложения — на блок.
+    claims = set(want) | set(must or ())
     verdicts = {}
     for m in re.finditer(r"\[\[\[VERDICT\s+(\S+?)\s+"
                          r"(author|translation|dismiss|unsure)\]\]\]"
                          r"\s*(.*?)(?=\[\[\[|\Z)", out, re.S):
-        bid, kind, why = m.groups()
-        if bid in want:
-            verdicts[bid] = (kind, " ".join(why.split()))
+        cid, kind, why = m.groups()
+        if cid in claims:
+            verdicts[cid] = (kind, " ".join(why.split()))
     missing = [i for i in (want if must is None else must) if i not in verdicts]
     if missing:
-        raise ValueError(f"нет вердикта по блокам {missing[:4]} ({len(missing)})")
+        raise ValueError(f"нет вердикта по замечаниям {missing[:4]} ({len(missing)})")
+    kinds_of = {}
+    for cid, (kind, _) in verdicts.items():
+        kinds_of.setdefault(cid.split("#")[0], set()).add(kind)
     notes = parse_notes_blocks(out, want)
     fixes = {}
     for m in re.finditer(r"\[\[\[P\s+(\S+?)\]\]\]\s*(.*?)\s*"
@@ -2051,17 +2148,15 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
         raise ValueError(f"исправление {loose[:3]} не закрыто маркером"
                          " [[[/P идентификатор]]]")
     noted = {n["block"] for n in notes}
-    bad = [i for i, (k, _) in verdicts.items() if k == "author" and i not in noted]
+    bad = [i for i, ks in kinds_of.items() if "author" in ks and i not in noted]
     if bad:
         raise ValueError(f"вердикт author без сноски: {bad[:4]}")
-    bad = [i for i, (k, _) in verdicts.items()
-           if k == "translation" and i not in fixes]
+    bad = [i for i, ks in kinds_of.items() if "translation" in ks and i not in fixes]
     if bad:
         raise ValueError(f"вердикт translation без исправления: {bad[:4]}")
     # Сноска или правка вопреки вердикту — рассинхрон ответа, а не довесок.
-    notes = [n for n in notes if verdicts.get(n["block"], ("",))[0] == "author"]
-    fixes = {i: v for i, v in fixes.items()
-             if verdicts.get(i, ("",))[0] == "translation"}
+    notes = [n for n in notes if "author" in kinds_of.get(n["block"], ())]
+    fixes = {i: v for i, v in fixes.items() if "translation" in kinds_of.get(i, ())}
     dirty = [i for i, v in fixes.items() if _SERVICE.search(v)] \
         + [n["block"] for n in notes if _SERVICE.search(n["text"])]
     if dirty:
@@ -2154,6 +2249,17 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
     # Готовность считается заранее: сколько осталось, видно первой строкой
     # этапа, а не выясняется по ходу. Куски, чьи отпечатки сошлись, в
     # очередь не попадают вовсе.
+    # Строки имён — по оригиналам куска, как и прочие строки справочника.
+    name_rows = [r for r in ref_rows if r[2:3] and r[2] in ("CHARACTERS", "NAMES")]
+
+    def remark_of(idx, notes_txt, ids_):
+        """Замечания редактора плюс находки конвейера по именам куска:
+        (текст для отпечатка, текст для запроса, претензии, блоки)."""
+        gaps = name_gaps(name_rows, {i: orig[i] for i in ids_ if i in orig}, cur)
+        raw, shown, claims = claims_text(notes_txt, gaps, ids_)
+        must_ = sorted({c.split("#")[0] for c in claims}, key=_id_key)
+        return raw, shown, claims, must_
+
     pend = []
     for idx, ep in todo:
         d = json.load(open(ep, encoding="utf-8"))
@@ -2162,13 +2268,13 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
             if not full:
                 continue
             remark = ""
-        must_ = [i for i in orig if i in remark and i in cur]
-        ids_ = must_
+        ids_ = [i for i in orig if i in remark and i in cur]
         if full:
             ids_ = [b["id"] for b in ((by_index.get(idx) or {}).get("blocks")
                                       or []) if b["id"] in cur]
         if not ids_:
             continue
+        remark = remark_of(idx, remark, ids_)[0]
         op = f'{lpath(work, "vf", to)}/{idx:04d}.json'
         if os.path.exists(op) and not only:
             old = json.load(open(op, encoding="utf-8"))
@@ -2197,15 +2303,14 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         # остаётся человеку, как и раньше.
         out_path = f'{lpath(work, "vf", to)}/{idx:04d}.json'
         with lock:
-            must = sorted((i for i in orig if i in remark and i in cur),
-                          key=_id_key)
-            ids = must
+            ids = sorted((i for i in orig if i in remark and i in cur), key=_id_key)
             if full:
                 blocks = (by_index.get(idx) or {}).get("blocks") or []
                 ids = sorted((b["id"] for b in blocks if b["id"] in cur),
                              key=_id_key)
             if not ids:
                 return
+            remark, shown, claims, must = remark_of(idx, remark, ids)
             # Сверка сделана по замечанию и по тексту; изменилось любое — снова.
             if os.path.exists(out_path) and not only:
                 old = json.load(open(out_path, encoding="utf-8"))
@@ -2227,8 +2332,8 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         pieces = [task]
         if full:
             pieces.append(lang.prompt("verify_sweep")[0])
-        if remark:
-            pieces.append(lang.prompt("verify_remarks")[0] + "\n\n" + remark)
+        if shown:
+            pieces.append(lang.prompt("verify_remarks")[0] + "\n\n" + shown)
         refs = chunk_refs(ref_rows, " ".join(orig[i] for i in ids), log, lock)
         if refs:
             pieces.append(lang.prompt("ref_rows")[0] + "\n\n" + "\n".join(refs))
@@ -2238,7 +2343,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
              encoding="utf-8").write(prompt)
         with lock:
             log(f"[{idx:04d}/{n_all:04d}] {who:24s} " + T("vf_start", len(ids)))
-        want, need = set(ids), set(must)
+        want, need = set(ids), set(claims)
         size = {i: len(orig[i]) for i in ids if i in orig}
         res = None
         parse = lambda o: _parse_verify(o, want, need, size, snap)  # noqa: E731
@@ -2265,8 +2370,8 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         verdicts, notes_, fixes = res
         kinds = {"author": T("vf_author"), "translation": T("vf_fixed"),
                  "dismiss": T("vf_dismissed"), "unsure": T("vf_unsure")}
-        lines = [f"{i}: {kinds[verdicts[i][0]]} {verdicts[i][1]}".strip()
-                 for i in ids if i in verdicts]
+        lines = [f"{c}: {kinds[verdicts[c][0]]} {verdicts[c][1]}".strip()
+                 for c in sorted(verdicts, key=lambda c: (_id_key(c.split("#")[0]), c))]
         out = {"index": idx, **_spent(meta), "remark": fingerprint(remark),
                # Отпечаток — от текста ПОСЛЕ исправления: следующий запуск
                # увидит его же и сочтёт сверенным. По досверочному сверка
