@@ -377,6 +377,28 @@ def main():
        "меч-кладенец" not in got, [l for l in got.splitlines() if "меч" in l])
     ok("своя строка без канона не тронута", "| изба | hut |" in got)
 
+    # Родство слов гасит дописывание только у той же сущности: «Michael
+    # Poole → Майкл Пул» содержит «Пул», а «New Haven → Нью-Хейвен» не
+    # содержит «Прибежище» — команду Haven надо дописать, город ей не помеха.
+    os.makedirs(f"{d}/cyc3/ru", exist_ok=True)
+    open(f"{d}/cyc3/ru/scout.md", "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = Первая\n\n"
+        "## NAMES — Имена\n\n| Haven | Прибежище | | команда |\n"
+        "| Michael Poole | Майкл Пул | | инженер |\n")
+    os.makedirs(f"{d}/cur2/ru", exist_ok=True)
+    sp2 = f"{d}/cur2/ru/scout.md"
+    open(sp2, "w", encoding="utf-8").write(
+        "## META — Выходные данные\n\ntitle_target = Вторая\n\n"
+        "## NAMES — Имена\n\n| New Haven | Нью-Хейвен | | город |\n| Poole | Пул | | он же |\n")
+    P.cycle_merge(f"{d}/cur2", [f"{d}/cyc3"], "ru",
+                  [{"text": "Haven met Michael Poole in New Haven."}])
+    got2 = open(sp2, encoding="utf-8").read()
+    ok("чужая сущность с общим словом дописывается",
+       "| Haven | Прибежище |" in got2, [l for l in got2.splitlines() if "Haven" in l])
+    ok("та же сущность с общим словом не дублируется",
+       "| Michael Poole |" not in got2 and "| Poole | Пул |" in got2,
+       [l for l in got2.splitlines() if "Poole" in l])
+
     ok("автор наследуется от старшей книги",
        "author_target = Viktoria Zimenkova" in got,
        [l for l in got.splitlines() if "author_target" in l])

@@ -3435,9 +3435,19 @@ def cycle_merge(work, likes, to, blocks, log=None, renamer=None):
                         pairs += _trans_pairs(line, new)
                         line = new
                 elif k:
+                    # Родство слов гасит дописывание, только если это тот же
+                    # человек — перевод одной строки содержит перевод другой:
+                    # «Майкл Пул» и «Пул» — да, «Нью-Хейвен» и «Прибежище»
+                    # (город и команда Haven) — нет.
                     aw = set(k.split())
+                    mine = _cells(line)[1].casefold() if line.strip().startswith("|") \
+                        and len(_cells(line)) > 1 else None
                     for rk in {r for w in aw for r in by_word.get(w, ())}:
-                        if aw <= words[rk] or words[rk] <= aw:
+                        if not (aw <= words[rk] or words[rk] <= aw):
+                            continue
+                        cc = _cells(rows[rk][0])
+                        ct = re.split(r"\s*;\s*", cc[1])[0].casefold() if len(cc) > 1 else ""
+                        if mine is None or not ct or not mine or ct in mine or mine in ct:
                             seen.add(rk)
                 out.append(line)
             parts[at] = "\n".join(out)
