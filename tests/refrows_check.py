@@ -203,6 +203,11 @@ def main():
     cut, n = P.ref_rows_cut(arows, text, budget=40)
     ok("под бюджетом первыми имена, потом пара",
        cut == ["| Dense | Денс |", "| Rare; Rar | Рар |"] and n == 3, (cut, n))
+    # Имя с одним упоминанием переживает сноску с тремя: группа старше счёта.
+    mixed = P.split_ref("## NAMES — Имена\n\n| Rare | Рар | | |\n\n"
+                        "## FOOTNOTES — Сноски\n\n| Dense | Денс | сноска |\n")[1]
+    cut, n = P.ref_rows_cut(mixed, "Dense, Dense, Dense and Rare.", budget=20)
+    ok("имя старше сноски при урезании", cut == ["| Rare | Рар | | |"] and n == 2, (cut, n))
 
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0

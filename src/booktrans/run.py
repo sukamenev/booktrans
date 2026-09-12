@@ -494,7 +494,8 @@ class Run:
         ref = pipeline.scout(self.work, self.blocks, self.models.first("scout"),
                              self.sysprompt(), self.task("scout"), a.retries, log,
                              a.to, hints=hints, fallback=self.models.rest("scout"),
-                             likes=a.like, jobs=a.scout_jobs)
+                             likes=a.like, jobs=a.scout_jobs,
+                             renamer=self.models.first("formatter"))
         # Внедрённое обращение к машине — повод остановиться до перевода, а не
         # обнаружить его в готовой книге. Разведка отличает такое указание от
         # книги, которая об инъекциях рассказывает: вторую переводим молча.
@@ -511,7 +512,8 @@ class Run:
         # Имена соседних книг цикла (`--like`) сводятся после разведки кодом,
         # а не просьбой в промпте: замена в файле стопроцентна, бюджет не
         # нужен, и работает это даже когда разведка уже была сделана.
-        pipeline.cycle_merge(self.work, a.like or [], a.to, self.blocks, log)
+        pipeline.cycle_merge(self.work, a.like or [], a.to, self.blocks, log,
+                             renamer=self.models.first("formatter"))
         # Выходные данные разведка находит только сейчас, а метаданные были
         # собраны до неё. Без этого перечитывания книга первого прогона
         # выходила с заглавием оригинала, и оно появлялось лишь при повторной

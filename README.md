@@ -60,7 +60,7 @@ What each part does:
 | `--to ru` | target language |
 | `--agent agy` | what translates it: Antigravity. There are also `claude`, `codex`, `openrouter`, and `cmd` for a CLI of your own |
 | `--name-series` | include the cycle and book number in output file names: “Author. Cycle 02. Title” — a cycle's books line up in reading order; the number is zero-padded to two digits so plain alphabetical sorting keeps book 10 after book 9 |
-| `--like Book.work` | a book of the same cycle translated earlier: after reconnaissance its names are merged into the new reference — the spelling accepted there wins by force, so the cycle keeps one spelling. One key per earlier book, in reading order (see below) |
+| `--like Book.work` | a book of the same cycle translated earlier: after reconnaissance its names are merged into the new reference — the spelling accepted there wins by force, so the cycle keeps one spelling, and the rejected spelling is also purged from the reference prose — character cards and voices — by the markup model, each edit checked to be local. One key per earlier book, in reading order (see below) |
 | `--jobs 5` | five threads for editing, verification and footnotes. Translation still runs sequentially: each chunk builds on the previous one |
 
 The third book of a cycle, with the first two already translated: a `--like`

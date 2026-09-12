@@ -826,7 +826,11 @@ def ref_rows_cut(rows, text, budget=0):
                         rf"(?<![^\W\d_]){re.escape(part)}(?![^\W\d_])", text, re.I))
             hits.append(n)
         if all(hits) if pair else any(hits):
-            got.append(((pair, -sum(hits)), line))
+            # Под бюджетом первыми выживают имена и термины, затем сноски и
+            # опасные места, обращения — последними; внутри группы — чаще
+            # упомянутые. Иначе имя с одним упоминанием выпадало ради сноски.
+            rank = 2 if pair else 1 if sec and sec[0] in ("FOOTNOTES", "RISK") else 0
+            got.append(((rank, -sum(hits)), line))
     n = len(got)
     if budget and sum(len(l) + 1 for _, l in got) > budget:
         keep, size = set(), 0
@@ -3253,7 +3257,111 @@ def _splice(line, canon):
     return _row(c)
 
 
-def cycle_merge(work, likes, to, blocks, log=None):
+def _trans_pairs(old_line, new_line):
+    """Пары «отвергнутое написание → принятое» из подмены строки: по ячейке
+    перевода; псевдонимы через «;» — попарно, если их поровну."""
+    o, n = _cells(old_line), _cells(new_line)
+    if len(o) < 2 or len(n) < 2:
+        return []
+    a, b = [x.strip() for x in o[1].split(";")], [x.strip() for x in n[1].split(";")]
+    if len(a) != len(b):
+        a, b = [o[1].strip()], [n[1].strip()]
+    return [(x, y) for x, y in zip(a, b)
+            if x and y and x.casefold() != y.casefold() and re.search(r"[^\W\d_]", x)]
+
+
+def _local_edit(old, new, limit):
+    """Правка точечная: сменилось не больше `limit` слов, остальное — слово в
+    слово, и строка таблицы осталась строкой с теми же ячейками."""
+    if not new.strip() or old.count("|") != new.count("|"):
+        return False
+    a, b = old.split(), new.split()
+    # Имя может быть из двух слов и стать одним: длина гуляет на слово.
+    if abs(len(a) - len(b)) > 1:
+        return False
+    sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    changed = sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in sm.get_opcodes()
+                  if tag != "equal")
+    # У короткой строки и предел короче: четыре слова из шести — уже пересказ.
+    words = sum(1 for t in a if t != "|")
+    return 0 < changed <= min(limit, max(1, words // 3))
+
+
+def rename_prose(path, pairs, agent, log=None):
+    """Отвергнутые написания имён — вон из прозы справочника.
+
+    Канон цикла и выбор между частями подменяют строку имени, а карточки
+    других персонажей и голоса остаются с прежним написанием — и переводчик,
+    видя «Coil → Койл» рядом с «удерживаемая Спиралью», выбирал карточку.
+    Регулярке падежи не по зубам («Рот → Рта»), поэтому ищет и переписывает
+    модель разметки, а код следит за точечностью: строка принимается, если
+    в ней сменилось лишь несколько слов. Отказ модели — пары ждут в файле
+    рядом со справочником и уйдут ей при следующем запуске.
+    """
+    from .tune import RENAME_BYTES, RENAME_TOKENS
+    pend = path + ".rename.json"
+    seen = {}
+    if os.path.exists(pend):
+        try:
+            seen.update({a: b for a, b in json.load(open(pend, encoding="utf-8"))})
+        except (OSError, ValueError):
+            pass
+    for a, b in pairs:
+        seen[a] = b
+    pairs = [(a, b) for a, b in seen.items() if a.casefold() != b.casefold()]
+    if not pairs:
+        return 0
+    shown = ", ".join(f"{a} → {b}" for a, b in pairs)
+    if not agent:
+        if log:
+            log("  " + T("rename_failed", shown))
+        json.dump(pairs, open(pend, "w", encoding="utf-8"), ensure_ascii=False)
+        return 0
+    lines = open(path, encoding="utf-8").read().split("\n")
+    idx = [i for i, l in enumerate(lines) if l.strip() and not l.lstrip().startswith("#")]
+    tpl, _ = lang.prompt("rename_prose")
+    plist = "\n".join(f"- {a} → {b}" for a, b in pairs)
+    slices, cur, size = [], [], 0
+    for i in idx:
+        row = f"{i} | {lines[i]}"
+        n = len(row.encode("utf-8")) + 1
+        if cur and size + n > RENAME_BYTES:
+            slices.append(cur)
+            cur, size = [], 0
+        cur.append(row)
+        size += n
+    if cur:
+        slices.append(cur)
+    ok = bad = 0
+    try:
+        for sl in slices:
+            out, _ = agent.run(_text_only(), tpl.format(pairs=plist, lines="\n".join(sl)))
+            for m in re.finditer(r"(?m)^\s*(\d+)\s*\|\s?(.*?)\s*$", out or ""):
+                i, new = int(m.group(1)), m.group(2)
+                if i >= len(lines) or new == lines[i]:
+                    continue
+                if _local_edit(lines[i], new, RENAME_TOKENS):
+                    lines[i] = new
+                    ok += 1
+                else:
+                    bad += 1
+                    if log:
+                        log("    " + T("rename_rejected", new[:100]))
+    except Exception as e:                                       # noqa: BLE001
+        if log:
+            log("  " + T("rename_failed", f"{shown}: {str(e)[:80]}"))
+        json.dump(pairs, open(pend, "w", encoding="utf-8"), ensure_ascii=False)
+        return ok
+    if ok:
+        open(path, "w", encoding="utf-8").write("\n".join(lines))
+    if os.path.exists(pend):
+        os.unlink(pend)
+    if log:
+        log("  " + T("rename_done", shown, ok, bad))
+    return ok
+
+
+def cycle_merge(work, likes, to, blocks, log=None, renamer=None):
     """Сведение имён цикла — после разведки, кодом и без моделей.
 
     Прежде канон уезжал в промпт разведки просьбой, и модель была вольна её
@@ -3310,7 +3418,7 @@ def cycle_merge(work, likes, to, blocks, log=None):
             by_word.setdefault(w, []).append(k)
 
     swapped = added = 0
-    seen, tail = set(), {}
+    pairs, seen, tail = [], set(), {}
     for kind, bodies in _domains(parts):
         tail.setdefault(kind, bodies[-1])
         for at in bodies:
@@ -3324,6 +3432,7 @@ def cycle_merge(work, likes, to, blocks, log=None):
                         new = _splice(line, new)
                     if line.strip() != new.strip():
                         swapped += 1
+                        pairs += _trans_pairs(line, new)
                         line = new
                 elif k:
                     aw = set(k.split())
@@ -3382,6 +3491,9 @@ def cycle_merge(work, likes, to, blocks, log=None):
                 pass
     if log and (swapped or added):
         log("  " + T("cycle_merged", swapped, added))
+    # Подменённое имя — из прозы тоже: карточки соседей и голоса писались
+    # с прежним написанием, и справочник противоречил сам себе.
+    rename_prose(sp, pairs, renamer, log)
 
 
 def _merge_batches(findings, limit=MERGE_INPUT):
@@ -3537,7 +3649,7 @@ def _settle_rows(conflicts, total, who, system, retries, log, to=""):
 
 
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
-          hints=None, fallback=None, likes=None, jobs=1):
+          hints=None, fallback=None, likes=None, jobs=1, renamer=None):
     """Крупноблочный проход ДО перевода.
 
     Собирает голоса персонажей, имена собственные и повторяющиеся термины.
@@ -3711,12 +3823,15 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     # разборам. Моделью решается только разноголосица: одному ключу разные
     # части дали разные строки.
     order, groups, heads_map = _registry(findings)
+    renames = []
     conflicts = [(gk, key, groups[gk]) for gk, key, _ in order
                  if len(groups[gk]) > 1]
     if conflicts:
         got = _settle_rows(conflicts, len(parts), who, system, retries,
                            log, to)
         for gk, line in got.items():
+            for _, v in groups[gk]:
+                renames += _trans_pairs(v, line)
             groups[gk] = [(0, line)]
         for gk, key, vs in conflicts:
             if gk not in got:           # не свелось — вариант ранней части
@@ -3777,6 +3892,9 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
     if registry:
         merged = join_sections(merged.rstrip() + "\n\n" + registry + "\n")
     open(mkparent(out_path), "w", encoding="utf-8").write(merged)
+    # Проигравшие при сведении написания — вон и из прозы, см. rename_prose.
+    if rename_prose(out_path, renames, renamer, log):
+        merged = open(out_path, encoding="utf-8").read()
     dead = canon_ref(merged, to)[2]
     if dead:
         log("  " + T("ref_dead", dead))
