@@ -1257,7 +1257,7 @@ def qa(work, blocks, log, T=None, src_lang=None, to="ru", ocr=False):
     if os.path.exists(rp):
         from .pipeline import name_gaps, split_ref
         rows = split_ref(open(rp, encoding="utf-8").read())[1]
-        gaps = name_gaps(rows, src, tr)
+        gaps = name_gaps(rows, src, tr, to)
         per = Counter()
         for i, pairs in gaps.items():
             for o, t in pairs:

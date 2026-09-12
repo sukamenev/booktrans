@@ -1999,35 +1999,48 @@ def all_translations(work, to=""):
 NO_NOTES = ("нет", "none", "keine", "aucune", "无", "なし", "-", "—")
 
 
-def name_stem(trans, decl=""):
-    """Основа перевода имени для поиска любой его формы в тексте.
+def name_stems(trans, decl="", to=""):
+    """Основы слов перевода имени: любая из них в тексте — имя на месте.
 
     Точная морфология не нужна: находка лишь зовёт сверщика, и ложная
-    тревога стоит одной строки. Формы, названные разведкой в ячейке рода
-    («склоняется: Лощина, Лощины»), дают общий префикс; без них — самое
-    длинное слово имени без конечной гласной. Короче четырёх букв основу не
-    режем: имя ищется целиком."""
-    words = [w for w in re.split(r"[\s,;/]+", trans) if re.search(r"[^\W\d_]", w)]
-    if not words:
-        return ""
-    head = max(words, key=len)
-    forms = [head] + [w for w in re.findall(r"[^\W\d_]+", decl or "")
-                      if len(w) > 3 and w[:3].casefold() == head[:3].casefold()]
-    stem = os.path.commonprefix([f.casefold() for f in forms])
-    if len(stem) >= 4 and len(forms) > 1:
-        return stem
-    cut = re.sub(r"[аеёиоуыэюяйь]$", "", head.casefold())
-    return cut if len(cut) >= 4 else head.casefold()
+    тревога стоит одной строки. Берутся все слова ячейки перевода от трёх
+    букв — и псевдонимы в скобках, и фамилия при имени: «миссис Ямада» в
+    тексте закрывает строку «Джессика Ямада». Формы, названные разведкой в
+    ячейке рода («склоняется: Лощина, Лощины»), дают общий префикс — так
+    ловится чередование основы в любом языке; без форм — окончание срезается
+    по правилу языка (lang.NAME_TRIM), языку без правила — слово целиком."""
+    out = []
+    for w in re.findall(r"[^\W\d_]+", trans):
+        if len(w) < 3:
+            continue
+        # Повтор того же слова в ячейке рода («„Сьерра“ склоняется») — не
+        # форма: считаются только различающиеся написания.
+        forms = {w.casefold()} | {f.casefold() for f in re.findall(r"[^\W\d_]+", decl or "")
+                                  if len(f) > 3 and f[:3].casefold() == w[:3].casefold()}
+        stem = os.path.commonprefix(sorted(forms))
+        if len(forms) > 1 and len(stem) >= 3:
+            out.append(stem)
+        else:
+            out.extend(lang.name_trim(w.casefold(), to))
+    return out
 
 
-def name_gaps(rows, srcs, cur):
+def name_stem(trans, decl="", to=""):
+    """Основа первого слова перевода — см. name_stems."""
+    stems = name_stems(trans, decl, to)
+    return stems[0] if stems else ""
+
+
+def name_gaps(rows, srcs, cur, to=""):
     """Блоки, где имя из справочника в оригинале есть, а его перевод — нет.
 
     По строкам CHARACTERS и NAMES: {id блока: [(оригинал, перевод), …]}.
-    Это повод для замечания сверщику, а не приговор: у имени с неправильным
-    склонением («Рот — Рта») основа не найдётся, и сверщик снимет тревогу.
+    Один проход по блокам с общей регуляркой из всех имён: перебор «строка
+    на блок» на большой книге шёл минуты. Это повод для замечания сверщику,
+    а не приговор: у имени с чередованием основы без названных форм основа
+    не найдётся, и сверщик снимет тревогу.
     """
-    gaps = {}
+    names = {}                       # оригинал → (основы, перевод)
     for key, line, *sec in rows:
         if sec and sec[0] not in ("CHARACTERS", "NAMES"):
             continue
@@ -2039,20 +2052,37 @@ def name_gaps(rows, srcs, cur):
         trans = [t for t in re.split(r"\s*[;/]\s*", cells[1]) if t.strip()]
         if not origs or not trans or trans[0].casefold() == origs[0].casefold():
             continue
-        stems = [name_stem(t, cells[2] if len(cells) > 3 else "") for t in trans]
-        stems = [s for s in stems if s]
-        if not stems:
+        decl = cells[2] if len(cells) > 3 else ""
+        stems = name_stems(cells[1], decl, to)
+        for o in origs:
+            if stems and o not in names:
+                names[o] = (stems, trans[0])
+    if not names:
+        return {}
+    # Ключ, который в книге чаще пишется строчными, чем с прописной, — не
+    # имя, а слово («One», «Will», «Mom»): такие не проверяем. Считается по
+    # самой книге, без словарей, на любом языке.
+    tally = collections.Counter(w for s in srcs.values()
+                                for w in re.findall(r"[^\W\d_]+", s))
+    names = {o: v for o, v in names.items()
+             if " " in o or tally[o.lower()] <= tally[o]}
+    if not names:
+        return {}
+    alt = "|".join(re.escape(o) for o in sorted(names, key=len, reverse=True))
+    # «Don» в «Don’t» — не имя: сокращение с апострофом не считается.
+    pat = re.compile(rf"(?<![^\W\d_])(?:{alt})(?![^\W\d_])(?![’']t\b)")
+    gaps = {}
+    for i, s in srcs.items():
+        if i not in cur:
             continue
-        pats = [re.compile(rf"(?<![^\W\d_]){re.escape(o)}(?![^\W\d_])") for o in origs]
-        for i, s in srcs.items():
-            if i not in cur:
-                continue
-            hit = next((o for o, p in zip(origs, pats) if p.search(s)), None)
-            if hit is None:
-                continue
-            low = cur[i].casefold()
+        found = dict.fromkeys(pat.findall(s))
+        if not found:
+            continue
+        low = cur[i].casefold()
+        for o in found:
+            stems, t = names[o]
             if not any(st in low for st in stems):
-                gaps.setdefault(i, []).append((hit, trans[0]))
+                gaps.setdefault(i, []).append((o, t))
     return gaps
 
 
@@ -2255,7 +2285,7 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
     def remark_of(idx, notes_txt, ids_):
         """Замечания редактора плюс находки конвейера по именам куска:
         (текст для отпечатка, текст для запроса, претензии, блоки)."""
-        gaps = name_gaps(name_rows, {i: orig[i] for i in ids_ if i in orig}, cur)
+        gaps = name_gaps(name_rows, {i: orig[i] for i in ids_ if i in orig}, cur, to)
         raw, shown, claims = claims_text(notes_txt, gaps, ids_)
         must_ = sorted({c.split("#")[0] for c in claims}, key=_id_key)
         return raw, shown, claims, must_
