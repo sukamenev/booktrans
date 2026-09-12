@@ -2081,10 +2081,11 @@ def name_gaps(rows, srcs, cur, to=""):
         found = dict.fromkeys(pat.findall(s))
         if not found:
             continue
-        low = cur[i].casefold()
+        # «ё» и «е» в тексте гуляют («Кутёж — Кутежа»): сравниваем без точек.
+        low = cur[i].casefold().replace("ё", "е")
         for o in found:
             stems, t = names[o]
-            if not any(st in low for st in stems):
+            if not any(st.replace("ё", "е") in low for st in stems):
                 gaps.setdefault(i, []).append((o, t))
     return gaps
 
