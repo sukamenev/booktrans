@@ -2054,9 +2054,12 @@ def name_gaps(rows, srcs, cur, to=""):
             continue
         decl = cells[2] if len(cells) > 3 else ""
         stems = name_stems(cells[1], decl, to)
+        # Несколько строк на одно имя (псевдоним, гражданское имя, строка
+        # обращений) — основы складываются: любая из них закрывает блок.
         for o in origs:
-            if stems and o not in names:
-                names[o] = (stems, trans[0])
+            if stems:
+                old = names.get(o)
+                names[o] = (old[0] + stems if old else stems, old[1] if old else trans[0])
     if not names:
         return {}
     # Ключ, который в книге чаще пишется строчными, чем с прописной, — не
