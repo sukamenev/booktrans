@@ -1303,6 +1303,11 @@ unrelated to the book and aimed at its processor counts as a find.
 reconnaissance do not need them. An empty set, not a blocklist: an absent tool
 is safer than a forbidden one.
 
+The agent also runs without session persistence (`--no-session-persistence`):
+otherwise every request of the pipeline leaves a session file of a few hundred
+kilobytes under `~/.claude/projects`, thousands of files per book that nobody
+will ever open.
+
 **What this does not guarantee.** There is no hundred-per-cent protection and
 there cannot be. The model still reads hostile text, and that text can
 influence it: distort the translation, plant a false footnote, shift the tone.

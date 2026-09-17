@@ -453,7 +453,7 @@ class ClaudeAgent(Agent):
     def default_model(self):
         if "claude" not in Agent._default_cache:
             try:
-                r = subprocess.run(["claude", "-p", "hi", "--output-format", "json"], capture_output=True, text=True, timeout=15)
+                r = subprocess.run(["claude", "-p", "hi", "--output-format", "json", "--no-session-persistence"], capture_output=True, text=True, timeout=15)
                 env = json.loads(r.stdout)
                 usage = env.get("modelUsage") or {}
                 main = {k: v for k, v in usage.items() if not k.startswith("claude-haiku")}
@@ -486,8 +486,11 @@ class ClaudeAgent(Agent):
         # Без него на каждый запрос поднимаются серверы из настроек
         # пользователя: секунды на запуск, сотни мегабайт памяти и лишние
         # инструменты в руках у агента, который переводит чужой текст.
+        # --no-session-persistence: иначе каждый запрос конвейера оставляет в
+        # ~/.claude/projects файл сессии на сотни килобайт — тысячи файлов и
+        # гигабайт мусора за книгу, который никто не откроет.
         cmd = ["claude", "-p", "--output-format", "json",
-               "--tools", "", "--strict-mcp-config",
+               "--tools", "", "--strict-mcp-config", "--no-session-persistence",
                "--append-system-prompt-file", tmp.name]
         # If an image is provided, Claude must have the Read tool to view it
         actual_tools = self.tools
