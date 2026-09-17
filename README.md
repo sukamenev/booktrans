@@ -268,7 +268,8 @@ and txt need nothing.
 
 To edit the sources, take it from git instead — then `./booktrans` runs from
 the working copy, and `python booktrans` on Windows, where there is no
-shebang:
+shebang. If a `.venv` lies next to it (`uv sync`), the script restarts itself
+from that venv, so the dependencies are found whichever python launched it:
 
 ```bash
 git clone https://github.com/sukamenev/booktrans

@@ -7,7 +7,20 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Рядом лежит .venv (uv sync) — значит, зависимости стоят там, а не в
+# системном python, которым нас запустил шебанг. Перезапускаемся из venv,
+# иначе pypdfium2 «не найден» и визуальное распознавание молча пропускается.
+for _venv in (os.path.join(HERE, ".venv", "bin", "python3"),
+              os.path.join(HERE, ".venv", "Scripts", "python.exe")):
+    # Сравнивать пути интерпретаторов нельзя: python в venv — символьная
+    # ссылка на системный. Признак venv — sys.prefix.
+    if os.path.isfile(_venv) and not os.environ.get("BT_NO_VENV") \
+            and os.path.realpath(sys.prefix) != os.path.realpath(os.path.join(HERE, ".venv")):
+        os.environ["BT_NO_VENV"] = "1"          # страховка от петли
+        os.execv(_venv, [_venv, os.path.abspath(__file__)] + sys.argv[1:])
+
+sys.path.insert(0, os.path.join(HERE, "src"))
 from booktrans.cli import run
 
 if __name__ == "__main__":
