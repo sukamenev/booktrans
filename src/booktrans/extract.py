@@ -1862,7 +1862,7 @@ def _pdf_visual(path, agent, marks=None):
     try:
         import pypdfium2 as pdfium
     except ImportError:
-        print("pypdfium2 not found, falling back to legacy PDF extraction.")
+        print("pypdfium2 not found (pip install pypdfium2, or run booktrans from its venv): legacy PDF extraction instead.")
         return _pdf(path, None)
 
     from pathlib import Path
@@ -3205,7 +3205,7 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
     try:
         import pypdfium2 as pdfium
     except ImportError:
-        if log: log("  pypdfium2 not found, skipping visual recognition.")
+        if log: log("  pypdfium2 not found (pip install pypdfium2, or run booktrans from its venv): visual recognition skipped, --ocrmodel has no effect.")
         return
 
     from pathlib import Path

@@ -165,6 +165,8 @@
  "doc_opt_bad": "необязательного не хватает: {0}. epub, fb2 и txt работают и так",
  "doc_install": "поставить",
  "doc_python": "нужен python 3.9 или новее",
+ "doc_pdfium": "страницы pdf картинками для визуального распознавания (--ocrmodel)",
+ "doc_pdfium_how": "pip install pypdfium2 — или запускать booktrans из его venv, там пакет уже стоит",
  "doc_pdftotext": "чтение pdf (пакет poppler)",
  "doc_pdftohtml": "ссылки книги в pdf: указатель, сноски, адреса",
  "doc_pdfimages": "картинки из pdf (тот же пакет poppler)",
