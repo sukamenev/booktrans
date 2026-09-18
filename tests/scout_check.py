@@ -654,6 +654,28 @@ def main():
     ok("канон ужат под обрез agy, но не выброшен",
        len(sent) == 2 and sent[0] <= AGY_CAP and 0 < sent[1] < 600, sent)
 
+    # Части режутся по байтам и в меньшую сторону: предела транспорта не
+    # превышает ни одна, на каком бы языке ни была книга.
+    bk = ([{"kind": "title", "text": "Kapitel 1"}]
+          + [{"kind": "p", "text": "Donaudampfschifffahrtsgesellschaft " * 20} for _ in range(40)]
+          + [{"kind": "title", "text": "Глава 2"}]
+          + [{"kind": "p", "text": "Предложение из кириллицы. " * 30} for _ in range(40)])
+    pp, st = P.scout_parts(bk, cap=9000)
+    size = lambda part: sum(len(P.strip(b["text"]).encode()) + 2 for b in part)
+    ok("часть разведки не превышает предела в байтах",
+       len(pp) > 3 and all(size(x) <= 9000 for x in pp), [size(x) for x in pp])
+    ok("абзацы не теряются и не двоятся",
+       sum(len(x) for x in pp) == len(bk) and [b for x in pp for b in x] == bk)
+    ok("часть посреди главы знает свою главу",
+       st[0] == "" and "Kapitel 1" in st and st[-1] == "Глава 2", st)
+    giant = [{"kind": "p", "text": "Одно предложение великана. " * 400}]
+    gp, _ = P.scout_parts(giant, cap=3000)
+    ok("абзац-великан делится по концам предложений",
+       len(gp) > 3 and all(size(x) <= 3000 for x in gp)
+       and all(b["text"].endswith(".") for x in gp for b in x)
+       and " ".join(b["text"] for x in gp for b in x) == giant[0]["text"].strip(),
+       [size(x) for x in gp][:5])
+
     # Часть, начавшаяся посреди главы, знает эту главу, а разборы приходят
     # на сведение подписанными: пачки пирамиды друг друга не видят, и
     # перемену («женщина» в части 1 — «мужчина» в части 2) сведению нечем
@@ -675,7 +697,7 @@ def main():
             raise P.agent_mod.Fatal("хватит")
 
     blocks3 = ([{"kind": "title", "text": "Глава первая"}]
-               + [{"kind": "p", "text": "слово " * 200} for _ in range(180)])
+               + [{"kind": "p", "text": "слово " * 200} for _ in range(90)])      # 198 КБ — две части
     try:
         P.scout(os.path.join(md3, "w.work"), blocks3, Teller(), "", "задание",
                 1, hush)
@@ -849,7 +871,7 @@ def main():
                     f"| Hero{i} | Герой{i} |{extra}\n[[[/SCOUT {i}]]]",
                     {"model": self.model, "cost_usd": 0})
 
-    blocks5 = [{"kind": "p", "text": "Redmane rode. " * 9050 + f"Hero{i} walked."}
+    blocks5 = [{"kind": "p", "text": "Redmane rode. " * 7500 + f"Hero{i} walked."}
                for i in range(1, 5)]
     got5 = P.scout(os.path.join(md5, "w.work"), blocks5, Wavy(), "",
                    "задание", 1, hush, jobs=2)

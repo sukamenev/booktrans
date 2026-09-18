@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "booktrans"
-version = "1.10.48"
+version = "1.10.49"
 source = { editable = "." }
 dependencies = [
     { name = "charset-normalizer" },

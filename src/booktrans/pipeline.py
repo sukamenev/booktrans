@@ -28,7 +28,7 @@ from .tune import (AGY_CAP, CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    REF_ROWS_BUDGET, REFUSE_ROW,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_CANON_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
-                   SCOUT_WORDS, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
+                   SCOUT_BYTES, SHIFT_BAD, SHIFT_GAP, SHIFT_MIN, SHIFT_WIN,
                    STUB_MIN, STUB_SHARE,
                    TAIL_PARAS, TARGET_WORDS, TERMS_BUDGET, TERMS_TAIL,
                    TWIN_LEN, TWIN_NEAR,
@@ -3797,6 +3797,61 @@ def _settle_rows(conflicts, total, who, system, retries, log, to=""):
     return got
 
 
+def _sentences(text, cap):
+    """Абзац-великан — ломтями не больше `cap` байт, по концам предложений;
+    предложение длиннее предела режется по пробелу."""
+    out, cur = [], ""
+    for sent in re.split(r"(?<=[.!?…])\s+", text):
+        while len(sent.encode()) > cap:
+            cut = len(sent.encode()[:cap].decode("utf-8", "ignore"))
+            at = sent.rfind(" ", 0, cut)
+            at = at if at > 0 else cut
+            if cur:
+                out.append(cur)
+                cur = ""
+            out.append(sent[:at])
+            sent = sent[at:].lstrip()
+        if cur and len((cur + " " + sent).encode()) > cap:
+            out.append(cur)
+            cur = sent
+        else:
+            cur = (cur + " " + sent).strip()
+    return out + ([cur] if cur else [])
+
+
+def scout_parts(blocks, cap=SCOUT_BYTES):
+    """Части разведки и глава, внутри которой каждая начинается.
+
+    Мера — байты текста, а не слова: упираемся мы в обрез транспорта, а он в
+    байтах, и на слово их приходится от шести (английская проза) до
+    тринадцати (кириллица, немецкие сложные слова, медицина). Режем в меньшую
+    сторону, по границе абзаца: часть предела не превышает. Абзац длиннее
+    предела делится по концам предложений.
+
+    Глава нужна части, стартующей посреди главы: своего заголовка она не
+    видит, а перемены в справочнике датируются главами.
+    """
+    parts, starts, cur, size, last_title = [], [], [], 0, ""
+    for b in (b for b in blocks if b["kind"] in ("p", "title")):
+        text = strip(b["text"])
+        pieces = [b] if len(text.encode()) + 2 <= cap else [
+            {**b, "text": t} for t in _sentences(text, cap - 2)]
+        for pb in pieces:
+            n = len(strip(pb["text"]).encode()) + 2
+            if cur and size + n > cap:
+                parts.append(cur)
+                cur, size = [], 0
+            if not cur:
+                starts.append("" if pb["kind"] == "title" else last_title)
+            cur.append(pb)
+            size += n
+        if b["kind"] == "title":
+            last_title = text
+    if cur:
+        parts.append(cur)
+    return parts, starts
+
+
 def scout(work, blocks, agent, system, task, retries, log, to='ru',
           hints=None, fallback=None, likes=None, jobs=1, renamer=None):
     """Крупноблочный проход ДО перевода.
@@ -3826,24 +3881,7 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
             merged = _unfork(merged, forked, who, "", retries, log, out_path)
         return merged
 
-    paras = [b for b in blocks if b["kind"] in ("p", "title")]
-    parts, cur, cw = [], [], 0
-    # Глава, внутри которой начинается часть. Часть, стартующая посреди
-    # главы, своего заголовка не видит — а перемены в справочнике датируются
-    # главами, и без этой подсказки началу части нечем их пометить.
-    starts, last_title = [], ""
-    for b in paras:
-        if not cur:
-            starts.append("" if b["kind"] == "title" else last_title)
-        cur.append(b)
-        if b["kind"] == "title":
-            last_title = strip(b["text"])
-        cw += words(b["text"])
-        if cw >= SCOUT_WORDS:
-            parts.append(cur)
-            cur, cw = [], 0
-    if cur:
-        parts.append(cur)
+    parts, starts = scout_parts(blocks)
 
     half = lpath(work, "scout.part.json", to)
     mfile = lpath(work, "scout.merge.json", to)
