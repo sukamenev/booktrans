@@ -623,6 +623,37 @@ def main():
        bool(seen) and "| Skitter; Weaver | Рой |" in seen[0],
        (seen[0][-200:] if seen else "запроса не было"))
 
+    # Канон ужимается под обрез agy: у книги с длинными словами текст части
+    # занимает почти весь запрос, и канон выталкивал его за обрез — часть
+    # падала, а запасная модель, тот же agy, падала следом.
+    from booktrans.tune import AGY_CAP
+    md2b = _tf.mkdtemp()
+    prevb = os.path.join(md2b, "prev.work")
+    os.makedirs(os.path.join(prevb, "ru"), exist_ok=True)
+    open(os.path.join(prevb, "ru", "scout.md"), "w", encoding="utf-8").write(
+        "## NAMES — Имена\n\n" + "".join(
+            f"| Term{k} | Термин{k} | длинное русское пояснение к термину номер {k}, которое занимает место |\n"
+            for k in range(600)))
+    sent = []
+
+    class AgySpy:
+        model, kind = "шпион-agy", "agy"
+
+        def run(self, system, user):
+            sent.append(len(f"{system}\n\n---\n\n{user}".encode()))
+            sent.append(user.count("| Term"))
+            raise P.agent_mod.Fatal("хватит")
+
+    big = [{"kind": "p", "text": " ".join(f"Term{k}" for k in range(600)) + " "
+            + "haematopoietically " * 8600}]
+    try:
+        P.scout(os.path.join(md2b, "new.work"), big, AgySpy(), "система", "задание",
+                1, hush, likes=[prevb])
+    except P.agent_mod.Fatal:
+        pass
+    ok("канон ужат под обрез agy, но не выброшен",
+       len(sent) == 2 and sent[0] <= AGY_CAP and 0 < sent[1] < 600, sent)
+
     # Часть, начавшаяся посреди главы, знает эту главу, а разборы приходят
     # на сведение подписанными: пачки пирамиды друг друга не видят, и
     # перемену («женщина» в части 1 — «мужчина» в части 2) сведению нечем

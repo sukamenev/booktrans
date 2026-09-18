@@ -21,7 +21,7 @@ from .agent import AgentError, Blocked, Fatal, RateLimited
 STOP = threading.Event()
 from .lang import T
 from . import lang
-from .tune import (CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
+from .tune import (AGY_CAP, CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    HUSH_MAX, HUSH_PAUSE,
                    MAX_BLOCKS, MAX_VERSE, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
@@ -3912,19 +3912,35 @@ def scout(work, blocks, agent, system, task, retries, log, to='ru',
                 hint += "\n\n" + hint_meta.format(meta="\n".join(meta_lines))
 
         pairs = canon_rows + list(known.values())
-        crows, n = ref_rows_cut(pairs, text, SCOUT_CANON_BUDGET)
+        at = (lang.prompt("scout_part_at")[0].format(chapter=starts[i - 1])
+              if starts[i - 1] else "")
+
+        def _request(budget):
+            crows, n = ref_rows_cut(pairs, text, budget)
+            if budget <= 0:       # у ref_rows_cut ноль — «без предела», здесь — «без канона»
+                crows = []
+            canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
+                     + "\n".join(crows)) if crows else ""
+            return boxed(f"{task}{hint}{canon}\n\n---\n\n"
+                         + lang.prompt("scout_part")[0].format(i=i, n=len(parts),
+                                                               at=at)
+                         + f"\n\n{text}",
+                         "SCOUT", lang.prompt("box_scout_part")[0]), crows, n
+
+        # Канон ужимается под обрез agy. У книги с длинными словами (медицина:
+        # 18 тыс. слов — 130 КБ) текст части с промптом занимает почти весь
+        # запрос, и канон второй же части выталкивал его за обрез: часть
+        # падала, а запасная модель — тот же agy — падала следом.
+        budget = SCOUT_CANON_BUDGET
+        prompt, crows, n = _request(budget)
+        if any(getattr(a, "kind", "") == "agy" for a in who):
+            # Запас — на приписку повторной попытки: она идёт тем же запросом.
+            while crows and len(f"{system}\n\n---\n\n{prompt}".encode()) > AGY_CAP - 2000:
+                budget = budget * 3 // 4 if budget >= 400 else 0
+                prompt, crows, n = _request(budget)
         if len(crows) < n:
             with lock:
                 log("    " + T("canon_trim", len(crows), n))
-        canon = ("\n\n" + lang.prompt("scout_canon")[0] + "\n\n"
-                 + "\n".join(crows)) if crows else ""
-        at = (lang.prompt("scout_part_at")[0].format(chapter=starts[i - 1])
-              if starts[i - 1] else "")
-        prompt = boxed(f"{task}{hint}{canon}\n\n---\n\n"
-                       + lang.prompt("scout_part")[0].format(i=i, n=len(parts),
-                                                             at=at)
-                       + f"\n\n{text}",
-                       "SCOUT", lang.prompt("box_scout_part")[0])
         wc = f"{sum(words(b['text']) for b in part):6d}"
         if jobs <= 1:
             log("  " + T("scout_block", i, len(parts), wc), end="")
