@@ -3204,8 +3204,9 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
         agents = [agents]
     try:
         import pypdfium2 as pdfium
+        import PIL  # noqa: F401 — страница уходит модели картинкой через Pillow
     except ImportError:
-        if log: log("  pypdfium2 not found (pip install pypdfium2, or run booktrans from its venv): visual recognition skipped, --ocrmodel has no effect.")
+        if log: log("  pypdfium2 or pillow not found (pip install pypdfium2 pillow, or run booktrans from its venv): visual recognition skipped, --ocrmodel has no effect.")
         return
 
     from pathlib import Path

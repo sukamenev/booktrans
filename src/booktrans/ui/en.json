@@ -166,7 +166,7 @@
  "doc_install": "install with",
  "doc_python": "python 3.9 or newer is required",
  "doc_pdfium": "rendering pdf pages for visual recognition (--ocrmodel)",
- "doc_pdfium_how": "pip install pypdfium2 — or run booktrans from its virtualenv, where it is already installed",
+ "doc_pdfium_how": "pip install pypdfium2 pillow — or run booktrans from its virtualenv, where it is already installed",
  "doc_pdftotext": "reading pdf (the poppler package)",
  "doc_pdftohtml": "the links of a pdf: index, notes, addresses",
  "doc_pdfimages": "pictures out of pdf (same poppler package)",

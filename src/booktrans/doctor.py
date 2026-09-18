@@ -93,10 +93,11 @@ def check(log=print, agent="claude"):
     log("  " + T("doc_opt"))
     try:
         import pypdfium2  # noqa: F401
+        import PIL  # noqa: F401
         has_pdfium = True
     except ImportError:
         has_pdfium = False
-    line(has_pdfium, "pypdfium2", T("doc_pdfium"), T("doc_pdfium_how"), need=False)
+    line(has_pdfium, "pypdfium2, pillow", T("doc_pdfium"), T("doc_pdfium_how"), need=False)
     line(bool(shutil.which("pdftotext")), "pdftotext", T("doc_pdftotext"),
          _install_line(POPPLER), need=False)
     line(bool(shutil.which("pdfimages")), "pdfimages", T("doc_pdfimages"),
