@@ -3199,6 +3199,38 @@ def _trim_to_picture(box, lines, scale):
     return (left, top, right, bottom)
 
 
+IMG_BOX = re.compile(r"!\[(.*?)\]\(\[([^\]]+)\]\)")
+
+
+def _img_boxes(text):
+    """Рамки картинок из ответа модели: (ymin, xmin, ymax, xmax), доли 0–1000."""
+    out = []
+    for m in IMG_BOX.finditer(text):
+        c = [int(x.strip()) for x in m.group(2).split(",") if x.strip().isdigit()]
+        if len(c) == 4 and c[2] > c[0] and c[3] > c[1]:
+            out.append(tuple(c))
+    return out
+
+
+def _chars_in_boxes(textpage, size, boxes):
+    """Сколько знаков текстового слоя лежит внутри рамок картинок.
+
+    Схему с надписями модель по правилам вырезает картинкой и надписи не
+    переписывает, а в сыром слое страницы они есть. Не вычти их — честный
+    ответ к странице-схеме выглядит обрезанным вдвое. У pdf ось Y идёт снизу.
+    """
+    w, h = size
+    got = 0
+    for ymin, xmin, ymax, xmax in boxes:
+        try:
+            t = textpage.get_text_bounded(left=xmin * w / 1000.0, bottom=h - ymax * h / 1000.0,
+                                          right=xmax * w / 1000.0, top=h - ymin * h / 1000.0)
+        except Exception:
+            continue
+        got += len(re.sub(r"\s+", " ", t or "").strip())
+    return got
+
+
 def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
     if not isinstance(agents, list):
         agents = [agents]
@@ -3291,14 +3323,21 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
                     # Check for truncation
                     clean_raw = re.sub(r'\s+', ' ', raw_text).strip()
                     clean_txt = re.sub(r'\s+', ' ', text).strip()
-                    if len(clean_raw) > OCR_TRUNC_MIN and len(clean_txt) < len(clean_raw) * OCR_TRUNC_RATIO:
+                    # Надписи внутри вырезанных картинок в норму не входят.
+                    boxes = _img_boxes(text)
+                    inside = 0
+                    if boxes and textpage:
+                        with pdfium_lock:
+                            inside = _chars_in_boxes(textpage, page.get_size(), boxes)
+                    want = max(0, len(clean_raw) - inside)
+                    if want > OCR_TRUNC_MIN and len(clean_txt) < want * OCR_TRUNC_RATIO:
                         # Double check with pdftotext since pdfium sometimes extracts hidden text from other pages
                         is_truncated = True
                         try:
                             r_chk = subprocess.run(["pdftotext", "-f", str(page_num), "-l", str(page_num), "-nopgbrk", str(pdf_path), "-"], 
                                                capture_output=True, text=True, check=True)
                             real_raw = re.sub(r'\s+', ' ', r_chk.stdout).strip()
-                            if len(clean_txt) >= len(real_raw) * OCR_TRUNC_RATIO:
+                            if len(clean_txt) >= max(0, len(real_raw) - inside) * OCR_TRUNC_RATIO:
                                 is_truncated = False
                                 # print(f"\n    [i] pdfium raw was inflated ({len(clean_raw)} vs {len(real_raw)} chars). Text is actually complete.")
                         except Exception:
@@ -3306,7 +3345,7 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
                         
                         if is_truncated:
                             with print_lock:
-                                print(f"\n    [!] Output appears truncated ({len(clean_txt)} vs {len(clean_raw)} raw chars). Trying next model...")
+                                print(f"\n    [!] Output appears truncated ({len(clean_txt)} vs {want} raw chars outside images). Trying next model...")
                             break  # breaks the while loop, moves to the next agent
                     
                     # Crop images based on coordinates
@@ -3336,7 +3375,7 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
                                 return f"![{caption}](images/{img_filename})"
                         return match.group(0)
                     
-                    text = re.sub(r"!\[(.*?)\]\(\[([^\]]+)\]\)", replace_img, text)
+                    text = IMG_BOX.sub(replace_img, text)
                     page_md_file.write_text(text, encoding="utf-8")
                     success = True
                     with print_lock:
