@@ -466,6 +466,8 @@ request, and on a book of two hundred chunks it would cost two hundred.
 
 Waiting only happens when every model of the chain is out, and then it waits
 for the one that recovers soonest, not for its own — by default up to a day.
+The whole chain is patient: when a limit strikes mid-request at the last free
+model, the chunk is not dropped but waits along with the rest.
 Disable with `--wait 0`.
 
 **A ban is recognised even without familiar wording.** Providers phrase it

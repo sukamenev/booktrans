@@ -174,6 +174,44 @@ def main():
                      lambda *a, **k: None, jobs=2)[0]
     ok("повторная сверка пропущена по отпечаткам", done2 == 0, done2)
 
+    # Терпение — свойство всей цепочки. Первая модель под лимитом, запасная
+    # упирается в лимит посреди вызова: кусок не бросается, а ждёт ту, что
+    # освободится первой (час, а не четыре), и сверяется со второй попытки.
+    from booktrans import agent as A
+    A.LIMITS.forget()
+
+    class Busy(Judge):
+        model = "занятая"
+
+        def run(self, system, user, image=None):
+            raise A.RateLimited("usage limit reached, resets in 4h")
+
+    class Flaky(Judge):
+        model, calls = "запасная", 0
+
+        def run(self, system, user, image=None):
+            Flaky.calls += 1
+            if Flaky.calls == 1:
+                raise A.RateLimited("quota reached, resets in 1h")
+            return Judge.run(self, system, user)
+
+    quiet = lambda *a, **k: None                              # noqa: E731
+    _sh.rmtree(f"{d}/vf")
+    slept, real_sleep = [], P.time.sleep
+    P.time.sleep = lambda sec: (slept.append(sec), A.LIMITS.forget())
+    try:
+        done5 = P.verify(d, chunks2[:1], A.WaitingAgent(Busy(), log=quiet), "",
+                         "задание", 1, quiet,
+                         fallback=[A.WaitingAgent(Flaky(), log=quiet)])[0]
+    finally:
+        P.time.sleep = real_sleep
+        A.LIMITS.forget()
+    ok("лимит посреди вызова запасной: кусок ждёт и сверяется",
+       done5 == 1 and os.path.exists(f"{d}/vf/0001.json") and Flaky.calls == 2,
+       (done5, Flaky.calls))
+    ok("ждали ту, что освободится первой",
+       len(slept) == 1 and 3500 < slept[0] < 3700, slept)
+
     # Судья в собственном деле: сверщик с моделью переводчика при
     # --self-edit never вычёркивается, кусок ждёт другого сверщика; запасной
     # другой модели берёт его.

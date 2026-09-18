@@ -1247,6 +1247,16 @@ def _run_patient(agent, backups, system, prompt, retries, parse, log, lock=None)
             held += HUSH_PAUSE
 
 
+def _retry_row(row, since):
+    """Кусок не взят, а под лимитом вся цепочка — значит, лимит ударил посреди
+    вызова у последней свободной модели. Кусок не бросаем: возвращаемся к
+    ожиданию, и `_hold` дождётся той, что освободится первой. Терпение —
+    свойство цепочки, а не первой модели: прежде запасная, упёршись в лимит,
+    объявляла кусок несделанным, и поток уходил ждать уже на следующем."""
+    return (all(agent_mod.limit_left(a) for a in row) and not STOP.is_set()
+            and time.time() - since < getattr(row[0], "max_wait", 86400))
+
+
 def _chain_run(who, system, prompt, retries, parse, log):
     """`_run` по цепочке: следующая модель подхватывает и отказ, и сбой.
 
@@ -1438,61 +1448,69 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         # Вся цепочка под лимитом — переждать; иначе кусок объявили бы
         # непереведённым, а через три таких прогон бы встал. Лимит, ударивший
         # в момент самого вызова, пережидается на месте — см. _run_patient.
-        try:
-            (res, extra), meta, dt = _run_patient(
-                agent, _backups(fallback), system, prompt, retries,
-                lambda o: _parse_translate(o, expected, srcs), log)
-        except (Refused, RuntimeError, Fatal) as e:
-            # Отказ и сбой поставщика тут равны: кусок не переведён, а
-            # следующая модель цепочки может и взяться. Прежде ловился один
-            # отказ, и «исчерпаны попытки» валили прогон при живой запасной.
-            log("")
-            if isinstance(e, Refused):
-                # Показываем сам текст: по нему сразу видно, почему модель
-                # встала, и не нужно гадать про размеры кусков и бюджеты.
-                src = next((b["text"] for b in c["blocks"] if b["id"] == e.first), "")
-                src = re.sub(r"<[^>]+>", "", src)[:150]
-                log("    " + T("refused", e.first, e.n, e.total))
-                log(f"      {src}…")
-            else:
-                log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
-                              else T("chunk_failed", e)))
-            # Подстраховка: то же задание следующей модели цепочки. Отказ —
-            # свойство модели, а не текста, и у следующей такого запрета может
-            # не быть. Идём по цепочке до первой, которая возьмётся.
-            backups = _backups(fallback)
-            got, last = None, getattr(e, "first", "?")
-            deniers = ([getattr(agent, "model", None)]
-                       if isinstance(e, (Refused, Blocked)) else [])
-            for fb in backups:
-                if agent_mod.limit_left(fb):
-                    continue
-                log("    " + T("refused_retry", agent_mod.label(fb)))
-                try:
-                    got = _run(fb, system, prompt, retries,
-                               lambda o: _parse_translate(o, expected, srcs), log)
-                    # У перевода свой обход цепочки, мимо _chain_run, и
-                    # пометка «после отказа» здесь терялась — вместе с
-                    # именами отказавшихся, без которых редактура умеет
-                    # только отдать кусок переведшей модели: самоправка.
-                    if deniers:
-                        got = (got[0], dict(got[1], after_refusal=True,
-                                            refused_by=deniers), got[2])
-                    break
-                except (Refused, RuntimeError, Fatal) as e2:
-                    m2 = getattr(fb, "model", None)
-                    if isinstance(e2, (Refused, Blocked)) and m2 and m2 not in deniers:
-                        deniers.append(m2)
-                    last = getattr(e2, "first", last)
-            if got is None:
-                log("    " + (T("refused_both", last) if backups
-                              else T("no_backup") + " " + T("refused_hint", idx)))
-                if _stop_row(refused, log):
-                    halted = True
-                    break
-                _cool([agent] + backups, refused, log)
-                continue
-            (res, extra), meta, dt = got
+        def attempt():
+            try:
+                return _run_patient(
+                    agent, _backups(fallback), system, prompt, retries,
+                    lambda o: _parse_translate(o, expected, srcs), log), "?"
+            except (Refused, RuntimeError, Fatal) as e:
+                # Отказ и сбой поставщика тут равны: кусок не переведён, а
+                # следующая модель цепочки может и взяться. Прежде ловился один
+                # отказ, и «исчерпаны попытки» валили прогон при живой запасной.
+                log("")
+                if isinstance(e, Refused):
+                    # Показываем сам текст: по нему сразу видно, почему модель
+                    # встала, и не нужно гадать про размеры кусков и бюджеты.
+                    src = next((b["text"] for b in c["blocks"] if b["id"] == e.first), "")
+                    src = re.sub(r"<[^>]+>", "", src)[:150]
+                    log("    " + T("refused", e.first, e.n, e.total))
+                    log(f"      {src}…")
+                else:
+                    log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                                  else T("chunk_failed", e)))
+                # Подстраховка: то же задание следующей модели цепочки. Отказ —
+                # свойство модели, а не текста, и у следующей такого запрета может
+                # не быть. Идём по цепочке до первой, которая возьмётся.
+                backups = _backups(fallback)
+                got, last = None, getattr(e, "first", "?")
+                deniers = ([getattr(agent, "model", None)]
+                           if isinstance(e, (Refused, Blocked)) else [])
+                for fb in backups:
+                    if agent_mod.limit_left(fb):
+                        continue
+                    log("    " + T("refused_retry", agent_mod.label(fb)))
+                    try:
+                        got = _run(fb, system, prompt, retries,
+                                   lambda o: _parse_translate(o, expected, srcs), log)
+                        # У перевода свой обход цепочки, мимо _chain_run, и
+                        # пометка «после отказа» здесь терялась — вместе с
+                        # именами отказавшихся, без которых редактура умеет
+                        # только отдать кусок переведшей модели: самоправка.
+                        if deniers:
+                            got = (got[0], dict(got[1], after_refusal=True,
+                                                refused_by=deniers), got[2])
+                        break
+                    except (Refused, RuntimeError, Fatal) as e2:
+                        m2 = getattr(fb, "model", None)
+                        if isinstance(e2, (Refused, Blocked)) and m2 and m2 not in deniers:
+                            deniers.append(m2)
+                        last = getattr(e2, "first", last)
+                return got, last
+
+        since = time.time()
+        got, last = attempt()
+        while got is None and _retry_row([agent] + _backups(fallback), since):
+            got, last = attempt()
+        backups = _backups(fallback)
+        if got is None:
+            log("    " + (T("refused_both", last) if backups
+                          else T("no_backup") + " " + T("refused_hint", idx)))
+            if _stop_row(refused, log):
+                halted = True
+                break
+            _cool([agent] + backups, refused, log)
+            continue
+        (res, extra), meta, dt = got
         refused[0] = 0                 # кусок взят — счётчик отказов сбрасываем
         extra, found = extra
         res, n_grew = _regrow(agent, system, task, translatable(c["blocks"]),
@@ -1861,50 +1879,57 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
 
         # Заняты все — переждать. Прогон не встанет: три подряд «не взялись»
         # останавливают редактуру, а лимит — не отказ и пройдёт сам.
-        try:
-            (res, notes), meta, dt = _run_patient(mine, spares,
-                                                  system, prompt, retries,
-                                                  parse, log, lock)
-        except (Refused, RuntimeError, Fatal) as e:
-            # Сбой — не то же, что «править нечего»: пустой результат нельзя
-            # записать как готовый кусок, иначе следующий запуск сочтёт его
-            # сделанным. Идём по цепочке, как и при обрыве.
-            with lock:
-                log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
-                              else T("chunk_failed", e)))
-            (res, notes), dt = ({}, []), 0.0
-            meta = {"model": getattr(mine, "model", "?"), "cost_usd": 0}
-            failed = True
-        else:
-            failed = False
-        stopped = _stopped(res, ids)
-        for fb in spares:
-            if agent_mod.limit_left(fb):
-                continue
-            # Оборвалась правка — передаём кусок следующей модели цепочки, как
-            # и при отказе перевода. Иначе кусок остался бы наполовину
-            # нетронутым, а при следующем запуске зачёлся бы готовым: файл-то
-            # записан.
-            if not stopped and not failed:
-                break
-            if fb is mine:
-                continue          # этой моделью кусок только что и правился
-            with lock:
-                if stopped:
-                    log("    " + T("edit_stopped", stopped, len(ids)))
-                log("    " + T("refused_retry", agent_mod.label(fb)))
+        def attempt():
             try:
-                (res2, notes2), meta2, dt2 = _run(fb, system, prompt, retries,
-                                                  parse, log)
+                (res, notes), meta, dt = _run_patient(mine, spares,
+                                                      system, prompt, retries,
+                                                      parse, log, lock)
             except (Refused, RuntimeError, Fatal) as e:
+                # Сбой — не то же, что «править нечего»: пустой результат нельзя
+                # записать как готовый кусок, иначе следующий запуск сочтёт его
+                # сделанным. Идём по цепочке, как и при обрыве.
                 with lock:
                     log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
-                              else T("chunk_failed", e)))
-                continue
-            if len(res2) > len(res) or failed:
-                res, notes, meta, dt = res2, notes2, meta2, dt2
+                                  else T("chunk_failed", e)))
+                (res, notes), dt = ({}, []), 0.0
+                meta = {"model": getattr(mine, "model", "?"), "cost_usd": 0}
+                failed = True
+            else:
                 failed = False
-                stopped = _stopped(res, ids)
+            stopped = _stopped(res, ids)
+            for fb in spares:
+                if agent_mod.limit_left(fb):
+                    continue
+                # Оборвалась правка — передаём кусок следующей модели цепочки, как
+                # и при отказе перевода. Иначе кусок остался бы наполовину
+                # нетронутым, а при следующем запуске зачёлся бы готовым: файл-то
+                # записан.
+                if not stopped and not failed:
+                    break
+                if fb is mine:
+                    continue          # этой моделью кусок только что и правился
+                with lock:
+                    if stopped:
+                        log("    " + T("edit_stopped", stopped, len(ids)))
+                    log("    " + T("refused_retry", agent_mod.label(fb)))
+                try:
+                    (res2, notes2), meta2, dt2 = _run(fb, system, prompt, retries,
+                                                      parse, log)
+                except (Refused, RuntimeError, Fatal) as e:
+                    with lock:
+                        log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                                  else T("chunk_failed", e)))
+                    continue
+                if len(res2) > len(res) or failed:
+                    res, notes, meta, dt = res2, notes2, meta2, dt2
+                    failed = False
+                    stopped = _stopped(res, ids)
+            return res, notes, meta, dt, failed, stopped
+
+        since = time.time()
+        res, notes, meta, dt, failed, stopped = attempt()
+        while failed and _retry_row([mine] + spares, since):
+            res, notes, meta, dt, failed, stopped = attempt()
         if failed:
             # Никто не взялся. Файла не пишем вовсе: пустая правка легла бы
             # как готовая, и следующий запуск обошёл бы кусок стороной.
@@ -2384,21 +2409,29 @@ def verify(work, chunks, agent, system, task, retries, log, only=None,
         # Вся цепочка под лимитом — переждать, как перевод и редактура:
         # иначе сверка за секунду пробегала оставшиеся куски, объявляя каждый
         # пропущенным, и книга собиралась несверенной.
-        try:
-            res, meta, dt = _run_patient(mine, spares, system, prompt, retries,
-                                         parse, log, lock)
-        except (Refused, RuntimeError, Fatal, ValueError) as e:
-            with lock:
-                log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
-                              else T("chunk_failed", e)))
-            for m in spares:
-                try:
-                    res, meta, dt = _run(m, system, prompt, retries, parse, log)
-                    break
-                except (Refused, RuntimeError, Fatal, ValueError) as e:
-                    with lock:
-                        log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+        def attempt():
+            res = meta = dt = None
+            try:
+                res, meta, dt = _run_patient(mine, spares, system, prompt, retries,
+                                             parse, log, lock)
+            except (Refused, RuntimeError, Fatal, ValueError) as e:
+                with lock:
+                    log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
                                   else T("chunk_failed", e)))
+                for m in spares:
+                    try:
+                        res, meta, dt = _run(m, system, prompt, retries, parse, log)
+                        break
+                    except (Refused, RuntimeError, Fatal, ValueError) as e:
+                        with lock:
+                            log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
+                                      else T("chunk_failed", e)))
+            return res, meta, dt
+
+        since = time.time()
+        res, meta, dt = attempt()
+        while res is None and _retry_row([mine] + spares, since):
+            res, meta, dt = attempt()
         if res is None:
             return
         verdicts, notes_, fixes = res
