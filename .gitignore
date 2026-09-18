@@ -28,3 +28,4 @@ CLAUDE.md
 # Опись набора называет книги поимённо — образец рядом
 tests/manifest.json
 AGENTS.md
+uv.lock
