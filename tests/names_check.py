@@ -146,8 +146,23 @@ def main():
         got = ([x["block"] for x in n2], list(f2))
     except ValueError as e:
         got = str(e)
-    ok("сноска и абзац под номером претензии приняты за блок",
-       got == (["s632.b0002"], ["s632.b0002"]), got)
+    ok("адрес один: сноска — как вердикт, абзац — блоком",
+       got == "вердикт translation без исправления: ['s632.b0002'] — абзац"
+              " адресуется блоком: [[[P s632.b0002]]]", got)
+    good = ans.replace("[[[P s632.b0002#1]]]", "[[[P s632.b0002]]]").replace(
+        "[[[/P s632.b0002#1]]]", "[[[/P s632.b0002]]]")
+    v2, n2, f2 = P._parse_verify(good, set(ids2), claims2)
+    ok("сноска претензии ложится в книгу по блоку",
+       [x["block"] for x in n2] == ["s632.b0002"] and list(f2) == ["s632.b0002"],
+       (n2, list(f2)))
+    try:
+        P._parse_verify(good.replace("NOTE s632.b0002#2", "NOTE s632.b0002"),
+                        set(ids2), claims2)
+        got = "принято"
+    except ValueError as e:
+        got = str(e)
+    ok("сноска с чужим адресом — отказ с подсказкой",
+       "[[[NOTE s632.b0002#2 fact]]]" in got, got)
 
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0

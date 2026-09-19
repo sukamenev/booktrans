@@ -2184,13 +2184,11 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
     `size` — длины оригиналов: исправление, вдвое переросшее оригинал, несёт
     лишнюю речь вокруг абзаца, и её не выдаёт ни идентификатор, ни язык.
     """
-    # Претензия адресуется блоком или блоком с номером (`s11.b0051#2`);
-    # вердикт — на претензию, вложения — на блок.
+    # Адрес один на всё, что относится к претензии: блок или блок с номером
+    # (`s11.b0051#2`). Вердикт и сноска — на претензию: у каждого `author`
+    # своя сноска, и проверить это можно только по общему адресу. Исправленный
+    # абзац — на блок: он один и закрывает все `translation` блока.
     claims = set(want) | set(must or ())
-    # Модель, видя номер претензии, ставит его и на вложения:
-    # «[[[NOTE s632.b0002#2 fact]]]». Номер срезаем — иначе сноска терялась,
-    # и пять попыток у двух моделей подряд кончались «author без сноски».
-    out = re.sub(r"(\[\[\[\s*/?\s*(?:NOTE|P)\s+[^\s\]#]+)#\d+", r"\1", out)
     verdicts = {}
     for m in re.finditer(r"\[\[\[VERDICT\s+(\S+?)\s+"
                          r"(author|translation|dismiss|unsure)\]\]\]"
@@ -2204,7 +2202,7 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
     kinds_of = {}
     for cid, (kind, _) in verdicts.items():
         kinds_of.setdefault(cid.split("#")[0], set()).add(kind)
-    notes = parse_notes_blocks(out, want)
+    notes = parse_notes_blocks(out, claims)
     fixes = {}
     for m in re.finditer(r"\[\[\[P\s+(\S+?)\]\]\]\s*(.*?)\s*"
                          r"\[\[\[\s*/\s*P\s+\1\s*\]\]\]", out, re.S):
@@ -2216,15 +2214,18 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
         raise ValueError(f"исправление {loose[:3]} не закрыто маркером"
                          " [[[/P идентификатор]]]")
     noted = {n["block"] for n in notes}
-    bad = [i for i, ks in kinds_of.items() if "author" in ks and i not in noted]
+    bad = [c for c, (kind, _) in verdicts.items() if kind == "author" and c not in noted]
     if bad:
         raise ValueError(f"вердикт author без сноски: {bad[:4]} — сноска адресуется"
-                         f" блоком: [[[NOTE {bad[0]} fact]]]")
+                         f" как вердикт: [[[NOTE {bad[0]} fact]]]")
     bad = [i for i, ks in kinds_of.items() if "translation" in ks and i not in fixes]
     if bad:
-        raise ValueError(f"вердикт translation без исправления: {bad[:4]}")
+        raise ValueError(f"вердикт translation без исправления: {bad[:4]} — абзац"
+                         f" адресуется блоком: [[[P {bad[0]}]]]")
     # Сноска или правка вопреки вердикту — рассинхрон ответа, а не довесок.
-    notes = [n for n in notes if "author" in kinds_of.get(n["block"], ())]
+    # В книгу сноска идёт по блоку: номер претензии своё отслужил.
+    notes = [dict(n, block=n["block"].split("#")[0]) for n in notes
+             if verdicts.get(n["block"], ("",))[0] == "author"]
     fixes = {i: v for i, v in fixes.items() if "translation" in kinds_of.get(i, ())}
     dirty = [i for i, v in fixes.items() if _SERVICE.search(v)] \
         + [n["block"] for n in notes if _SERVICE.search(n["text"])]
