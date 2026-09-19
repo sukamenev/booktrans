@@ -586,6 +586,7 @@ def _targets(items):
 
 def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     items = _render_math_to_images(items, images)
+    notes = _math_notes(notes)
     st = st or {}
     targets = _targets(items)
     code = meta.get("target_lang", "ru")
@@ -833,6 +834,10 @@ def is_math(s):
     # там `\alpha`, а не «α». Латиница ниже 0x250 остаётся: `x`, `mc`, `\sin`.
     if any(c.isalpha() and ord(c) > 0x24F for c in s):
         return False
+    # Слитный идентификатор между долларами — ген, транслокация, переменная:
+    # «$JAK2$», «$t(9;22)$». Цена так не выглядит: «$5 и $10» — с пробелами.
+    if re.fullmatch(r"[A-Za-z][\w:;,()/.+\-]*", s):
+        return True
     return len(s) <= 3 or bool(MATH_SIGN.search(s))
 
 
@@ -1384,9 +1389,27 @@ def tex_inline(f):
     got = re.sub(r"\s+", " ", got).strip()
     # Голый идентификатор в математическом режиме набран курсивом, и это не
     # случайность: так в книгах стоят гены и переменные («JAK2», «n»).
-    if re.fullmatch(r"[A-Za-z][A-Za-z0-9:/.\-]*", f) and re.search(r"[A-Za-z]", f):
+    # Со скобками — обозначение перестройки, «t(9;22)»: его набирают прямо.
+    if re.fullmatch(r"[A-Za-z][\w:/.\-]*", f):
         return f"<i>{got}</i>"
     return got
+
+
+def _math_notes(notes):
+    """Простые формулы в тексте сносок — текстом, как и в абзацах."""
+    math_re = re.compile(r'\$\$(.*?)\$\$|\$([^\$]+?)\$')
+
+    def repl(m):
+        if m.group(1) is None and not is_math(m.group(2)):
+            return m.group(0)
+        got = tex_inline((m.group(1) if m.group(1) is not None else m.group(2)).strip())
+        return got if got is not None else m.group(0)
+
+    out = {}
+    for bid, v in (notes or {}).items():
+        out[bid] = dict(v, text=math_re.sub(repl, v["text"])) if isinstance(v, dict) \
+            else math_re.sub(repl, v)
+    return out
 
 
 def _render_math_to_images(items, images):
@@ -1475,6 +1498,7 @@ def _render_math_to_images(items, images):
 
 def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     items = _render_math_to_images(items, images)
+    notes = _math_notes(notes)
     blocks = kw['blocks']
     tr = kw['tr']
     # Тексты абзацев — из items: сборка уже вставила туда метки привязки

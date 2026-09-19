@@ -35,10 +35,15 @@ def main():
                       (r"5 \times 10^{9}/\text{L}", "5 × 10<sup>9</sup>/L"),
                       (r"37^\circ\text{C}", "37°C"), (r"\geq 20\%", "≥ 20%"),
                       (r"BCR::ABL1", "<i>BCR::ABL1</i>"), (r"Fe^{2+}", "Fe<sup>2+</sup>"),
-                      (r"\alpha_2\beta_2", "α<sub>2</sub>β<sub>2</sub>")):
+                      (r"\alpha_2\beta_2", "α<sub>2</sub>β<sub>2</sub>"),
+                      (r"JAK2", "<i>JAK2</i>"), (r"t(9;22)", "t(9;22)")):
         ok(f"текстом: {tex}", O.tex_inline(tex) == want, O.tex_inline(tex))
     for tex in (r"\frac{a}{b}", r"\sqrt{x}", r"\sum_{i=1}^n x_i", r"x^{2", r"\unknowncmd"):
         ok(f"не текстом: {tex}", O.tex_inline(tex) is None, O.tex_inline(tex))
+
+    ok("идентификатор в долларах — формула, цена — нет",
+       O.is_math("JAK2") and O.is_math("t(9;22)") and not O.is_math("5 and "),
+       [O.is_math(x) for x in ("JAK2", "t(9;22)", "5 and ")])
 
     items = [("title", "Глава", "s01.b0000", None),
              ("p", r"При $\beta$-талассемии уровень $B_{12}$ выше $5 \times 10^{9}$/л.",
@@ -46,11 +51,12 @@ def main():
              ("p", r"Доля равна $\frac{a}{b}$ от нормы.", "s01.b0002", None)]
     d = tempfile.mkdtemp()
     p = os.path.join(d, "m.epub")
-    O.write_epub(p, META, items, {}, {}, "Прим.:", {})
+    O.write_epub(p, META, items, {"s01.b0001": r"Цепь $\gamma$ и ген $HFE$."}, {}, "Прим.:", {})
     z = zipfile.ZipFile(p)
     body = "".join(z.read(n).decode("utf-8") for n in z.namelist() if n.endswith(".xhtml"))
     ok("epub: простая формула — текстом",
        "β-талассемии" in body and "B<sub>12</sub>" in body and "10<sup>9</sup>" in body, body[-400:])
+    ok("epub: формулы в сноске — тоже текстом", "Цепь γ и ген <i>HFE</i>" in body, body[-300:])
     ok("epub: служебной метки в книге нет", "imgmath" not in body, body[-400:])
     try:
         import pypdfium2                                    # noqa: F401
