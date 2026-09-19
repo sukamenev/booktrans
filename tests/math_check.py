@@ -43,7 +43,8 @@ def main():
         ok(f"не текстом: {tex}", O.tex_inline(tex) is None, O.tex_inline(tex))
 
     ok("идентификатор в долларах — формула, цена — нет",
-       all(O.is_math(x) for x in ("JAK2", "t(9;22)", "13q14", "0,54", "(ETV6::RUNX1)"))
+       all(O.is_math(x) for x in ("JAK2", "t(9;22)", "13q14", "0,54", "(ETV6::RUNX1)",
+                                  "^+", r"\beta^+", "H^+"))
        and not any(O.is_math(x) for x in ("5 and ", "5-", "5/", "цена")),
        [O.is_math(x) for x in ("JAK2", "13q14", "0,54", "5 and ", "5-", "5/")])
     ok("вилка цен остаётся прозой",
