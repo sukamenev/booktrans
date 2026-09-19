@@ -1021,9 +1021,14 @@ def _tex_preamble(meta, st, code):
         # них он падает на первой же строке. Без переносов русское слово не
         # разбить, и строка вылезает за поле — на одной книге так поехали
         # сотни строк.
-        out.append(r"\IfFileExists{babel-%s.tex}{\usepackage[%s]{babel}}"
-                   r"{\IfFileExists{%sb.ldf}{\usepackage[%s]{babel}}{}}"
-                   % (lang, lang, lang, lang))
+        # Классический пакет языка (russian.ldf) стоит не везде, а описание
+        # языка в самом babel (babel-russian.tex) есть всегда: без ldf опция
+        # [russian] — ошибка, и язык берём через \babelprovide.
+        out.append(r"\IfFileExists{%s.ldf}{\usepackage[%s]{babel}}"
+                   r"{\IfFileExists{%sb.ldf}{\usepackage[%s]{babel}}"
+                   r"{\IfFileExists{babel-%s.tex}{\usepackage{babel}"
+                   r"\babelprovide[import,main]{%s}}{}}}"
+                   % (lang, lang, lang, lang, lang, lang))
     # Свои подписи вместо английских: babel закомментирован, и без этого
     # оглавление в русской книге называется Contents.
     out += [r"\renewcommand{\contentsname}{%s}"
