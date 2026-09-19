@@ -147,12 +147,11 @@ def _inline(s, table, links=None):
     tag = "a l:href" if table is FB2_INLINE else "a href"
     s = re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', rf'<{tag}="\2">\1</a>', s)
     
-    img_tag = "image l:href" if table is FB2_INLINE else "img src"
-    s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<{img_tag}="\1"/>', s)
-    if table is FB2_INLINE:
-        s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<image l:href="#\1"/>', s)
-    else:
-        s = re.sub(r"&lt;imgmath name=&quot;([^&]+)&quot;&gt;", rf'<img src="\1" alt="math"/>', s)
+    # Формула картинкой: метку `<imgmath name="…"/>` ставит сборка, сюда она
+    # приходит экранированной. В epub картинки лежат в img/, в fb2 — по якорю.
+    s = re.sub(r'&lt;imgmath name="([^"&]+)"/&gt;',
+               r'<image l:href="#\1"/>' if table is FB2_INLINE
+               else r'<img src="img/\1" alt="formula"/>', s)
     return _balance(_autolink(s, tag))
 
 
@@ -711,6 +710,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     # и титульная картинка из исходника обычно висят на выброшенных блоках, а
     # весят как половина книги: на одной живой epub — 860 КБ из 3,2 МБ.
     used = {t for k, t, *_ in items if k == "image"}
+    used |= {n for k, t, *_ in items if isinstance(t, str)
+             for n in re.findall(r'<imgmath name="([^"]+)"/>', t)}
     images = {n: r for n, r in images.items() if n in used or n == same}
     # Отчёт тот же, что у fb2: из набора в книгу идёт не всё, и разойтись эти
     # два числа могут по-разному — картинка на выброшенном блоке, картинка,
@@ -1264,6 +1265,130 @@ def write_pdf(path, meta, items, notes, images, note_prefix, st=None,
 
 import xml.etree.ElementTree as ET
 
+TEX_SYMBOL = {
+    "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ε", "varepsilon": "ε",
+    "zeta": "ζ", "eta": "η", "theta": "θ", "iota": "ι", "kappa": "κ", "lambda": "λ",
+    "mu": "μ", "nu": "ν", "xi": "ξ", "pi": "π", "rho": "ρ", "sigma": "σ", "varsigma": "ς",
+    "tau": "τ", "upsilon": "υ", "phi": "φ", "varphi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω",
+    "Gamma": "Γ", "Delta": "Δ", "Theta": "Θ", "Lambda": "Λ", "Pi": "Π", "Sigma": "Σ",
+    "Phi": "Φ", "Psi": "Ψ", "Omega": "Ω",
+    "times": "×", "cdot": "·", "pm": "±", "mp": "∓", "div": "÷", "ast": "*",
+    "geq": "≥", "ge": "≥", "leq": "≤", "le": "≤", "neq": "≠", "ne": "≠", "approx": "≈",
+    "sim": "~", "equiv": "≡", "ll": "≪", "gg": "≫", "propto": "∝", "infty": "∞",
+    "rightarrow": "→", "to": "→", "leftarrow": "←", "leftrightarrow": "↔",
+    "uparrow": "↑", "downarrow": "↓", "Rightarrow": "⇒",
+    "circ": "°", "degree": "°", "prime": "′", "ldots": "…", "dots": "…", "cdots": "⋯",
+    "quad": " ", "qquad": "  ",
+}
+TEX_SPACED = set("×·±∓÷≥≤≠≈≡≪≫∝→←↔⇒")
+TEX_WRAP = {"text": "", "mathrm": "", "textrm": "", "operatorname": "", "mathsf": "",
+            "mathit": "i", "textit": "i", "mathbf": "b", "textbf": "b", "boldsymbol": "b"}
+
+
+def tex_inline(f):
+    """Простая формула — обычным текстом с разметкой, иначе None.
+
+    Распознавание заворачивает в доллары всё подряд: «$\beta$-талассемия»,
+    «$B_{12}$», «$10^9$/л». Картинкой такое делать незачем: она не ищется, не
+    читается вслух и не растёт со шрифтом. Греческая буква, индекс и знак
+    ложатся в текст как есть; картинкой остаётся то, чего строкой не набрать:
+    дробь, корень, сумма. Незнакомая команда — тоже None: лучше картинка,
+    чем формула с дырой.
+    """
+    def group(s, at):
+        """Содержимое {…} с позиции открывающей скобки и позиция за ней."""
+        depth = 0
+        for k in range(at, len(s)):
+            depth += (s[k] == "{") - (s[k] == "}")
+            if depth == 0:
+                return s[at + 1:k], k + 1
+        return None, at
+
+    def conv(s):
+        out, k = [], 0
+        while k < len(s):
+            ch = s[k]
+            if ch == "\\":
+                m = re.match(r"\\([A-Za-z]+)\s*", s[k:])
+                if not m:                       # \% \, \  \{ и прочие одиночки
+                    nxt = s[k + 1:k + 2]
+                    if nxt in "%$&#_{}":
+                        out.append(nxt)
+                    elif nxt in " ,;:!":
+                        out.append("" if nxt == "!" else " ")
+                    else:
+                        return None
+                    k += 2
+                    continue
+                name = m.group(1)
+                k += m.end()
+                if name in TEX_SYMBOL:
+                    sym = TEX_SYMBOL[name]
+                    # Знак действия и отношения TeX отбивает сам: «5 × 10».
+                    out.append(f" {sym} " if sym in TEX_SPACED else sym)
+                elif name in TEX_WRAP:
+                    if s[k:k + 1] != "{":
+                        return None
+                    inner, k = group(s, k)
+                    body = conv(inner) if inner is not None else None
+                    if body is None:
+                        return None
+                    tag = TEX_WRAP[name]
+                    out.append(f"<{tag}>{body}</{tag}>" if tag and body else body)
+                else:
+                    return None
+            elif ch in "^_":
+                tag = "sup" if ch == "^" else "sub"
+                k += 1
+                if s[k:k + 1] == "{":
+                    inner, k = group(s, k)
+                elif s[k:k + 1] == "\\":
+                    m = re.match(r"\\[A-Za-z]+", s[k:])
+                    if not m:
+                        return None
+                    inner, k = m.group(), k + m.end()
+                else:
+                    inner, k = s[k:k + 1], k + 1
+                body = conv(inner) if inner else None
+                if body is None:
+                    return None
+                # Градус и штрих — уже надстрочные знаки, второй подъём лишний.
+                out.append(body if body in ("°", "′", "″") else f"<{tag}>{body}</{tag}>")
+            elif ch == "{":
+                inner, k = group(s, k)
+                body = conv(inner) if inner is not None else None
+                if body is None:
+                    return None
+                out.append(body)
+            elif ch == "}":
+                return None
+            elif ch == "~":
+                out.append(" ")
+                k += 1
+            elif ch == "'":
+                out.append("′")
+                k += 1
+            elif ch == "-" and s[k - 1:k] != "-" and re.match(r"-\s*[\d\\]", s[k:]) \
+                    and not re.search(r"[\w)]\s*$", s[:k]):
+                out.append("−")              # знак числа, а не дефис
+                k += 1
+            else:
+                out.append(ch)
+                k += 1
+        return "".join(out)
+
+    f = " ".join(f.split())
+    got = conv(f)
+    if got is None:
+        return None
+    got = re.sub(r"\s+", " ", got).strip()
+    # Голый идентификатор в математическом режиме набран курсивом, и это не
+    # случайность: так в книгах стоят гены и переменные («JAK2», «n»).
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9:/.\-]*", f) and re.search(r"[A-Za-z]", f):
+        return f"<i>{got}</i>"
+    return got
+
+
 def _render_math_to_images(items, images):
     import subprocess, tempfile, hashlib
     math_re = re.compile(r'\$\$(.*?)\$\$|\$([^\$]+?)\$')
@@ -1274,7 +1399,21 @@ def _render_math_to_images(items, images):
                 f = m.group(1)
                 if f is None and not is_math(m.group(2)):
                     continue          # два доллара в прозе — не формула
-                formulas.add((f if f is not None else m.group(2)).strip())
+                f = (f if f is not None else m.group(2)).strip()
+                if tex_inline(f) is None:
+                    formulas.add(f)
+
+    def as_text(items_):
+        """Простые формулы — текстом; сложные остаются в долларах."""
+        def repl(m):
+            if m.group(1) is None and not is_math(m.group(2)):
+                return m.group(0)
+            got = tex_inline((m.group(1) if m.group(1) is not None else m.group(2)).strip())
+            return got if got is not None else m.group(0)
+        return [(it[0], math_re.sub(repl, it[1])) + tuple(it[2:])
+                if it[0] in ("p", "title", "table", "verse") else it for it in items_]
+
+    items = as_text(items)
     if not formulas:
         return items
     formulas = sorted(list(formulas))
@@ -1326,10 +1465,7 @@ def _render_math_to_images(items, images):
                 f = (m.group(1) if m.group(1) is not None else m.group(2)).strip()
                 if f in formula_images:
                     name = formula_images[f]
-                    # We output the unescaped fake tag which _inline will escape, 
-                    # wait! If we output `<imgmath name="..."/>`, _inline does escape(s).
-                    # So we should output `<imgmath name="..."/>` and _inline will see `&lt;imgmath name=&quot;...&quot;/&gt;`
-                    return f'<imgmath name="{name}"/>'
+                    return f'<imgmath name="{name}"/>'      # разворачивает _inline
                 return m.group(0)
             t = math_re.sub(repl, t)
             new_items.append((item[0], t) + item[2:])
@@ -1587,6 +1723,8 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
         binary("cover.jpg", cover)
     spots = [b for b in blocks if b["kind"] == "image"]
     used = {b["text"] for b in spots}
+    used |= {n for it in items if isinstance(it[1], str)
+             for n in re.findall(r'<imgmath name="([^"]+)"/>', it[1])}
     n_img = 0
     for name, raw in (images or {}).items():
         if name in used and name != "cover.jpg":
