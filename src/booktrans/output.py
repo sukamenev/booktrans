@@ -903,9 +903,20 @@ def _tex(s, links=None, notes_dict=None):
     # Формулы прячем от экранирования: внутри `$…$` знаки TeX не гости, а
     # хозяева. Одиночные доллары — только если между ними правда формула.
     s = re.sub(r"\$\$(.*?)\$\$", hide, s, flags=re.DOTALL)
-    s = re.sub(r"\$([^$]*?)\$",
-               lambda m: hide(m) if is_math(m.group(1)) else m.group(0),
-               s, flags=re.DOTALL)
+    def math_or_text(m):
+        f = m.group(1).strip()
+        if not is_math(f):
+            return m.group(0)
+        # Слитное обозначение без знаков TeX — ген, локус, десятичная дробь —
+        # набираем текстом: в математическом режиме «JAK2» встаёт как
+        # произведение переменных, а «0,54» и «t(9;22)» получают пробел после
+        # запятой. Курсив гена даёт tex_inline, дальше его разворачивает back.
+        # Одна буква — переменная, ей место в формуле: «$x$».
+        if len(f) > 1 and not re.search(r"[\\^_{}=<>+*\s]", f):
+            return tex_inline(f) or hide(m)
+        return hide(m)
+
+    s = re.sub(r"\$([^$]*?)\$", math_or_text, s, flags=re.DOTALL)
     
     def hide_md_link(m):
         url = m.group(2).replace("%", r"\%").replace("#", r"\#")
@@ -984,6 +995,7 @@ def _tex_preamble(meta, st, code):
            r"% Собирается lualatex или xelatex: fontspec нужен ради письменностей,",
            r"% которых pdflatex не знает. Заголовки рубленым, текст с засечками,",
            r"% листинги моноширинным — как в книгах и заведено.",
+           r"\usepackage{amsmath}",          # \text{…} внутри формул: «10^9/\text{л}»
            r"\usepackage{fontspec}",
            *fonts,
            geom,
