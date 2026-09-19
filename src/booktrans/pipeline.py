@@ -2596,7 +2596,9 @@ def _lead(it):
         return t
     # В TERM бывает несколько слов разом («микроже, же»): текст, начатый с
     # любого из них, уже начат с термина — иначе вышло бы «же — Же — …».
-    for part in re.split(r"[,;/]", term):
+    # Формулу по косой не режем: «$5 \times 10^6/\mathrm{л}$» — один термин.
+    parts = [term] if "$" in term else re.split(r"[,;/]", term)
+    for part in parts:
         w = (part.strip().split() or [""])[0]
         if not w:
             continue
@@ -2604,7 +2606,7 @@ def _lead(it):
         # Начало слова обязательно: «же» иначе находится внутри «тяжести».
         if re.search(rf"\b{re.escape(stem)}", t[:len(term) + 32], re.I):
             return t
-    lead = re.split(r"[,;/]", term)[0].strip() or term
+    lead = parts[0].strip() or term
     return f"{lead} — {t}"
 
 

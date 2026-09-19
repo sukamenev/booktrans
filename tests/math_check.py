@@ -43,8 +43,11 @@ def main():
         ok(f"не текстом: {tex}", O.tex_inline(tex) is None, O.tex_inline(tex))
 
     ok("идентификатор в долларах — формула, цена — нет",
-       O.is_math("JAK2") and O.is_math("t(9;22)") and not O.is_math("5 and "),
-       [O.is_math(x) for x in ("JAK2", "t(9;22)", "5 and ")])
+       all(O.is_math(x) for x in ("JAK2", "t(9;22)", "13q14", "0,54", "(ETV6::RUNX1)"))
+       and not any(O.is_math(x) for x in ("5 and ", "5-", "5/", "цена")),
+       [O.is_math(x) for x in ("JAK2", "13q14", "0,54", "5 and ", "5-", "5/")])
+    ok("вилка цен остаётся прозой",
+       O.math_text("от $5-$10 до $20") == "от $5-$10 до $20", O.math_text("от $5-$10 до $20"))
 
     got = B.esc(r'Цепь $\beta$ и <imgmath name="math_1.png"/>.')
     ok("fb2: тот же разбор формул и метки картинки",
