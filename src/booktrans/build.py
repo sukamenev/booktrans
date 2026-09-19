@@ -413,8 +413,10 @@ def esc(s, links=None, notes_map=None):
     """
     import html as _html
     s = _html.unescape(s)
-    s = escape(s)
+    s = escape(output.math_text(s))            # простая формула — текстом
     s = re.sub(r"&lt;br\s*/?&gt;", " ", s)       # внутри <p> fb2 переноса нет
+    # Сложная формула — картинкой: метку ставит сборка (см. output._inline).
+    s = re.sub(r'&lt;imgmath name="([^"&]+)"/&gt;', r'<image l:href="#\1"/>', s)
     for src, dst in FB2_INLINE.items():
         s = s.replace(f"&lt;{src}&gt;", f"<{dst}>").replace(f"&lt;/{src}&gt;", f"</{dst}>")
     if links:

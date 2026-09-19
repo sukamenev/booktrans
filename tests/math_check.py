@@ -17,6 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
 from booktrans import output as O                           # noqa: E402
+from booktrans import build as B                            # noqa: E402
 
 META = {"title": "Кровь", "author": "Автор", "target_lang": "ru"}
 
@@ -44,6 +45,10 @@ def main():
     ok("идентификатор в долларах — формула, цена — нет",
        O.is_math("JAK2") and O.is_math("t(9;22)") and not O.is_math("5 and "),
        [O.is_math(x) for x in ("JAK2", "t(9;22)", "5 and ")])
+
+    got = B.esc(r'Цепь $\beta$ и <imgmath name="math_1.png"/>.')
+    ok("fb2: тот же разбор формул и метки картинки",
+       got == 'Цепь β и <image l:href="#math_1.png"/>.', got)
 
     items = [("title", "Глава", "s01.b0000", None),
              ("p", r"При $\beta$-талассемии уровень $B_{12}$ выше $5 \times 10^{9}$/л.",
