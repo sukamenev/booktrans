@@ -131,7 +131,7 @@ def _autolink(s, tag):
 
 def _inline(s, table, links=None):
     """Экранирует текст, разворачивая разрешённую разметку и ссылки."""
-    s = escape(s)
+    s = escape(math_text(s))
     # Перенос строки внутри абзаца: в html — <br/>, в fb2 внутри <p> его
     # нет — абзац делится заранее (см. _br_parts), остаток — пробел.
     s = re.sub(r"&lt;br\s*/?&gt;", " " if table is FB2_INLINE else "<br/>", s)
@@ -586,7 +586,6 @@ def _targets(items):
 
 def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     items = _render_math_to_images(items, images)
-    notes = _math_notes(notes)
     st = st or {}
     targets = _targets(items)
     code = meta.get("target_lang", "ru")
@@ -832,8 +831,14 @@ def is_math(s):
         return False
     # Кириллица, греческий, иврит, восточное письмо: в формуле их не бывает —
     # там `\alpha`, а не «α». Латиница ниже 0x250 остаётся: `x`, `mc`, `\sin`.
-    if any(c.isalpha() and ord(c) > 0x24F for c in s):
+    # Исключение — \text{…}: там единица измерения, переведённая вместе с
+    # текстом: «$5 \times 10^9/\text{л}$».
+    bare = re.sub(r"\\(?:text|mathrm|textrm)\s*\{[^{}]*\}", "", s)
+    if any(c.isalpha() and ord(c) > 0x24F for c in bare):
         return False
+    # Отношение и счёт без букв: «$2 : 1$». Цена так не выглядит — в ней слова.
+    if re.fullmatch(r"[\d\s:.,+\-=/()%<>]+", s) and re.search(r"\d\s*[:=/<>+]", s):
+        return True
     # Слитный идентификатор между долларами — ген, транслокация, переменная:
     # «$JAK2$», «$t(9;22)$». Цена так не выглядит: «$5 и $10» — с пробелами.
     if re.fullmatch(r"[A-Za-z][\w:;,()/.+\-]*", s):
@@ -1395,21 +1400,22 @@ def tex_inline(f):
     return got
 
 
-def _math_notes(notes):
-    """Простые формулы в тексте сносок — текстом, как и в абзацах."""
-    math_re = re.compile(r'\$\$(.*?)\$\$|\$([^\$]+?)\$')
+MATH_RE = re.compile(r"\$\$(.*?)\$\$|\$([^\$]+?)\$")
+
+
+def math_text(s):
+    """Простые формулы строки — текстом с разметкой; сложные остаются в
+    долларах. Зовётся из _inline, то есть для всего, что идёт в книгу:
+    абзац, стих, ячейка таблицы, подпись, сноска."""
+    if "$" not in s:
+        return s
 
     def repl(m):
         if m.group(1) is None and not is_math(m.group(2)):
             return m.group(0)
         got = tex_inline((m.group(1) if m.group(1) is not None else m.group(2)).strip())
         return got if got is not None else m.group(0)
-
-    out = {}
-    for bid, v in (notes or {}).items():
-        out[bid] = dict(v, text=math_re.sub(repl, v["text"])) if isinstance(v, dict) \
-            else math_re.sub(repl, v)
-    return out
+    return MATH_RE.sub(repl, s)
 
 
 def _render_math_to_images(items, images):
@@ -1426,17 +1432,6 @@ def _render_math_to_images(items, images):
                 if tex_inline(f) is None:
                     formulas.add(f)
 
-    def as_text(items_):
-        """Простые формулы — текстом; сложные остаются в долларах."""
-        def repl(m):
-            if m.group(1) is None and not is_math(m.group(2)):
-                return m.group(0)
-            got = tex_inline((m.group(1) if m.group(1) is not None else m.group(2)).strip())
-            return got if got is not None else m.group(0)
-        return [(it[0], math_re.sub(repl, it[1])) + tuple(it[2:])
-                if it[0] in ("p", "title", "table", "verse") else it for it in items_]
-
-    items = as_text(items)
     if not formulas:
         return items
     formulas = sorted(list(formulas))
@@ -1498,7 +1493,6 @@ def _render_math_to_images(items, images):
 
 def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None, **kw):
     items = _render_math_to_images(items, images)
-    notes = _math_notes(notes)
     blocks = kw['blocks']
     tr = kw['tr']
     # Тексты абзацев — из items: сборка уже вставила туда метки привязки
