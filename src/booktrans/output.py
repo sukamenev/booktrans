@@ -866,8 +866,33 @@ TEX_FONTS = {
 # Для письменностей, которых в основных шрифтах нет.
 TEX_SCRIPT = {"ja": "Noto Serif CJK JP", "zh": "Noto Serif CJK SC",
               "ko": "Noto Serif CJK KR", "hi": "Noto Serif Devanagari"}
-TEX_BABEL = {"ru": "russian", "en": "english", "de": "german", "fr": "french",
+TEX_BABEL = {"ru": "russian", "en": "english", "de": "ngerman", "fr": "french",
              "es": "spanish", "hi": "hindi"}
+# Правила переноса, которые едут с конвейером (папка hyph): у кого языкового
+# пакета TeX нет, у того русское слово иначе не переносится вовсе. Английский
+# есть в любом формате TeX, японский и китайский не переносятся.
+TEX_HYPH = {"ru": "ru", "de": "de-1996", "fr": "fr", "es": "es", "hi": "hi"}
+
+
+def hyph_file(code):
+    """Имя файла правил рядом с .tex: без пробелов и общее для книг каталога."""
+    return f"booktrans-hyph-{code}.tex" if code in TEX_HYPH and code in TEX_BABEL else None
+
+
+def hyph_tex(code):
+    """Правила переноса языка командами babel — для LuaLaTeX, на лету."""
+    here = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hyph")
+    base = os.path.join(here, f"hyph-{TEX_HYPH[code]}")
+    read = lambda ext: " ".join(open(base + ext, encoding="utf-8").read().split()) \
+        if os.path.exists(base + ext) else ""                # noqa: E731
+    name = TEX_BABEL[code]
+    out = [f"% Hyphenation patterns hyph-{TEX_HYPH[code]} of the hyph-utf8 project,",
+           "% unmodified; authors and licence: see the hyph folder of booktrans,",
+           "% https://github.com/hyphenation/tex-hyphen",
+           "\\babelpatterns[%s]{%s}" % (name, read(".pat.txt"))]
+    if read(".hyp.txt"):
+        out.append("\\babelhyphenation[%s]{%s}" % (name, read(".hyp.txt")))
+    return "\n".join(out) + "\n"
 
 
 def _tex(s, links=None, notes_dict=None):
@@ -1029,6 +1054,13 @@ def _tex_preamble(meta, st, code):
                    r"{\IfFileExists{babel-%s.tex}{\usepackage{babel}"
                    r"\babelprovide[import,main]{%s}}{}}}"
                    % (lang, lang, lang, lang, lang, lang))
+        # Свои правила переноса — поверх того, что нашлось в системе: книга
+        # переносится одинаково на любой машине. \babelpatterns есть только
+        # у LuaTeX; xelatex остаётся при системных правилах.
+        if hyph_file(code):
+            out.append(r"\ifdefined\directlua\ifdefined\babelpatterns"
+                       r"\IfFileExists{%s}{\input{%s}}{}\fi\fi"
+                       % (hyph_file(code), hyph_file(code)))
     # Свои подписи вместо английских: babel закомментирован, и без этого
     # оглавление в русской книге называется Contents.
     out += [r"\renewcommand{\contentsname}{%s}"
@@ -1192,6 +1224,9 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
         o.append(r"\end{quotation}")
     o.append(r"\end{document}")
     open(path, "w", encoding="utf-8").write("\n".join(o) + "\n")
+    if hyph_file(code):
+        open(os.path.join(os.path.dirname(os.path.abspath(path)), hyph_file(code)),
+             "w", encoding="utf-8").write(hyph_tex(code))
     # Папка своя у каждой книги: собери несколько в один каталог — и
     # одноимённые cover.jpg, author.jpg, logo.jpg затрут друг друга.
     d = os.path.splitext(os.path.abspath(path))[0] + ".img"

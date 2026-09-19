@@ -842,6 +842,15 @@ by trying in turn: Noto (which covers nearly every script), then DejaVu, then
 Liberation. If none is present TeX falls back to its own, and Cyrillic may not
 come out.
 
+**Hyphenation rules travel with the book.** A file `booktrans-hyph-ru.tex` is
+written next to the `.tex`, holding the patterns of the target language — the
+same ones TeX Live ships, from the hyph-utf8 project. TeX installs languages as
+separate packages, and without one a Russian word is not hyphenated at all;
+with its own file the book hyphenates the same way on any machine. lualatex
+loads it; xelatex cannot load patterns at run time and stays with the system
+ones. Patterns are carried for Russian, German, French, Spanish and Hindi;
+English is part of every TeX.
+
 ```bash
 ./booktrans book.epub --to ru -o Book.tex     # the source
 ./booktrans book.epub --to ru -o Book.pdf     # and build it too
