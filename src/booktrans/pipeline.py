@@ -1146,6 +1146,38 @@ def _backups(fallback):
     return list(fallback) if isinstance(fallback, (list, tuple)) else [fallback]
 
 
+STOP_MIN = 20           # меньше стольких абзацев — судить об обрыве не по чему
+STOP_TAIL = 0.6         # нетронутый хвост длиннее этой доли — правка оборвалась
+STOP_PROSE = 80         # абзац короче — строка перечня, по ней не судим
+
+
+def edit_stopped(res, ids, draft):
+    """Оборвалась ли правка: номер блока последней правки, иначе 0.
+
+    Редактура по замыслу возвращает только изменённые абзацы, и оборванный
+    ответ выглядит ровно как «посмотрел всё, править нечего». Отличить можно
+    по месту последней правки: на здоровом куске они идут по всему тексту, а
+    когда модель упирается в содержание — обрываются в начале, и дальше пусто.
+    Замерено на одной книге: обычный кусок — 27 правок из 70, последняя на
+    70-м блоке; кусок со спорной сценой — 2 из 41, обе в первых двух.
+
+    Ожидание «правки идут по всему тексту» верно только для прозы. Строки
+    перечня — предметный указатель, стихи, оглавление — правятся единицами,
+    и одна опечатка в начале куска из 24 строк выглядела обрывом: на
+    медицинской книге так пометило 7 кусков указателя из 33. Поэтому счёт
+    идёт по абзацам прозы, а кусок без них оборваться не может.
+    """
+    prose = [k for k in ids if len(strip(draft.get(k) or "")) >= STOP_PROSE]
+    if not res or len(prose) < STOP_MIN:
+        return 0
+    last = max((prose.index(k) + 1 for k in res if k in prose), default=0)
+    if (len(prose) - last) / len(prose) <= STOP_TAIL:
+        return 0
+    # Наружу — место в куске целиком: до него правка считается сделанной.
+    done = [ids.index(k) + 1 for k in res if k in ids]
+    return max(done) if done else 1
+
+
 def _edit_row(primary, spares, by, ban, self_edit="allow"):
     """Очередь редакторов для куска. `by` — модель, переведшая кусок.
 
@@ -1842,20 +1874,6 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
         open(mkparent(f'{lpath(work, "prompts", to)}/{idx:04d}.edit.txt'), "w",
              encoding="utf-8").write(prompt)
 
-        def _stopped(res, ids):
-            """Оборвалась ли правка. Редактура по замыслу возвращает только
-            изменённые абзацы, и оборванный ответ выглядит ровно как
-            «посмотрел всё, править нечего». Отличить можно по месту
-            последней правки: на здоровом куске они идут по всему тексту,
-            а когда модель упирается в содержание — обрываются в начале и
-            дальше пусто. Замерено на одной книге: обычный кусок — 27 правок
-            из 70, последняя на 70-м блоке; кусок со спорной сценой — 2 из
-            41, обе в первых двух."""
-            if not res or len(ids) < 20:
-                return 0
-            last = max((ids.index(k) + 1 for k in res if k in ids), default=0)
-            return last if (len(ids) - last) / len(ids) > 0.6 else 0
-
         ids = list(draft)          # ключи словаря и есть идентификаторы
 
         def parse(o):
@@ -1896,7 +1914,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 failed = True
             else:
                 failed = False
-            stopped = _stopped(res, ids)
+            stopped = edit_stopped(res, ids, draft)
             for fb in spares:
                 if agent_mod.limit_left(fb):
                     continue
@@ -1923,7 +1941,7 @@ def edit(work, chunks, agent, system, task, retries, log, only=None, jobs=1,
                 if len(res2) > len(res) or failed:
                     res, notes, meta, dt = res2, notes2, meta2, dt2
                     failed = False
-                    stopped = _stopped(res, ids)
+                    stopped = edit_stopped(res, ids, draft)
             return res, notes, meta, dt, failed, stopped
 
         since = time.time()

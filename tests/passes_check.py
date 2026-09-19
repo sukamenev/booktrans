@@ -49,6 +49,27 @@ def main():
         ok("законченный перевод не в списке",
            not any(g[0] == "tr" for g in gaps), gaps)
 
+    # Обрыв правки судится по абзацам прозы. Спорная сцена: 2 правки из 41, обе
+    # в начале, дальше пусто — обрыв. Предметный указатель: одна опечатка в
+    # начале куска из 24 коротких строк — не обрыв, там и править нечего.
+    prose = {f"s01.b{n:04d}": "Длинный абзац художественной прозы, в котором редактору всегда есть что поправить: " + "слово " * 12
+             for n in range(41)}
+    pid = list(prose)
+    ok("обрыв: две правки в начале прозаического куска",
+       P.edit_stopped({pid[0]: "а", pid[1]: "б"}, pid, prose) == 2,
+       P.edit_stopped({pid[0]: "а", pid[1]: "б"}, pid, prose))
+    ok("здоровый кусок: правки идут до конца",
+       P.edit_stopped({pid[0]: "а", pid[20]: "б", pid[39]: "в"}, pid, prose) == 0)
+    index = {f"s99.b{n:04d}": f"<i>GENE{n}</i>, мутация гена {n}" for n in range(24)}
+    iid = list(index)
+    ok("указатель: одна правка в начале — не обрыв",
+       P.edit_stopped({iid[3]: "правка"}, iid, index) == 0, P.edit_stopped({iid[3]: "правка"}, iid, index))
+    mixed = dict(prose, **index)
+    ok("смешанный кусок: короткие строки в счёт не идут",
+       P.edit_stopped({pid[0]: "а"}, pid + iid, mixed) == 1
+       and P.edit_stopped({pid[39]: "а", iid[2]: "б"}, pid + iid, mixed) == 0)
+    ok("без правок — не обрыв, а «править нечего»", P.edit_stopped({}, pid, prose) == 0)
+
     print(f"\nслучаев: {cases}   с расхождениями: {bad}")
     return 1 if bad else 0
 
