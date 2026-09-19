@@ -2135,16 +2135,21 @@ def claims_text(notes, gaps, ids):
         for i in ids:
             if i in ln:
                 per.setdefault(i, []).append(ln.strip())
+    # Редактор пишет и общее замечание на два блока: «s629.b0002, s632.b0002:
+    # …». Под такой шапкой сверщик не знает, каким адресом отвечать, — шапку
+    # заменяем адресом претензии.
+    one = "|".join(re.escape(i) for i in ids)
+    head = re.compile(rf"^\s*(?:(?:{one})\s*(?:,|;|и|and|&)?\s*)+[:—-]\s*")
     shown, claims = [], []
     for i in ids:
         cl = per.get(i) or []
         if len(cl) == 1:
-            shown.append(cl[0])
+            joint = head.match(cl[0]) and len(re.findall(one, head.match(cl[0]).group())) > 1
+            shown.append(f"{i}: " + head.sub("", cl[0]) if joint else cl[0])
             claims.append(i)
             continue
         for n, ln in enumerate(cl, 1):
-            body = re.sub(rf"^\s*{re.escape(i)}\s*[:—-]\s*", "", ln)
-            shown.append(f"{i}#{n}: {body}")
+            shown.append(f"{i}#{n}: " + head.sub("", ln))
             claims.append(f"{i}#{n}")
     return raw, "\n".join(shown), claims
 
@@ -2182,6 +2187,10 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
     # Претензия адресуется блоком или блоком с номером (`s11.b0051#2`);
     # вердикт — на претензию, вложения — на блок.
     claims = set(want) | set(must or ())
+    # Модель, видя номер претензии, ставит его и на вложения:
+    # «[[[NOTE s632.b0002#2 fact]]]». Номер срезаем — иначе сноска терялась,
+    # и пять попыток у двух моделей подряд кончались «author без сноски».
+    out = re.sub(r"(\[\[\[\s*/?\s*(?:NOTE|P)\s+[^\s\]#]+)#\d+", r"\1", out)
     verdicts = {}
     for m in re.finditer(r"\[\[\[VERDICT\s+(\S+?)\s+"
                          r"(author|translation|dismiss|unsure)\]\]\]"
@@ -2209,7 +2218,8 @@ def _parse_verify(out, want, must=None, size=None, snap=None):
     noted = {n["block"] for n in notes}
     bad = [i for i, ks in kinds_of.items() if "author" in ks and i not in noted]
     if bad:
-        raise ValueError(f"вердикт author без сноски: {bad[:4]}")
+        raise ValueError(f"вердикт author без сноски: {bad[:4]} — сноска адресуется"
+                         f" блоком: [[[NOTE {bad[0]} fact]]]")
     bad = [i for i, ks in kinds_of.items() if "translation" in ks and i not in fixes]
     if bad:
         raise ValueError(f"вердикт translation без исправления: {bad[:4]}")
