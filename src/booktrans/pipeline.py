@@ -2135,21 +2135,16 @@ def claims_text(notes, gaps, ids):
         for i in ids:
             if i in ln:
                 per.setdefault(i, []).append(ln.strip())
-    # Редактор пишет и общее замечание на два блока: «s629.b0002, s632.b0002:
-    # …». Под такой шапкой сверщик не знает, каким адресом отвечать, — шапку
-    # заменяем адресом претензии.
-    one = "|".join(re.escape(i) for i in ids)
-    head = re.compile(rf"^\s*(?:(?:{one})\s*(?:,|;|и|and|&)?\s*)+[:—-]\s*")
     shown, claims = [], []
     for i in ids:
         cl = per.get(i) or []
         if len(cl) == 1:
-            joint = head.match(cl[0]) and len(re.findall(one, head.match(cl[0]).group())) > 1
-            shown.append(f"{i}: " + head.sub("", cl[0]) if joint else cl[0])
+            shown.append(cl[0])
             claims.append(i)
             continue
         for n, ln in enumerate(cl, 1):
-            shown.append(f"{i}#{n}: " + head.sub("", ln))
+            body = re.sub(rf"^\s*{re.escape(i)}\s*[:—-]\s*", "", ln)
+            shown.append(f"{i}#{n}: {body}")
             claims.append(f"{i}#{n}")
     return raw, "\n".join(shown), claims
 
