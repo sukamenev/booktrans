@@ -446,6 +446,13 @@ title in the target language, the author, the year, the publisher, the series
 and the genre. The header simply outranks it, and is there for when you
 disagree with what scouting found or want to fix the title in advance.
 
+`author_surname` is the author's surname, word for word as it stands in
+`author_target`. The file is named by it ("Surname Name. Title") and the book's
+card for libraries is filled from it. Scouting names the surname too, because
+words alone do not tell: in "Gabriel García Márquez" it is double, in "Liu
+Cixin" it comes first. Without the field the surname is the last word with its
+particles ("van Gogh", "Le Guin").
+
 `genre` is a code from the fb2 vocabulary (`sf`, `sf_space`, `det_classic`,
 `adv_maritime`, `prose_history`, `poetry` and others). A word rather than a
 code — "science fiction" — is discarded: this field is read by programs. With

@@ -21,7 +21,7 @@ PASSES = ("scout", "translate", "edit", "verify", "notes", "build", "qa")
 # заглавием оригинала, а почему, разбирайся сам.
 META_KEYS = {"title", "author", "title_target", "author_target", "series",
              "series_target", "series_no", "year", "publisher", "isbn", "lang",
-             "uid", "genre"}
+             "uid", "genre", "author_surname"}
 
 
 def read_prompt(path, log=None, text=None):

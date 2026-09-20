@@ -28,7 +28,7 @@ NAME_PARTICLES = {"de", "del", "della", "di", "da", "das", "dos", "du", "la", "l
                   "фон", "дер", "ден", "тер", "тен", "бин", "ибн", "аль", "эль"}
 
 
-def author_parts(raw):
+def author_parts(raw, surname=""):
     """Имя автора: (имя со вторыми именами и инициалами, фамилия, псевдоним).
 
     Одно правило на имя файла и на карточку fb2 — библиотека сортирует по
@@ -40,8 +40,11 @@ def author_parts(raw):
     фамилией считалось всё, кроме первого слова, — ради двойных испанских
     фамилий, — и вторые имена, которых на порядок больше, уезжали в фамилию:
     «Аллан По Эдгар». Двойную фамилию без дефиса («Гарсиа Маркес») и порядок
-    «фамилия впереди» («Лю Цысинь») по словам не узнать — это решается не
-    здесь. Псевдоним в скобках в разборе не участвует.
+    «фамилия впереди» («Лю Цысинь») по словам не узнать. Поэтому фамилию
+    называет разведка (`surname`, поле author_surname): модель автора знает, и
+    стоит её слово в имени — оно и есть фамилия. Правило по словам — запасное:
+    для книг без разведки и для старых справочников. Псевдоним в скобках в
+    разборе не участвует.
     """
     alias = ""
     m = re.search(r"\s*\(([^()]*)\)\s*", raw or "")
@@ -51,6 +54,12 @@ def author_parts(raw):
     au = (raw or "").split()
     if len(au) < 2:
         return "", (au[0] if au else ""), alias
+    want = (surname or "").split()
+    low = [w.lower().strip(",") for w in au]
+    for k in range(len(au) - len(want) + 1) if want else ():
+        if low[k:k + len(want)] == [w.lower() for w in want]:
+            rest = au[:k] + au[k + len(want):]
+            return " ".join(rest), " ".join(au[k:k + len(want)]), alias
     cut = len(au) - 1
     while cut > 1 and au[cut - 1].lower() in NAME_PARTICLES:
         cut -= 1
@@ -797,6 +806,10 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
                '<meta refines="#s" property="collection-type">series</meta>')
         if meta.get("series_no"):
             seq += f'<meta refines="#s" property="group-position">{meta["series_no"]}</meta>'
+    # «Фамилия, Имя» — по этой строке библиотека ставит книгу на полку.
+    given, surname, _ = author_parts(author, meta.get("author_surname"))
+    file_as = (f'<meta refines="#cre" property="file-as">'
+               f'{escape(", ".join(x for x in (surname, given) if x))}</meta>') if surname else ""
     pub_tag = f'<dc:publisher>{escape(meta["publisher"])}</dc:publisher>' if meta.get("publisher") else ""
     date_tag = f'<dc:date>{escape(str(meta["year"]))}</dc:date>' if meta.get("year") else ""
     opf = ('<?xml version="1.0" encoding="utf-8"?>\n'
@@ -805,7 +818,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
            'xmlns:dc="http://purl.org/dc/elements/1.1/">'
            f'<dc:identifier id="uid">{escape(uid)}</dc:identifier>'
            f'<dc:title>{escape(title)}</dc:title>'
-           f'<dc:creator>{escape(author)}</dc:creator>'
+           f'<dc:creator id="cre">{escape(author)}</dc:creator>{file_as}'
            f'{pub_tag}{date_tag}'
            f'<dc:language>{code}</dc:language>'
            f'<dc:contributor>Booktrans</dc:contributor>'
@@ -1615,7 +1628,8 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
       'xmlns:l="http://www.w3.org/1999/xlink">')
     w("<description><title-info>")
     w(f"<genre>{esc(meta.get('genre', 'prose_contemporary'))}</genre>")
-    given, last, alias = author_parts(meta.get("author_target") or meta.get("author") or "")
+    given, last, alias = author_parts(meta.get("author_target") or meta.get("author") or "",
+                                      meta.get("author_surname"))
     first, _, middle = given.partition(" ")
     w("<author>" + f"<first-name>{esc(first)}</first-name>"
       + (f"<middle-name>{esc(middle)}</middle-name>" if middle else "")

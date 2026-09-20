@@ -3240,7 +3240,8 @@ def scout_meta(work, to=""):
         # Ключ один: title_target. Кода языка тут быть не должно — «tr»
         # читается и как «translated», и как турецкий, а при переводе на
         # турецкий это стало бы прямой путаницей.
-        if key not in allowed | {"title_target", "author_target", "series_target"}:
+        if key not in allowed | {"title_target", "author_target", "series_target",
+                                 "author_surname"}:
             continue
         if key == "genre":
             # Сверяем со словарём: выдуманный код хуже умолчания, потому что
@@ -3250,6 +3251,13 @@ def scout_meta(work, to=""):
                 continue
         if v and not v.startswith("("):
             out[key] = v
+
+    # Фамилия годится, только если стоит в имени автора слово в слово: иначе
+    # ей нечего делить, и имя разберёт правило по словам.
+    sn = out.get("author_surname")
+    if sn and not re.search(r"(?<!\w)%s(?!\w)" % re.escape(sn),
+                            out.get("author_target") or out.get("author") or "", re.I):
+        out.pop("author_surname")
 
     # Разделы-указатели: модель перечисляет их под ключом drop_sections:
     # Ищем блок вида «drop_sections:\n- Index\n- Name Index»

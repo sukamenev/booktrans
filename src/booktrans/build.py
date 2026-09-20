@@ -345,7 +345,7 @@ def out_name(meta, fallback, with_series=False):
         if ser:
             title = f"{ser} {no}. {title}" if no else f"{ser}. {title}"
     given, surname, alias = output.author_parts(
-        meta.get("author_target") or meta.get("author") or "")
+        meta.get("author_target") or meta.get("author") or "", meta.get("author_surname"))
     who = " ".join(x for x in (surname, given) if x)
     if alias:
         who = f"{who} ({alias})" if who else f"({alias})"
