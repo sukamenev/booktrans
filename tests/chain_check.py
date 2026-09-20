@@ -229,6 +229,28 @@ def main():
        and saved.get("refused_by") == ["первая"],
        {k: saved.get(k) for k in ("after_refusal", "refused_by")})
 
+    # Самоправка считается по семейству: Gemini Pro не редактор переводу
+    # Gemini Flash, какими бы разными ни были названия моделей.
+    from booktrans.models import family
+
+    class Named:
+        def __init__(self, model):
+            self.model = model
+    sol, pro, opus = Named("gpt-5.6-sol"), Named("gemini-3.1-pro-high"), Named("claude-opus-4-6-thinking")
+    row = lambda mode, by: [a.model for a in P._edit_row(sol, [pro, opus], by, False, mode)]  # noqa: E731
+    ok("семейства узнаются по имени",
+       [family(x) for x in ("gemini-3.7-flash-high", "codex:gpt-5.6-sol:medium", "anthropic/claude-sonnet-5",
+                            "gpt-oss-120b-medium", "стенд")] == ["gemini", "gpt", "claude", "gpt-oss", "стенд"],
+       [family(x) for x in ("gemini-3.7-flash-high", "codex:gpt-5.6-sol:medium")])
+    ok("never: родня переводчика вычеркнута",
+       row("never", "gemini-3.7-flash-high") == ["gpt-5.6-sol", "claude-opus-4-6-thinking"],
+       row("never", "gemini-3.7-flash-high"))
+    ok("last: родня переводчика в конце",
+       row("last", "gemini-3.7-flash-high")[-1] == "gemini-3.1-pro-high", row("last", "gemini-3.7-flash-high"))
+    ok("never: кусок запасного переводчика правит чужая семья",
+       row("never", "claude-opus-4-6-thinking") == ["gpt-5.6-sol", "gemini-3.1-pro-high"],
+       row("never", "claude-opus-4-6-thinking"))
+
     # Порядок значим: первая делает работу, остальные подхватывают.
     who = [Says("а", boom=AgentError("502")), Says("б", boom=AgentError("502")),
            Says("в")]

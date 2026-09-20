@@ -10,6 +10,28 @@ import sys
 from . import lang
 from .agent import OPENROUTER_ENV, make_agent, openrouter_key, openrouter_key_file
 
+# Семейства моделей: у родственниц общие слепые пятна — кальки, которые не
+# видит переводчик, не увидит и старшая модель той же линии. Порядок значим:
+# «gpt-oss» проверяется раньше «gpt».
+FAMILIES = (("claude", "claude"), ("gemini", "gemini"), ("gemma", "gemini"),
+            ("gpt-oss", "gpt-oss"), ("gpt", "gpt"), ("codex", "gpt"), ("o1", "gpt"),
+            ("o3", "gpt"), ("o4", "gpt"), ("grok", "grok"), ("deepseek", "deepseek"),
+            ("qwen", "qwen"), ("llama", "llama"), ("mistral", "mistral"),
+            ("mixtral", "mistral"), ("glm", "glm"), ("kimi", "kimi"))
+
+
+def family(model):
+    """Семейство модели по имени; незнакомое имя — само себе семейство.
+    Агент перед двоеточием («codex:gpt-…»), поставщик перед косой
+    («google/gemini-…») и усилие в хвосте — части имени, смотрим все."""
+    name = (model or "").lower()
+    for part in re.split(r"[/:]", name):
+        for prefix, fam in FAMILIES:
+            if part.startswith(prefix):
+                return fam
+    return name
+
+
 AGENTS = ("claude", "agy", "codex", "openrouter", "cmd")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Проходы опознавательные, а не сочинительные: разобрать вёрстку, увидеть

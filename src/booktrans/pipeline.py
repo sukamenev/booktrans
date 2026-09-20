@@ -12,6 +12,7 @@ import time
 import urllib.parse
 
 from . import agent as agent_mod
+from .models import family
 from .agent import AgentError, Blocked, Fatal, RateLimited
 
 # Прерывание с клавиатуры. При работе в несколько потоков одного Ctrl+C мало:
@@ -1187,7 +1188,10 @@ def _edit_row(primary, spares, by, ban, self_edit="allow"):
     `allow` — очередь как задана; `last` — переведшая встаёт в конец,
     даже когда она главный редактор; `never` — вычёркивается совсем, и
     пустая очередь значит «кусок не правится»: самоправка слепа к своим
-    калькам, и запрет дороже пропуска.
+    калькам, и запрет дороже пропуска. «Своя» — не только та же модель, но
+    и всё её семейство: кальки Gemini Flash не видит и Gemini Pro, и на
+    живой книге треть кусков так и прошла — перевод, правка и сверка в
+    одной семье, при формально разных моделях.
 
     Кусок, переведённый после отказа с записанными именами (`ban` —
     список), идёт цепочке ещё и за вычетом отказавшихся: отказ вызван
@@ -1208,7 +1212,7 @@ def _edit_row(primary, spares, by, ban, self_edit="allow"):
         return [translator] + [a for a in spares if a is not translator]
     row = [a for a in [primary] + spares
            if getattr(a, "model", None) not in (ban or ())]
-    mine = [a for a in row if by and getattr(a, "model", None) == by]
+    mine = [a for a in row if by and family(getattr(a, "model", None)) == family(by)]
     if self_edit == "never":
         return [a for a in row if a not in mine]
     if self_edit == "last":
