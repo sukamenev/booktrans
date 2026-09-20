@@ -531,6 +531,12 @@ class Run:
         # сборке — а человек к тому времени уже считал книгу готовой.
         for k, v in pipeline.scout_meta(self.work, a.to).items():
             self.meta.setdefault(k, v)
+        # Разделы-указатели разведка называет только сейчас, а merge_meta
+        # отработал до неё. Не пометь их здесь — прогон, в котором шла
+        # разведка, переведёт и отредактирует указатель целиком, а следующие
+        # выбросят его: на медицинской книге так ушёл в перевод 91 кусок.
+        if self.meta.get("drop_sections"):
+            extract._mark_back(self.blocks, drop_sections=self.meta["drop_sections"])
         self.meta.update(self.user_meta)
         if not self.meta.get("title_target"):
             log("  " + T("no_title", a.to))

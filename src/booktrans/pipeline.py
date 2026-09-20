@@ -1028,7 +1028,9 @@ def pass_gaps(work, chunks, to=""):
     так бывает, когда --self-edit never оставил очередь пустой; файл с
     отметкой обрыва — правлен наполовину. Проход без единого файла не
     начинался: книгу правят не всегда, и это не недоделка."""
-    out, want = [], [c["index"] for c in chunks]
+    # Кусок без единого блока для модели — выброшенный указатель, список
+    # литературы как есть — проходам не нужен, и его отсутствие не недоделка.
+    out, want = [], [c["index"] for c in chunks if translatable(c["blocks"])]
     for sub in ("tr", "ed", "vf"):
         done = set()
         for _, p in chunk_files(lpath(work, sub, to)):

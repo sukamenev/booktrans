@@ -30,7 +30,11 @@ def main():
 
     ok("диапазоны для --chunks", P.chunk_ranges([10, 9, 1, 2, 3, 5]) == "1-3,5,9-10",
        P.chunk_ranges([10, 9, 1, 2, 3, 5]))
-    chunks = [{"index": i} for i in (1, 2, 3)]
+    chunks = [{"index": i, "blocks": [{"id": f"s01.b{i:04d}", "kind": "p", "text": "Text."}]}
+              for i in (1, 2, 3)]
+    # Четвёртый кусок — выброшенный указатель: модели в нём нечего дать.
+    dropped = {"index": 4, "blocks": [{"id": "s09.b0001", "kind": "verse", "text": "AKT 7",
+                                      "asis": True, "drop": True}]}
     with tempfile.TemporaryDirectory() as work:
         def put(sub, i, **extra):
             d = f"{work}/ru/{sub}"
@@ -46,6 +50,9 @@ def main():
         ok("правка: без файла и с обрывом — без результата",
            ("ed", 1, 3, [2, 3]) in gaps, gaps)
         ok("сверка считается отдельно", ("vf", 1, 3, [2, 3]) in gaps, gaps)
+        ok("выброшенный раздел — не недоделка",
+           P.pass_gaps(work, chunks + [dropped], "ru") == gaps,
+           P.pass_gaps(work, chunks + [dropped], "ru"))
         ok("законченный перевод не в списке",
            not any(g[0] == "tr" for g in gaps), gaps)
 
