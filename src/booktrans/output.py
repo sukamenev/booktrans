@@ -21,6 +21,41 @@ HTML_INLINE = {"i": "i", "em": "i", "b": "b", "strong": "b",
                "sub": "sub", "sup": "sup", "code": "code"}
 
 
+# Отчество: «Викторовна», «Ivanovich». Стоит вторым из трёх слов — значит
+# фамилия последняя. Само по себе такое окончание бывает и фамилией
+# (Милошевич), поэтому смотрим только на середину полного имени.
+PATRONYMIC = re.compile(r"(?:ович|евич|ьич|ична|инична|овна|евна|"
+                        r"ovich|evich|ovna|evna|ichna)$", re.I)
+
+
+def author_parts(raw):
+    """Имя автора: (имя с отчеством или инициалами, фамилия, псевдоним).
+
+    Одно правило на имя файла и на карточку fb2 — библиотека сортирует по
+    фамилии, и врозь они расходились: файл «Маккрей Джон К.», а в карточке
+    фамилия «К. Маккрей (Wildbow)».
+
+    Фамилией считается всё, кроме первого слова: «Габриэль Гарсиа Маркес» →
+    «Гарсиа Маркес». Инициал — в середине («Джон К. Маккрей») или впереди
+    («А. Виктор Хоффбранд») — и отчество значат, что фамилия последняя.
+    Псевдоним в скобках в разборе не участвует.
+    """
+    alias = ""
+    m = re.search(r"\s*\(([^()]*)\)\s*", raw or "")
+    if m:
+        alias = m.group(1).strip()
+        raw = (raw[:m.start()] + " " + raw[m.end():]).strip()
+    au = (raw or "").split()
+    initial = lambda w: re.fullmatch(r"[^\W\d_]\.?", w)           # noqa: E731
+    if len(au) > 2 and (all(initial(w) for w in au[1:-1])
+                        or re.fullmatch(r"[^\W\d_]\.", au[0])
+                        or (len(au) == 3 and PATRONYMIC.search(au[1]))):
+        return " ".join(au[:-1]), au[-1], alias
+    if len(au) > 1:
+        return au[0], " ".join(au[1:]), alias
+    return "", (au[0] if au else ""), alias
+
+
 def _mime(name):
     return "image/png" if name.lower().endswith(".png") else "image/jpeg"
 
@@ -1579,9 +1614,12 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
       'xmlns:l="http://www.w3.org/1999/xlink">')
     w("<description><title-info>")
     w(f"<genre>{esc(meta.get('genre', 'prose_contemporary'))}</genre>")
-    au = (meta.get("author_target") or meta.get("author") or "").split()
-    first, last = (au[0], " ".join(au[1:])) if len(au) > 1 else ("", au[0] if au else "")
-    w(f"<author><first-name>{esc(first)}</first-name><last-name>{esc(last)}</last-name></author>")
+    given, last, alias = author_parts(meta.get("author_target") or meta.get("author") or "")
+    first, _, middle = given.partition(" ")
+    w("<author>" + f"<first-name>{esc(first)}</first-name>"
+      + (f"<middle-name>{esc(middle)}</middle-name>" if middle else "")
+      + f"<last-name>{esc(last)}</last-name>"
+      + (f"<nickname>{esc(alias)}</nickname>" if alias else "") + "</author>")
     name = (meta.get("title_target") or meta.get("title")
             or st.get("untitled", "Без названия"))
     w(f"<book-title>{esc(name)}</book-title>")

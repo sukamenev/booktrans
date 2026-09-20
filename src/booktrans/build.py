@@ -318,13 +318,6 @@ def about_lines(work, st, code, to=""):
     return st["about_title"], body
 
 
-# Отчество: «Викторовна», «Ivanovich». Стоит вторым из трёх слов — значит
-# фамилия последняя. Само по себе такое окончание бывает и фамилией
-# (Милошевич), поэтому смотрим только на середину полного имени.
-PATRONYMIC = re.compile(r"(?:ович|евич|ьич|ична|инична|овна|евна|"
-                        r"ovich|evich|ovna|evna|ichna)$", re.I)
-
-
 def out_name(meta, fallback, with_series=False):
     """Имя выходного файла: «Фамилия Имя. Заглавие».
 
@@ -356,28 +349,13 @@ def out_name(meta, fallback, with_series=False):
             no = no.zfill(2)
         if ser:
             title = f"{ser} {no}. {title}" if no else f"{ser}. {title}"
-    raw_au = meta.get("author_target") or meta.get("author") or ""
-    # Псевдоним в скобках — «Джон К. Маккрей (Wildbow)» — не участвует в
-    # перестановке «Фамилия Имя» и остаётся хвостом: скобка, попавшая в
-    # слова, делала фамилией «(Wildbow)».
-    alias = ""
-    m = re.search(r"\s*(\([^()]*\))\s*", raw_au)
-    if m:
-        alias = " " + m.group(1)
-        raw_au = (raw_au[:m.start()] + " " + raw_au[m.end():]).strip()
-    au = raw_au.split()
-    # Инициалы в середине — «Джон К. Маккрей», «J. R. R. Tolkien» — ломают
-    # правило «фамилия — всё, кроме первого слова»: фамилия тут последняя.
-    if len(au) > 2 and all(re.fullmatch(r"[^\W\d_]\.?", w) for w in au[1:-1]):
-        who = au[-1] + " " + " ".join(au[:-1])
-    elif len(au) == 3 and PATRONYMIC.search(au[1]):
-        who = f"{au[2]} {au[0]} {au[1]}"
-    elif len(au) > 1:
-        who = " ".join(au[1:]) + " " + au[0]
-    else:
-        who = au[0] if au else ""
-    who += alias if who else alias.strip()
-    name = f"{who}. {title}" if who else title
+    given, surname, alias = output.author_parts(
+        meta.get("author_target") or meta.get("author") or "")
+    who = " ".join(x for x in (surname, given) if x)
+    if alias:
+        who = f"{who} ({alias})" if who else f"({alias})"
+    # Имя, кончающееся инициалом, точку уже несёт: «Tolkien J. R. R. Книга».
+    name = (f"{who} {title}" if who.endswith(".") else f"{who}. {title}") if who else title
     # Двоеточие в заглавии — почти всегда «: », и типографская замена ему —
     # тире: «Xeelee: Endurance» → «Зили — Выносливость». Прочим запрещённым
     # знакам осмысленной замены нет, их глушит общая строка ниже.
