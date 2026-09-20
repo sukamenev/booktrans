@@ -201,6 +201,17 @@ class Run:
             self._load_book(bp)
         else:
             self._read_book(bp)
+        # Идентификатор блока — ключ всего конвейера: по нему хранятся перевод,
+        # правка и сверка. Повтор значит, что из нескольких блоков хранится
+        # один, а кусок с ними не бывает готов и переводится при каждом запуске.
+        seen, twice = set(), []
+        for b in self.blocks:
+            if b["id"] in seen and b["id"] not in twice:
+                twice.append(b["id"])
+            seen.add(b["id"])
+        if twice:
+            self.log("")
+            self.log("  " + self.T("dup_ids", len(twice), ", ".join(twice[:5])))
 
     def _load_book(self, bp):
         w = self.work

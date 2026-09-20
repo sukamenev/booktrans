@@ -1858,6 +1858,9 @@ def _verse_lines(p):
     return [l for l in (x.strip() for x in out) if l] or None
 
 
+IMG_MD = re.compile(r"!\[(.*?)\]\(images/([^)]+)\)")
+
+
 def _pdf_visual(path, agent, marks=None):
     try:
         import pypdfium2 as pdfium
@@ -1910,50 +1913,59 @@ def _pdf_visual(path, agent, marks=None):
     images = {}
     sec = 1
     n = 0
+    after = []                  # картинки, ждущие конца своего абзаца
+
+    def emit(match):
+        """Блок картинки и, если у неё есть подпись в alt, блок подписи."""
+        caption = match.group(1).strip()
+        img_name = match.group(2).strip()
+        img_path_on_disk = work_dir / "images" / img_name
+        if not img_path_on_disk.exists():
+            return
+        images[img_name] = img_path_on_disk.read_bytes()
+        blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}", "kind": "image", "text": img_name, "_page": page_num})
+        if caption and caption != "image":
+            blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}c", "kind": "p", "text": f"_{caption}_", "_page": page_num})
     
     for page_num, text in all_text:
         page_img_path = work_dir / f"page_{page_num:04d}.png"
         page_img = None
         
         paras = text.split("\n\n")
-        for p in paras:
+        for p in paras + [None]:        # None — только сбросить картинки абзаца
+            for m_ in after:
+                emit(m_)
+            after = []
+            if p is None:
+                break
             p = p.strip()
             if not p: continue
             
-            # Extract images and their paths
-            img_matches = list(re.finditer(r"!\[(.*?)\]\(images/([^)]+)\)", p))
-            
+            # Картинки абзаца. Блочной картинке внутри текста места нет, и
+            # раньше абзац рвался вокруг неё на куски с ОДНИМ идентификатором:
+            # таблица с рисунками в ячейках дала девять блоков `s32.b0005`,
+            # перевод хранил один из них, и кусок переводился при каждом
+            # запуске. Теперь текст абзаца остаётся целым блоком (таблица —
+            # таблицей), картинки до текста идут перед ним, остальные — следом.
+            # Номер у абзаца по-прежнему один, и соседние блоки не сдвигаются.
+            img_matches = list(IMG_MD.finditer(p))
             if img_matches:
-                # The old regex failed to match these images, so they fell through 
-                # to the default paragraph logic which did `n += 1` exactly once.
-                # To prevent all subsequent block IDs from shifting and colliding
-                # with the wrong cache entries, we must emulate that exact `n += 1`.
-                n += 1
-                
-                last_end = 0
-                for match in img_matches:
-                    pre_text = p[last_end:match.start()].strip()
-                    if pre_text:
-                        blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": pre_text, "_page": page_num})
-                    
-                    caption = match.group(1).strip()
-                    img_name = match.group(2).strip()
-                    img_path_on_disk = work_dir / "images" / img_name
-                    
-                    if img_path_on_disk.exists():
-                        images[img_name] = img_path_on_disk.read_bytes()
-                        
-                        blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}", "kind": "image", "text": img_name, "_page": page_num})
-                        if caption and caption != "image":
-                            blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}c", "kind": "p", "text": f"_{caption}_", "_page": page_num})
-                                    
-                    last_end = match.end()
-                
-                post_text = p[last_end:].strip()
-                if post_text:
-                    blocks.append({"id": f"s{sec:02d}.b{n:04d}", "kind": "p", "text": post_text, "_page": page_num})
-                continue
-                
+                lead = 0                    # картинки, перед которыми текста нет
+                while lead < len(img_matches) and not IMG_MD.sub(
+                        "", p[:img_matches[lead].start()]).strip():
+                    emit(img_matches[lead])
+                    lead += 1
+                after += img_matches[lead:]
+                p = IMG_MD.sub("", p)
+                # Перенос, оставшийся в ячейке или абзаце без картинки, — пустой.
+                p = re.sub(r"(?:\s*<br\s*/?>)+(?=\s*(?:\||$))", "", p, flags=re.M).strip()
+                if not p:
+                    n += 1              # номер абзаца занят, как и прежде
+                    for m_ in after:
+                        emit(m_)
+                    after = []
+                    continue
+
             verse = _verse_lines(p)
             if verse:
                 for vl in verse:

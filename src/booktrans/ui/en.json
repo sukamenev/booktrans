@@ -163,6 +163,7 @@
  "doc_need": "required",
  "doc_opt": "optional — needed only for the formats you use",
  "doc_opt_bad": "optional and missing: {0}. epub, fb2 and txt work regardless",
+ "dup_ids": "WARNING: block ids repeat in the parsed book ({0}): {1}. The translation keeps one block of each group, and the chunk holding them is translated again on every run. This is a trace of an older parser: delete book.json in the work directory and the book will be parsed anew — finished translations of the other blocks are kept",
  "doc_install": "install with",
  "doc_python": "python 3.9 or newer is required",
  "doc_pdfium": "rendering pdf pages for visual recognition (--ocrmodel)",
