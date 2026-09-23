@@ -19,18 +19,23 @@ penalty — штрафы суммой. Методика — в [README.md](READM
 | 2026-09-23 | openai@router.bynara.id:glm-5.3:medium | 86.0 | 3 (78–88) | 2/2/2 | 14 | 9 | 11 | 9 | 10 | 7 | 8 | 7 | 5 | 4 | 4 | 2 | -4 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking |
 | 2026-09-23 | agy:gemini-3.1-pro:high | 83.0 | 3 (81–85) | 1/1/1 | 12 | 9 | 9 | 7 | 8 | 7 | 8 | 7 | 7 | 3 | 3 | 3 | 0 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | openai@router.bynara.id:muse-spark-1.3-contributor:medium | 83.0 | 3 (82–83) | 1/1/1 | 13 | 9 | 9 | 9 | 9 | 6 | 7 | 6 | 6 | 5 | 2 | 2 | 0 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | openai@opencode.ai:kimi-k2.7-code:medium | 82.0 | 5 (68–86) | 1/1/1/1/1 | 13 | 9 | 5 | 8 | 10 | 6 | 8 | 8 | 5 | 5 | 2 | 4 | -1 | 1.10.85 | 1.3 | codex:gpt-5.6-sol:medium, openai@router.bynara.id:claude-opus-5:medium |
 | 2026-09-23 | agy:gemini-3.7-flash:medium | 81.0 | 3 (79–86) | 1/2/2 | 15 | 9 | 9 | 9 | 9 | 6 | 7 | 7 | 6 | 4 | 4 | 2 | -6 | 1.10.78 | 1.3 | claude:claude-opus-5-5:medium |
-| 2026-09-23 | openai@router.bynara.id:deepseek-v4-flash:medium | 79.5 | 2 (78–81) | 3/2 | 13 | 9 | 8 | 9 | 10 | 7 | 8 | 7 | 5 | 5 | 4 | 3 | -7 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking |
+| 2026-09-23 | openai@router.bynara.id:deepseek-v4-flash:medium | 81.0 | 3 (78–88) | 1/3/2 | 13 | 9 | 8 | 9 | 10 | 7 | 8 | 7 | 5 | 5 | 4 | 3 | -7 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking, openai@router.bynara.id:claude-opus-5:medium |
+| 2026-09-23 | openai@opencode.ai:hy4-preview:medium | 80.0 | 3 (74–81) | 1/1/1 | 13 | 9 | 7 | 9 | 10 | 6 | 8 | 5 | 4 | 4 | 3 | 3 | -1 | 1.10.85 | 1.3 | openai@router.bynara.id:claude-opus-5:medium |
 | 2026-09-23 | openai@router.bynara.id:deepseek-v4.1-flash:medium | 79.0 | 3 (71–85) | 2/1/1 | 13 | 9 | 7 | 9 | 10 | 5 | 8 | 7 | 6 | 2 | 4 | 2 | -3 | 1.10.78 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | openai@router.bynara.id:deepseek-v4-pro:medium | 79.0 | 3 (75–79) | 1/2/2 | 13 | 9 | 2 | 9 | 10 | 4 | 8 | 6 | 7 | 5 | 4 | 2 | 0 | 1.10.78 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | codex:gpt-5.6-terra:medium | 78.0 | 3 (76–81) | 1/2/1 | 12 | 9 | 6 | 9 | 9 | 4 | 8 | 7 | 6 | 4 | 2 | 2 | 0 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | claude:claude-opus-5:medium | 78.0 | 3 (71–81) | 1/1/1 | 11 | 8 | 6 | 9 | 10 | 4 | 7 | 7 | 7 | 4 | 3 | 2 | 0 | 1.10.78 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | claude:claude-opus-5-5:medium | 78.0 | 3 (76–81) | 1/1/1 | 9 | 8 | 9 | 9 | 10 | 6 | 6 | 5 | 7 | 4 | 3 | 2 | 0 | 1.10.78 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | claude:claude-fable-5-1:medium | 78.0 | 3 (77–82) | 1/1/1 | 9 | 8 | 10 | 9 | 9 | 6 | 7 | 5 | 6 | 4 | 3 | 2 | 0 | 1.10.78 | 1.3 | codex:gpt-5.6-sol:medium |
-| 2026-09-23 | openai@opencode.ai:kimi-k3:medium | 78.0 | 3 (41–79) | 4/1/4 | 12 | 9 | 8 | 9 | 9 | 6 | 8 | 4 | 6 | 4 | 4 | 3 | -4 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking |
-| 2026-09-23 | openai@opencode.ai:minimax-m3:medium | 78.0 | 1 | 1 | 13 | 8 | 8 | 9 | 10 | 5 | 8 | 6 | 4 | 4 | 4 | 3 | -4 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking |
+| 2026-09-23 | openai@opencode.ai:kimi-k3:medium | 73.0 | 5 (41–79) | 4/1/4/1/1 | 10 | 8 | 6 | 9 | 9 | 5 | 7 | 6 | 6 | 3 | 4 | 2 | -2 | 1.10.85 | 1.3 | agy:claude-opus-4-6-thinking, codex:gpt-5.6-sol:medium |
+| 2026-09-23 | openai@opencode.ai:minimax-m3:medium | 73.0 | 3 (66–78) | 3/1/2 | 13 | 8 | 6 | 7 | 10 | 5 | 8 | 7 | 5 | 2 | 3 | 2 | -3 | 1.10.85 | 1.3 | agy:claude-opus-4-6-thinking, codex:gpt-5.6-sol:medium |
 | 2026-09-23 | codex:gpt-5.6-luna:medium | 72.0 | 3 (72–74) | 1/1/1 | 12 | 9 | 6 | 8 | 8 | 4 | 8 | 5 | 5 | 4 | 2 | 2 | -1 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | openai@opencode.ai:qwen3.7-max:medium | 70.0 | 3 (68–70) | 1/1/1 | 12 | 8 | 4 | 6 | 9 | 4 | 8 | 5 | 7 | 2 | 3 | 2 | 0 | 1.10.85 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | claude:claude-sonnet-5:medium | 67.0 | 3 (62–77) | 1/1/1 | 9 | 8 | 6 | 8 | 9 | 4 | 6 | 4 | 6 | 3 | 3 | 2 | -1 | 1.10.78 | 1.3 | codex:gpt-5.6-sol:medium |
+| 2026-09-23 | openai@router.bynara.id:qwen3.8-flash:medium | 64.0 | 3 (63–71) | 1/1/1 | 15 | 9 | 4 | 9 | 9 | 4 | 6 | 6 | 3 | 1 | 2 | 3 | -7 | 1.10.85 | 1.3 | openai@router.bynara.id:claude-opus-5:medium |
+| 2026-09-23 | openai@opencode.ai:longcat-2.0:medium | 61.0 | 3 (55–66) | 1/1/4 | 13 | 8 | 8 | 6 | 9 | 3 | 7 | 5 | 4 | 2 | 3 | 2 | -9 | 1.10.85 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | claude:claude-haiku-4-5:medium | 55.0 | 3 (52–56) | 1/2/1 | 14 | 9 | 4 | 6 | 9 | 6 | 7 | 5 | 1 | 2 | 2 | 2 | -12 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking, codex:gpt-5.6-sol:medium |
 
 ## Бенчмарк качества перевода en → ru, версия 1.1 — один прогон
