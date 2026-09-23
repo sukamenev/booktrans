@@ -1059,6 +1059,8 @@ The request body is plain standard: no OpenRouter extras, so any compliant
 endpoint accepts it; `reasoning_effort` is sent when an effort is named and
 dropped if the model rejects it. Unlike OpenRouter, no prompt caching and
 no cost in dollars — only token counts, when the endpoint reports them.
+Reasoning leaked into the reply as `<think>…</think>` is stripped, and
+[OpenCode Go](https://opencode.ai/docs/go/) gets the session header it requires.
 `./booktrans --check --agent openai` says whether the URL and the key are found.
 
 ## Your own agent

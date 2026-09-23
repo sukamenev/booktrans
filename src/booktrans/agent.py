@@ -777,7 +777,7 @@ def openrouter_key():
         return ""
 
 
-def openrouter_post(body, key, timeout, url=OPENROUTER_URL):
+def openrouter_post(body, key, timeout, url=OPENROUTER_URL, extra=None):
     """Запрос к OpenRouter потоком. -> (код HTTP, [события json]).
 
     Потоком, а не одним ответом: думающая модель на большом куске молчит
@@ -790,7 +790,11 @@ def openrouter_post(body, key, timeout, url=OPENROUTER_URL):
         headers={"Authorization": f"Bearer {key}",
                  "Content-Type": "application/json",
                  "HTTP-Referer": "https://github.com/sukamenev/booktrans",
-                 "X-Title": "BookTrans"})
+                 "X-Title": "BookTrans",
+                 # Без своего имени клиента Cloudflare перед некоторыми точками
+                 # отвечает 403 (error code 1010) на подпись urllib.
+                 "User-Agent": "booktrans (+https://github.com/sukamenev/booktrans)",
+                 **(extra or {})})
     events, deadline = [], time.time() + timeout
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -919,7 +923,10 @@ def collect_stream(events, model):
         # Потолок вывода: без этого обрыв выглядел как «модель встала на
         # блоке N» и списывался на содержание куска.
         raise AgentError(T("oa_length", (tok or {}).get("out", "?")))
-    return "".join(text), {"model": model, "cost_usd": cost, "tokens": tok}
+    # Некоторые точки отдают рассуждения прямо в тексте, в теге <think>:
+    # читателю они не нужны, а разбор ответа об них спотыкается.
+    out = re.sub(r"<think>.*?</think>\s*", "", "".join(text), flags=re.S)
+    return out, {"model": model, "cost_usd": cost, "tokens": tok}
 
 
 OPENAI_ENV, OPENAI_URL_ENV = "OPENAI_API_KEY", "OPENAI_BASE_URL"
@@ -965,6 +972,7 @@ class OpenAIAgent(OpenRouterAgent):
     """
 
     kind = "openai"
+    session = f"booktrans-{os.getpid()}-{int(time.time())}"
 
     def default_model(self):
         return ""
@@ -999,14 +1007,17 @@ class OpenAIAgent(OpenRouterAgent):
             raise Fatal(T("openai_model"))
         endpoint = url.rstrip("/") + "/chat/completions"
         body = self.body(system, user, image)
-        status, events = openrouter_post(body, key, self.timeout, endpoint)
+        # OpenCode Go отвергает запрос без своего заголовка сеанса; значение
+        # любое устойчивое, ему оно нужно для маршрутизации и кэша.
+        extra = {"x-opencode-session": self.session} if "opencode.ai" in url else None
+        status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
         err = (events[0].get("error") or events[0]) if events else {}
         # Точка отвергла необязательное поле — повторяем без него: модель не
         # думает вовсе, или предел вывода у неё ниже названного.
         for field, word in (("reasoning_effort", "reasoning"), ("max_tokens", "max_tokens")):
             if status == 400 and field in body and word in str(err.get("message")).lower():
                 del body[field]
-                status, events = openrouter_post(body, key, self.timeout, endpoint)
+                status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
                 err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)

@@ -449,6 +449,11 @@ def _one(args, models, bench, work, who, log, main):
                for b in c["blocks"] if not any(i.endswith("." + b) for i in ids)]
     if missing:
         sys.exit(T("bench_key_blocks", ", ".join(sorted(set(missing))[:8])))
+    translator = models.first("translator")
+    # Имя модели в файле куска бывает пустым (haiku у claude): в лог и отчёт
+    # тогда идёт имя из ключа --translator.
+    if not tr_json.get("model"):
+        tr_json["model"] = _who(translator)["model"]
     main("  " + T("bench_run_translated", os.path.basename(work), _mins(t_tr),
                   agent_mod.label(tr_json)))
 
@@ -475,7 +480,6 @@ def _one(args, models, bench, work, who, log, main):
     judge = _who(who[0])
     if meta.get("model"):
         judge = dict(judge, model=meta["model"], effort=meta.get("effort") or judge["effort"])
-    translator = models.first("translator")
     result = {
         "score": s, "key": key, "set": bench["name"], "to": args.to,
         "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),

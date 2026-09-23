@@ -87,6 +87,9 @@ def main():
               {"usage": {"prompt_tokens": 10, "completion_tokens": 4,
                          "completion_tokens_details": {"reasoning_tokens": 2}}}]
     text, meta = A.collect_stream(events, "m")
+    think = [{"choices": [{"delta": {"content": "<think>думаю…</think>\nОтвет"}, "finish_reason": "stop"}]}]
+    ok("рассуждения в теге <think> сняты", A.collect_stream(think, "m")[0] == "Ответ",
+       A.collect_stream(think, "m")[0])
     ok("поток: текст, модель, токены",
        text == "Привет, мир" and meta["model"] == "glm-5.3-flash"
        and meta["tokens"] == {"in": 10, "cached": 0, "out": 4, "reasoning": 2}
