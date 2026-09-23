@@ -40,10 +40,13 @@ penalty — штрафы суммой. Методика — в [README.md](READM
 | 2026-09-23 | openai@opencode.ai:kimi-k3:medium | 68.2 | 5 (41–79) | 4/1/4/1/1 | 12 | 8 | 7 | 8 | 9 | 5 | 7 | 5 | 5 | 2 | 3 | 2 | -3 | 1.10.85 | 1.3 | agy:claude-opus-4-6-thinking, codex:gpt-5.6-sol:medium |
 | 2026-09-23 | openai@opencode.ai:qwen3.8-max:medium | 68.0 | 3 (67–69) | 1/1/1 | 10 | 8 | 5 | 8 | 9 | 5 | 7 | 4 | 5 | 3 | 3 | 2 | -1 | 1.10.87 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | openai@router.bynara.id:qwen3.8-flash:medium | 66.0 | 3 (63–71) | 1/1/1 | 15 | 9 | 4 | 9 | 9 | 4 | 6 | 6 | 3 | 1 | 2 | 3 | -7 | 1.10.85 | 1.3 | openai@router.bynara.id:claude-opus-5:medium |
+| 2026-09-23 | openai@opencode.ai:omen-alpha:medium | 66.0 | 2 (65–67) | 5/4 | 12 | 9 | 4 | 8 | 10 | 6 | 8 | 5 | 7 | 3 | 3 | 1 | -9 | 1.10.88 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | openai@router.bynara.id:step-5-preview:medium | 64.7 | 3 (57–70) | 1/1/1 | 13 | 9 | 2 | 7 | 10 | 5 | 6 | 4 | 5 | 3 | 3 | 2 | -2 | 1.10.87 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | openai@opencode.ai:longcat-2.0:medium | 60.7 | 3 (55–66) | 1/1/4 | 13 | 8 | 8 | 6 | 9 | 3 | 7 | 5 | 4 | 2 | 3 | 2 | -9 | 1.10.85 | 1.3 | codex:gpt-5.6-sol:medium |
 | 2026-09-23 | claude:claude-haiku-4-5:medium | 54.3 | 3 (52–56) | 1/2/1 | 14 | 9 | 4 | 6 | 9 | 6 | 7 | 5 | 1 | 2 | 2 | 2 | -12 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking, codex:gpt-5.6-sol:medium |
+| 2026-09-23 | openai@opencode.ai:glm-5.3-flash:medium | 50.0 | 3 (0–77) | 1/1/5 | 12 | 9 | 7 | 5 | 10 | 5 | 7 | 4 | 6 | 3 | 3 | 2 | 0 | 1.10.88 | 1.3 | codex:gpt-5.6-sol:medium, — |
 | 2026-09-23 | openai@opencode.ai:mimo-v2.6-flash:medium | 48.0 | 3 (45–50) | 2/2/2 | 11 | 6 | 6 | 3 | 8 | 2 | 7 | 5 | 3 | 1 | 2 | 3 | -8 | 1.10.87 | 1.3 | codex:gpt-5.6-sol:medium |
+| 2026-09-23 | openai@opencode.ai:mimo-v2.5-pro:medium | 22.0 | 3 (0–66) | 5/3/5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.10.88 | 1.3 | codex:gpt-5.6-sol:medium, — |
 
 ## Бенчмарк качества перевода en → ru, версия 1.1 — один прогон
 
