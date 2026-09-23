@@ -579,14 +579,14 @@ A profile is a file holding the same keys you would have typed:
 ```
 # profiles/agy.conf — Gemini in front, Claude behind it
 --agent agy
---translator gemini-3.8-flash-high,claude:claude-opus-5
---editor     claude:claude-opus-5,gemini-3.1-pro-high
+--translator gemini-3.8-flash-high,claude:claude-opus-5-5
+--editor     claude:claude-opus-5-5,gemini-3.1-pro-high
 --jobs 5
 ```
 
 ```bash
 ./booktrans book.epub --profile agy --to ru
-./booktrans book.epub --profile agy --to ru --editor claude:claude-opus-5
+./booktrans book.epub --profile agy --to ru --editor claude:claude-opus-5-5
 ```
 
 The second line shows the whole rule: **what you name by hand beats the
@@ -603,6 +603,8 @@ Fourteen ship with the package, in `profiles/`:
 | `best-agy-claude` | Gemini translates, Opus edits |
 | `best-claude-codex` | Opus translates, Sol edits: a foreign editor catches the calques one's own lets through |
 | `best-codex-claude` | Sol translates, Opus edits |
+| `ultra-claude-codex` | Fable translates, Astra edits: the two flagships, each editing the other's family |
+| `ultra-codex-claude` | Astra translates, Fable edits |
 | `claude` | Claude Code alone: Opus translates and edits |
 | `claude-agy` | the same, with Antigravity's models as the last link |
 | `claude-codex` | Claude with Codex models as the last link |
@@ -709,7 +711,8 @@ completeness, calques, rare vocabulary, imagery, verse and puns, consistency
 of names and repeated phrases, gender revealed late, sound-based
 transliteration of names like Cholmondeley and Siobhan, target-language norm,
 footnotes, register — and a judge model (Opus by default, `--judge` to change)
-answers ok/fail on every trap against an answer key. The score, 0 to 100, is
+answers ok/fail on every trap against an answer key. The text is translated
+and judged three times and the median is reported. The score, 0 to 100, is
 computed by code, not by the judge; additions, untranslated fragments,
 broken structure and foreign scripts are penalised. Only the translator is
 measured: no scouting (its reference would be a cheat sheet) and no editor.
@@ -976,7 +979,8 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --model ID            model for every pass
 --scout / --translator / --editor / --verifier ID   model for one pass
 --bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
---judge ID            judge model for the benchmark (default claude:claude-opus-5:high, backup codex:gpt-5.6-sol:high)
+--bench-runs N        how many times to translate and judge the benchmark text; the median is reported (default 3)
+--judge ID            judge model for the benchmark (default claude:claude-opus-5-5:medium, backup codex:gpt-5.6-sol:medium)
 --agent NAME          agent: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes

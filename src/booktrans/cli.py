@@ -206,6 +206,7 @@ def parser(ui):
     # Бенчмарк: без книги, с встроенным текстом; «-» — набор по умолчанию.
     ap.add_argument("--bench", nargs="?", const="-", metavar="DIR", help=T("h_bench"))
     ap.add_argument("--judge", help=T("h_judge"))
+    ap.add_argument("--bench-runs", type=int, default=3, help=T("h_bench_runs"))
     ap.add_argument("--full-verify", action=argparse.BooleanOptionalAction,
                     default=True, help=T("h_full_verify"))
     ap.add_argument("--ocrmodel", help=T("h_ocrmodel"))

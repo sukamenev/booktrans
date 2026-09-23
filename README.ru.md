@@ -511,14 +511,14 @@ Thoat — тоат, восьминогое ездовое животное; не
 ```
 # profiles/agy.conf — Gemini впереди, Claude на подстраховке
 --agent agy
---translator gemini-3.8-flash-high,claude:claude-opus-5
---editor     claude:claude-opus-5,gemini-3.1-pro-high
+--translator gemini-3.8-flash-high,claude:claude-opus-5-5
+--editor     claude:claude-opus-5-5,gemini-3.1-pro-high
 --jobs 5
 ```
 
 ```bash
 ./booktrans книга.epub --profile agy --to ru
-./booktrans книга.epub --profile agy --to ru --editor claude:claude-opus-5
+./booktrans книга.epub --profile agy --to ru --editor claude:claude-opus-5-5
 ```
 
 Вторая строка показывает всё правило: **названное руками сильнее профиля, а
@@ -535,6 +535,8 @@ Thoat — тоат, восьминогое ездовое животное; не
 | `best-agy-claude` | Gemini переводит, Opus редактирует |
 | `best-claude-codex` | Opus переводит, Sol редактирует: чужой редактор снимает кальки, которые свой пропускает |
 | `best-codex-claude` | Sol переводит, Opus редактирует |
+| `ultra-claude-codex` | Fable переводит, Astra редактирует: два флагмана, каждый правит чужую семью |
+| `ultra-codex-claude` | Astra переводит, Fable редактирует |
 | `claude` | только Claude Code: Opus переводит и правит |
 | `claude-agy` | то же, последним звеном — модели Antigravity |
 | `claude-codex` | Claude, последним звеном — модели Codex |
@@ -593,7 +595,7 @@ Thoat — тоат, восьминогое ездовое животное; не
 двоеточие пишется агент:
 
 ```bash
-./booktrans книга.epub --agent agy --editor gemini-3.1-pro-high,claude:claude-opus-5
+./booktrans книга.epub --agent agy --editor gemini-3.1-pro-high,claude:claude-opus-5-5
 ```
 
 Третьей частью через двоеточие задаётся глубина размышлений — `low`,
@@ -649,7 +651,8 @@ booktrans --bench --to ru --translator claude:claude-sonnet-5:high
 позже первых реплик, транслитерация по звучанию имён вроде Cholmondeley и
 Siobhan, норма языка, сноски, регистр, — а модель-судья (по умолчанию Opus,
 менять ключом `--judge`) отвечает ok/fail по каждой ловушке, сверяясь с
-ключом ответов. Балл от 0 до 100 считает код, а не судья; отсебятина,
+ключом ответов. Текст переводится и судится трижды, в отчёт идёт медиана.
+Балл от 0 до 100 считает код, а не судья; отсебятина,
 непереведённое, порча структуры и чужая письменность штрафуются. Меряется
 только переводчик: без разведки (её справочник был бы шпаргалкой) и без
 редактора.
@@ -985,7 +988,8 @@ pandoc книга.docx -o книга.epub         # pandoc
 --no-headings         книга и правда без глав, не останавливаться
 --scout / --translator / --editor / --verifier  модель на отдельный проход
 --bench [ПАПКА]       бенчмарк переводчика на встроенном тексте (или на наборе из ПАПКИ); книга не нужна
---judge ID            модель-судья бенчмарка (по умолчанию claude:claude-opus-5:high, запасной codex:gpt-5.6-sol:high)
+--bench-runs N        сколько раз переводить и судить текст бенчмарка; в отчёт идёт медиана (по умолчанию 3)
+--judge ID            модель-судья бенчмарка (по умолчанию claude:claude-opus-5-5:medium, запасной codex:gpt-5.6-sol:medium)
 --wait SEC            ожидание при лимитах (0 — падать сразу)
 --chunk-words N       размер куска
 --retries N           попыток на кусок при сбое разбора (по умолчанию 3)

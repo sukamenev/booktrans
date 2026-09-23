@@ -32,6 +32,7 @@ ADD-major 6 20
 UNTR 3 12
 STRUCT 5 25
 SCRIPT 3 12
+RETRY 3 50
 [checks]
 X1 a 2 b0001 :: first
 X2 a 1 b0002-b0003 :: second
@@ -55,6 +56,8 @@ def main():
     key = s["key"]
     ok("набор en читается, ключ на 100 очков", key["max"] == 100 and key["source"] == "en",
        key["max"])
+    ok("в ключе штраф за лишние попытки", key["penalties"].get("RETRY") == (3, 50),
+       key["penalties"])
     ok("областей двенадцать, точек не меньше шестидесяти",
        len(key["areas"]) == 12 and len(key["checks"]) >= 60,
        (len(key["areas"]), len(key["checks"])))
@@ -104,6 +107,8 @@ def main():
        B.score(k, v, many + [("ADD-major", "s01.b0001", "y")])["penalty"]["ADD"] == 20)
     full = {i: (True, "") for i in ("X1", "X2", "Y1")}
     ok("всё пройдено без штрафов — 100", B.score(k, full, [])["score"] == 100)
+    ok("медиана: нечётное, чётное, одно", B.median([88, 70, 82]) == 82
+       and B.median([70, 82]) == 76 and B.median([5]) == 5)
 
     # ---- проверки кодом
     blocks = [{"id": "s01.b0001", "kind": "p", "text": "One <i>two</i> three."},
@@ -141,9 +146,9 @@ def main():
             return Fake(n, m, e)
     who, dropped = B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))
     ok("судья семьи переводчика вычеркнут, запасной остаётся",
-       [w.model for w in who] == ["gpt-5.6-sol"] and [x.model for x in dropped] == ["claude-opus-5"],
+       [w.model for w in who] == ["gpt-5.6-sol"] and [x.model for x in dropped] == ["claude-opus-5-5"],
        ([w.model for w in who], [x.model for x in dropped]))
-    ok("усилие судьи по умолчанию high", who[0].effort == "high", who[0].effort)
+    ok("усилие судьи из умолчания — medium", who[0].effort == "medium", who[0].effort)
     Args.judge = "claude:claude-opus-5"
     ok("все судьи одной семьи — остановка",
        _raises(SystemExit, B.judges, Args(), Ms(), Fake("claude", "claude-sonnet-5", "high")))
@@ -160,13 +165,21 @@ def main():
     ok("в отчёте провал с причиной и штраф",
        "**X2**" in md and "потеряно предложение" in md and "ADD-major s01.b0002" in md)
     ok("строка таблицы: дата, модели, итог, области, штраф",
-       B.table_row(r) == "| 2026-09-23 | agy:m:high | 0.0 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
+       B.table_row(r) == "| 2026-09-23 | agy:m:high | 0.0 | 1 | 1 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
        B.table_row(r))
     allok = {c["id"]: (True, "") for c in key["checks"]}
     full_r = dict(r, key=key, score=B.score(key, allok, []), verdicts=allok, penalties=[])
     ok("отчёт по-русски называет области по-русски",
-       "Точность смысла" in B.report_md(full_r, "ru") and "| 100.0 | 15 | 9 | 11 | 9 | 11 | 8 | 8 | 8 | 7 | 6 | 4 | 4 | 0 |" in B.table_row(full_r),
+       "Точность смысла" in B.report_md(full_r, "ru") and "| 100.0 | 1 | 1 | 15 | 9 | 11 | 9 | 11 | 8 | 8 | 8 | 7 | 6 | 4 | 4 | 0 |" in B.table_row(full_r),
        B.table_row(full_r))
+    multi = dict(full_r, runs=[full_r, dict(r, attempts=2), full_r], scores=[100.0, 0.0, 100.0],
+                 median=100.0, work="w")
+    row = B.table_row(multi)
+    ok("три прогона: медиана, разброс и попытки в строке", "| 100.0 | 3 (0–100) | 1/2/1 |" in row, row)
+    md3 = B.report_md(multi, "en")
+    ok("отчёт трёх прогонов: таблица прогонов и медиана",
+       md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Median 100.0 (from 0.0 to 100.0)" in md3,
+       md3[:40])
     lang.set_ui("ru")
 
     print(f"\n{'ВСЁ СОВПАДАЕТ' if not bad else f'РАСХОЖДЕНИЙ: {bad}'} ({seen} проверок)")

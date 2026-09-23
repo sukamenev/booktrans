@@ -329,6 +329,11 @@ def _run(agent, system, prompt, retries, parse_fn, log):
         try:
             t0 = time.time()
             out, meta = agent.run(system, cur)
+            # Со скольких попыток ответ принят: в файл куска, а оттуда в
+            # отчёт бенчмарка — модель, которой нужен третий заход, стоит
+            # втрое дороже той, что отвечает по форме с первого.
+            if attempt > 1:
+                meta = dict(meta, attempts=attempt)
             return parse_fn(out), meta, time.time() - t0
         except Truncated as e:
             log("\n    " + T("retry", attempt, e))
@@ -1121,8 +1126,9 @@ def _save(path, obj, keep=True, stamp=True):
 def _spent(meta):
     """Учёт в файл куска: модель, цена и токены — где поставщик их называет."""
     out = {"model": meta["model"], "cost_usd": meta["cost_usd"]}
-    if meta.get("tokens"):
-        out["tokens"] = meta["tokens"]
+    for k in ("tokens", "attempts"):
+        if meta.get(k):
+            out[k] = meta[k]
     return out
 
 

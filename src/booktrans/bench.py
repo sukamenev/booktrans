@@ -14,6 +14,8 @@
 ответов рано или поздно попал бы в обучающую выборку той модели, которую
 им же меряют. Исходники набора — у владельца, вне репозитория.
 """
+import argparse
+import concurrent.futures as cf
 import datetime
 import json
 import os
@@ -30,7 +32,7 @@ from .run import Run, locked
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETS = os.path.join(HERE, "bench")
 TEXT, KEY = "text.fb2", "key.txt"
-JUDGE_DEFAULT = "claude:claude-opus-5:high,codex:gpt-5.6-sol:high"
+JUDGE_DEFAULT = "claude:claude-opus-5-5:medium,codex:gpt-5.6-sol:medium"
 # Греческие буквы законны в любом переводе: «γ Кассиопеи» — не чужой язык.
 ALWAYS_SCRIPT = r"Ͱ-Ͽ"
 
@@ -285,15 +287,30 @@ def report_md(r, ui):
         return name if label == f"bench_area_{code}" else label
 
     names = {code: area_name(code, name) for code, _, name in key["areas"]}
-    lines = [f"# {r['score']['score']:.1f} / 100", "",
+    runs = r.get("runs") or [r]
+    med = r.get("median", r["score"]["score"])
+    lines = [f"# {med:.1f} / 100", "",
              T("bench_r_head", r["set"], key["version"], r["booktrans"]),
              T("bench_r_date", r["date"]),
              T("bench_r_translator", _spec(r["translator"])),
              T("bench_r_judge", _spec(r["judge"])),
              T("bench_r_lang", key["source"], r["to"]),
              T("bench_r_raw", r["score"]["raw"], sum(r["score"]["penalty"].values()),
-               r["score"]["max"]),
-             "", "## " + T("bench_r_areas"), "",
+               r["score"]["max"])]
+    if len(runs) > 1:
+        lines += ["", "## " + T("bench_r_runs", len(runs)), "",
+                  "| # | " + T("bench_r_col_points") + " | raw | penalty | fail | attempts | $ | min |",
+                  "|---|---|---|---|---|---|---|---|"]
+        for i, x in enumerate(runs, 1):
+            sc = x["score"]
+            lines.append(f"| {i} | {sc['score']:.1f} | {sc['raw']} | {-sum(sc['penalty'].values())} | "
+                         f"{sum(1 for v in x['verdicts'].values() if not v[0])} | {x.get('attempts', 1)} | "
+                         f"{_money(x['cost']['translate'])} / {_money(x['cost']['judge'])} | "
+                         f"{_mins(x['time']['translate'])} / {_mins(x['time']['judge'])} |")
+        lines.append("")
+        lines.append(T("bench_r_median", f"{med:.1f}", f"{min(sc for sc in r['scores']):.1f}",
+                       f"{max(sc for sc in r['scores']):.1f}", os.path.basename(r["work"])))
+    lines += ["", "## " + T("bench_r_areas"), "",
              "| " + T("bench_r_col_area") + " | " + T("bench_r_col_points") + " |",
              "|---|---|"]
     for code, mx, _ in key["areas"]:
@@ -320,6 +337,8 @@ def report_md(r, ui):
         if tok:
             lines.append(T(f"bench_r_tokens_{role}", tok.get("in", 0), tok.get("cached", 0),
                            tok.get("out", 0), tok.get("reasoning", 0)))
+    if r.get("attempts", 1) > 1:
+        lines.append(T("bench_r_attempts", r["attempts"]))
     lines += [T("bench_r_footnotes", r["footnotes"]),
               T("bench_r_work", r["work"]), "",
               "## " + T("bench_r_row"), "", table_row(r)]
@@ -338,7 +357,12 @@ def table_row(r):
     """Строка для docs/bench/results-<пара>.md: дата, переводчик, судья,
     версии, итог, области, штрафы."""
     s = r["score"]
-    cells = [r["date"][:10], _spec(r["translator"]), f"{s['score']:.1f}"]
+    scores = r.get("scores") or [s["score"]]
+    med = r.get("median", s["score"])
+    spread = f"{len(scores)} ({min(scores):.0f}–{max(scores):.0f})" if len(scores) > 1 else "1"
+    # Попытки по прогонам: «1/1/2» — третий перевод принят со второго захода.
+    tries = "/".join(str(x.get("attempts", 1)) for x in (r.get("runs") or [r]))
+    cells = [r["date"][:10], _spec(r["translator"]), f"{med:.1f}", spread, tries]
     cells += [str(s["areas"][code]) for code, _, _ in r["key"]["areas"]]
     cells += [str(-sum(s["penalty"].values())) if s["penalty"] else "0",
               r["booktrans"], r["key"]["version"], _spec(r["judge"])]
@@ -346,7 +370,7 @@ def table_row(r):
 
 
 def table_head(key):
-    cells = ["date", "translator", "score"] + [code for code, _, _ in key["areas"]]
+    cells = ["date", "translator", "score", "runs", "attempts"] + [code for code, _, _ in key["areas"]]
     cells += ["penalty", "booktrans", "test", "judge"]
     return "| " + " | ".join(cells) + " |\n|" + "---|" * len(cells)
 
@@ -368,8 +392,123 @@ def judges(args, models, translator):
     return out, dropped
 
 
+def median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def _file_log(path):
+    """Лог прогона — в файл: три перевода идут разом, и в общем логе их
+    строки перемешались бы; в общий лог уходят только итоги."""
+    f = open(path, "a", encoding="utf-8")
+
+    def log(msg="", end="\n"):
+        f.write(msg + end)
+        f.flush()
+    return log
+
+
+def _one(args, models, bench, work, who, log, main):
+    """Один прогон: перевод штатным проходом, суд, счёт. -> словарь итога."""
+    key, T = bench["key"], lang.T
+    os.makedirs(work, exist_ok=True)
+    book = os.path.join(work, "bench.fb2")
+    with open(book, "w", encoding="utf-8") as f:
+        f.write(bench["text"])
+    a = _args_for(args, book)
+    t0 = time.time()
+    with locked(work, sys.argv[1:]):
+        pipeline.note_version(work)
+        r = Run(a, work, log, models, ["translate"])
+        r.book()
+        r.user_prompt()
+        r.merge_meta()
+        r.measure()
+        if len(r.chunks) != 1:
+            sys.exit(T("bench_chunks", len(r.chunks)))
+        if not r.step_translate():
+            sys.exit(T("bench_unfinished"))
+    t_tr = time.time() - t0
+    files = pipeline.chunk_files(pipeline.lpath(work, "tr", args.to))
+    if not files:
+        sys.exit(T("bench_unfinished"))
+    tr_json = json.load(open(files[-1][1], encoding="utf-8"))
+    tr, footnotes = tr_json.get("tr", {}), tr_json.get("footnotes", [])
+    blocks = r.chunks[0]["blocks"]
+    ids = {b["id"] for b in blocks}
+    missing = [c["id"] for c in key["checks"]
+               for b in c["blocks"] if not any(i.endswith("." + b) for i in ids)]
+    if missing:
+        sys.exit(T("bench_key_blocks", ", ".join(sorted(set(missing))[:8])))
+    main("  " + T("bench_run_translated", os.path.basename(work), _mins(t_tr),
+                  agent_mod.label(tr_json)))
+
+    code_pen = code_checks(blocks, tr, key["source"], args.to)
+    # Лишние заходы за ответом по форме — тоже изъян модели: кусок стоил
+    # конвейеру вдвое-втрое дороже, чем у той, что отвечает с первого раза.
+    code_pen += [("RETRY", "s01", f"attempt {n}")
+                 for n in range(2, int(tr_json.get("attempts") or 1) + 1)]
+    log("")
+    log(f"=== {T('bench_judging', agent_mod.label(who[0]))} ===")
+    system = "\n\n---\n\n".join(x for x in (
+        lang.prompt("bench_judge")[0].format(
+            to=lang.lang_name(args.to), ui=lang.lang_name(args.ui)),
+        lang.prompt("units")[0],
+        (lang.prompt("sys_rules")[0] + "\n\n" + lang.rules(args.to))
+        if lang.rules(args.to) else "") if x)
+    prompt = judge_prompt(key, blocks, tr, footnotes)
+    t1 = time.time()
+    (verdicts, pens, remarks), meta, _ = pipeline._chain_run(
+        who, system, prompt, args.retries, lambda out: parse_verdict(out, key), log)
+    t_j = time.time() - t1
+    pens = pens + code_pen
+    s = score(key, verdicts, pens)
+    judge = _who(who[0])
+    if meta.get("model"):
+        judge = dict(judge, model=meta["model"], effort=meta.get("effort") or judge["effort"])
+    translator = models.first("translator")
+    result = {
+        "score": s, "key": key, "set": bench["name"], "to": args.to,
+        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "booktrans": release_version(),
+        "translator": dict(_who(translator), model=tr_json.get("model") or _who(translator)["model"]),
+        "judge": judge, "verdicts": verdicts, "penalties": pens, "remarks": remarks,
+        "code_checks": code_pen, "footnotes": len(footnotes),
+        "attempts": int(tr_json.get("attempts") or 1),
+        "cost": {"translate": tr_json.get("cost_usd"), "judge": meta.get("cost_usd")},
+        # Токены — когда поставщик их называет (claude, codex, openrouter);
+        # agy молчит, и строки в отчёте тогда нет.
+        "tokens": {"translate": tr_json.get("tokens"), "judge": meta.get("tokens")},
+        "time": {"translate": t_tr, "judge": t_j}, "work": work,
+    }
+    out_json = pipeline.lpath(work, "bench.json", args.to)
+    json.dump(_slim(result), open(out_json, "w", encoding="utf-8"),
+              ensure_ascii=False, indent=1)
+    main("  " + T("bench_run_judged", os.path.basename(work), f"{s['score']:.1f}",
+                  len(key["checks"]) - sum(1 for v in verdicts.values() if v[0]),
+                  -sum(s["penalty"].values())))
+    return result
+
+
+def _args_for(args, book):
+    """Ключи прогона перевода: та же командная строка, но книга — текст
+    набора, проход — один, разведки нет."""
+    a = argparse.Namespace(**vars(args))
+    a.book, a.only, a.chunks, a.scout = book, "translate", None, None
+    return a
+
+
+def _slim(r):
+    """Итог в json без полного ключа: он большой и лежит в пакете."""
+    k = r["key"]
+    return dict(r, key={"version": k["version"], "source": k["source"],
+                        "areas": k["areas"], "max": k["max"]})
+
+
 def run(args, log):
-    """Весь бенчмарк: рабочая папка, перевод штатным проходом, суд, отчёт."""
+    """Весь бенчмарк: рабочая папка, N прогонов перевода и суда, медиана,
+    отчёт. Прогоны идут разом, каждый пишет свой лог в своей папке."""
     T = lang.T
     bench = load_set(args.bench if args.bench != "-" else None)
     key = bench["key"]
@@ -393,82 +532,46 @@ def run(args, log):
     base = f"benchmark-{key['source']}-{args.to}-{tag}-{stamp}"
     work = args.work or base + ".work"
     os.makedirs(work, exist_ok=True)
-    book = os.path.join(work, "bench.fb2")
-    with open(book, "w", encoding="utf-8") as f:
-        f.write(bench["text"])
-    # Штатный проход перевода, каким его получает книга: те же промпты,
-    # тот же разбор ответа, тот же файл куска. Разведки нет намеренно.
-    args.book, args.only, args.chunks = book, "translate", None
-    args.scout = None
+    n = max(1, int(args.bench_runs or 1))
     log("")
     log("  " + T("bench_start", bench["name"], key["version"],
-                 agent_mod.label(translator), agent_mod.label(who[0])))
-    t0 = time.time()
-    with locked(work, sys.argv[1:]):
-        pipeline.note_version(work)
-        r = Run(args, work, log, models, ["translate"])
-        r.book()
-        r.user_prompt()
-        r.merge_meta()
-        r.measure()
-        if len(r.chunks) != 1:
-            sys.exit(T("bench_chunks", len(r.chunks)))
-        if not r.step_translate():
-            sys.exit(T("bench_unfinished"))
-    t_tr = time.time() - t0
-    files = pipeline.chunk_files(pipeline.lpath(work, "tr", args.to))
-    if not files:
+                 agent_mod.label(translator), agent_mod.label(who[0]), n))
+    subs = [os.path.join(work, f"run{i}") for i in range(1, n + 1)]
+    results = [None] * n
+    errors = []
+
+    def job(i):
+        try:
+            results[i] = _one(args, models, bench, subs[i], who,
+                              _file_log(os.path.join(subs[i], "bench.log")), log)
+        except SystemExit as e:                   # прогон встал: остальные идут
+            errors.append((subs[i], str(e)))
+        except BaseException as e:                # noqa: BLE001
+            errors.append((subs[i], repr(e)))
+    with cf.ThreadPoolExecutor(n) as ex:
+        for i in range(n):
+            os.makedirs(subs[i], exist_ok=True)
+            ex.submit(job, i)
+    for sub, err in errors:
+        log("  " + T("bench_run_failed", os.path.basename(sub), err.splitlines()[0][:200]))
+    done = [r for r in results if r]
+    if not done:
         sys.exit(T("bench_unfinished"))
-    tr_json = json.load(open(files[-1][1], encoding="utf-8"))
-    tr, footnotes = tr_json.get("tr", {}), tr_json.get("footnotes", [])
-    blocks = r.chunks[0]["blocks"]
-    ids = {b["id"] for b in blocks}
-    missing = [c["id"] for c in key["checks"]
-               for b in c["blocks"] if not any(i.endswith("." + b) for i in ids)]
-    if missing:
-        sys.exit(T("bench_key_blocks", ", ".join(sorted(set(missing))[:8])))
 
-    code_pen = code_checks(blocks, tr, key["source"], args.to)
-    log("")
-    log(f"=== {T('bench_judging', agent_mod.label(who[0]))} ===")
-    system = "\n\n---\n\n".join(x for x in (
-        lang.prompt("bench_judge")[0].format(
-            to=lang.lang_name(args.to), ui=lang.lang_name(args.ui)),
-        lang.prompt("units")[0],
-        (lang.prompt("sys_rules")[0] + "\n\n" + lang.rules(args.to))
-        if lang.rules(args.to) else "") if x)
-    prompt = judge_prompt(key, blocks, tr, footnotes)
-    t1 = time.time()
-    (verdicts, pens, remarks), meta, _ = pipeline._chain_run(
-        who, system, prompt, args.retries, lambda out: parse_verdict(out, key), log)
-    t_j = time.time() - t1
-    pens = pens + [(code, bid, note) for code, bid, note in code_pen]
-    s = score(key, verdicts, pens)
-
-    judge = _who(who[0])
-    if meta.get("model"):
-        judge = dict(judge, model=meta["model"], effort=meta.get("effort") or judge["effort"])
-    result = {
-        "score": s, "key": key, "set": bench["name"], "to": args.to,
-        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "booktrans": release_version(),
-        "translator": dict(_who(translator), model=tr_json.get("model") or _who(translator)["model"]),
-        "judge": judge, "verdicts": verdicts, "penalties": pens, "remarks": remarks,
-        "code_checks": code_pen, "footnotes": len(footnotes),
-        "cost": {"translate": tr_json.get("cost_usd"), "judge": meta.get("cost_usd")},
-        # Токены — когда поставщик их называет (claude, codex, openrouter);
-        # agy молчит, и строки в отчёте тогда нет.
-        "tokens": {"translate": tr_json.get("tokens"), "judge": meta.get("tokens")},
-        "time": {"translate": t_tr, "judge": t_j}, "work": work,
-    }
-    md = report_md(result, args.ui)
+    scores = [r["score"]["score"] for r in done]
+    med = median(scores)
+    # Разбивка по областям и провалы — у прогона, ближайшего к медиане.
+    mid = min(done, key=lambda r: (abs(r["score"]["score"] - med), -r["score"]["score"]))
+    final = dict(mid, runs=[_slim(r) for r in done], median=med,
+                 scores=scores, work=work,
+                 date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    md = report_md(final, args.ui)
     lang.set_ui(args.ui)
-    out_json = pipeline.lpath(work, "bench.json", args.to)
-    json.dump(dict(result, key={"version": key["version"], "source": key["source"],
-                                "areas": key["areas"], "max": key["max"]}),
-              open(out_json, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    out_json = os.path.join(work, "bench.json")
+    json.dump(_slim(final), open(out_json, "w", encoding="utf-8"),
+              ensure_ascii=False, indent=1)
     report = os.path.join(os.path.dirname(os.path.abspath(work)) if args.work else ".",
-                          (os.path.splitext(os.path.basename(work))[0]) + ".md")
+                          os.path.splitext(os.path.basename(work))[0] + ".md")
     with open(report, "w", encoding="utf-8") as f:
         f.write(md)
     log("")
@@ -476,4 +579,4 @@ def run(args, log):
         log("  " + line)
     log("")
     log("  " + T("bench_saved", report, out_json))
-    return 0
+    return 1 if errors else 0
