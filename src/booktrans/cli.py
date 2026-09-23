@@ -222,8 +222,10 @@ def parser(ui):
     ap.add_argument("--scout-jobs", type=int, default=1,
                     help=T("h_scout_jobs"))
     ap.add_argument("--refresh", action="store_true", help=T("h_refresh"))
+    # Без ключа конвейер правит как задано (allow), а бенчмарк судью семьи
+    # переводчика вычёркивает (never): умолчания у них разные.
     ap.add_argument("--self-edit", choices=["allow", "last", "never"],
-                    default="allow", help=T("h_self_edit"))
+                    help=T("h_self_edit"))
     ap.add_argument("--to", default=os.environ.get("BT_TO", "en"), help=T("h_to"))
     ap.add_argument("--ui", default=ui, help=T("h_ui"))
     ap.add_argument("--force-translate", action="store_true", help=T("h_force_lang"))

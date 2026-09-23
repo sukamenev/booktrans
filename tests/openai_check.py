@@ -49,6 +49,11 @@ def main():
         ok("обрыв по длине — ошибка, не обрывок", False)
     except A.AgentError as e:
         ok("обрыв по длине — ошибка, не обрывок", "16384" in str(e), str(e)[:60])
+    try:
+        A.collect_stream([{"choices": [{"delta": {"content": "Эпиграф…"}}]}], "m")
+        ok("поток без причины остановки — ошибка, не обрывок", False)
+    except A.AgentError as e:
+        ok("поток без причины остановки — ошибка, не обрывок", "8" in str(e), str(e)[:60])
     ok("без усилия поля нет",
        "reasoning_effort" not in A.make_agent("openai", "m", wait=0).body("", "q"))
     ok("семья модели роутера — по имени", family("openai:glm-5.3-flash:high") == "glm")

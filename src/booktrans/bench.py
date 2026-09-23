@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 import zlib
 
 from . import agent as agent_mod, lang, pipeline
@@ -267,13 +268,22 @@ def score(key, verdicts, pens):
 # --------------------------------------------------------------- отчёт
 
 def _who(a):
-    """Провайдер, модель и усилие агента — три поля отчёта."""
-    return {"provider": getattr(a, "kind", "?"), "model": getattr(a, "model", None) or "?",
-            "effort": getattr(a, "effort", None) or ""}
+    """Провайдер, модель и усилие агента — три поля отчёта. У моделей по сети
+    ещё и адрес точки: одна и та же модель у разных роутеров — разные
+    замеры, роутер мог подсунуть и модель подешевле."""
+    kind = getattr(a, "kind", "?")
+    w = {"provider": kind, "model": getattr(a, "model", None) or "?",
+         "effort": getattr(a, "effort", None) or ""}
+    url = (agent_mod.openai_url() if kind == "openai"
+           else agent_mod.OPENROUTER_URL if kind == "openrouter" else "")
+    if url:
+        w["endpoint"] = urllib.parse.urlsplit(url).hostname or url
+    return w
 
 
 def _spec(w):
-    return ":".join(x for x in (w["provider"], w["model"], w["effort"]) if x)
+    p = w["provider"] + (f"@{w['endpoint']}" if w.get("endpoint") else "")
+    return ":".join(x for x in (p, w["model"], w["effort"]) if x)
 
 
 def report_md(r, ui):
@@ -381,12 +391,20 @@ def judges(args, models, translator):
     """Цепочка судей без семьи переводчика. Судья одной семьи — судья в
     собственном деле: к своим калькам модель слепа, и таблица лидеров с
     самопроверками ничего не стоит."""
+    if (args.judge or "").strip().lower() == "none":
+        return [], []                    # только перевод: суд — потом, в ту же папку
     fam = family(getattr(translator, "model", None))
     chain = parse_chain(args.judge or JUDGE_DEFAULT, args.agent)
-    out, dropped = [], []
+    # `--self-edit allow` пускает судью своей семьи на общих правах, `last` —
+    # в конец цепочки; без ключа он вычеркнут.
+    mode = getattr(args, "self_edit", None) or "never"
+    out, kin, dropped = [], [], []
     for name, m, eff in chain:
-        (dropped if family(m) == fam else out).append(
-            models._agent(name, m, eff or "high"))
+        # у agy усилие вшито в имя модели, а иные его модели ключа не знают вовсе
+        a = models._agent(name, m, eff or (None if name == "agy" else "high"))
+        same = family(m) == fam
+        (out if not same or mode == "allow" else kin if mode == "last" else dropped).append(a)
+    out += kin
     if not out:
         sys.exit(T("bench_judge_family", fam, args.judge or JUDGE_DEFAULT))
     return out, dropped
@@ -456,6 +474,8 @@ def _one(args, models, bench, work, who, log, main):
         tr_json["model"] = _who(translator)["model"]
     main("  " + T("bench_run_translated", os.path.basename(work), _mins(t_tr),
                   agent_mod.label(tr_json)))
+    if not who:
+        return None
 
     code_pen = code_checks(blocks, tr, key["source"], args.to)
     # Лишние заходы за ответом по форме — тоже изъян модели: кусок стоил
@@ -547,7 +567,8 @@ def run(args, log):
     n = max(1, int(args.bench_runs or 1))
     log("")
     log("  " + T("bench_start", bench["name"], key["version"],
-                 agent_mod.label(translator), agent_mod.label(who[0]), n))
+                 agent_mod.label(translator),
+                 agent_mod.label(who[0]) if who else "—", n))
     subs = [os.path.join(work, f"run{i}") for i in range(1, n + 1)]
     results = [None] * n
     errors = []
@@ -566,6 +587,13 @@ def run(args, log):
             ex.submit(job, i)
     for sub, err in errors:
         log("  " + T("bench_run_failed", os.path.basename(sub), err.splitlines()[0][:200]))
+    if not who:
+        # Переводы готовы, суд отложен: тот же запуск с судьёй и `-w` в эту
+        # папку переводить заново не станет.
+        if errors:
+            sys.exit(T("bench_unfinished"))
+        log("  " + T("bench_translated_only", work))
+        return
     done = [r for r in results if r]
     if not done:
         sys.exit(T("bench_unfinished"))

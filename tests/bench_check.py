@@ -136,7 +136,7 @@ def main():
 
     # ---- семья судьи
     class Args:
-        judge, agent = None, "claude"
+        judge, agent, self_edit = None, "claude", None
     class Fake:
         def __init__(self, n, m, e):
             self.kind, self.model, self.effort = n, m, e
@@ -149,6 +149,24 @@ def main():
        [w.model for w in who] == ["gpt-5.6-sol"] and [x.model for x in dropped] == ["claude-opus-5-5"],
        ([w.model for w in who], [x.model for x in dropped]))
     ok("усилие судьи из умолчания — medium", who[0].effort == "medium", who[0].effort)
+    Args.judge = "agy:claude-opus-4-6-thinking"
+    who, _ = B.judges(Args(), Ms(), Fake("openai", "glm-5.3", "medium"))
+    ok("судье agy без усилия его и не подставляют", who[0].effort is None, who[0].effort)
+    Args.judge, Args.self_edit = "claude:claude-opus-5-5,codex:gpt-5.6-sol", "allow"
+    who, _ = B.judges(Args(), Ms(), Fake("claude", "claude-haiku-4-5", "medium"))
+    ok("--self-edit allow: судья своей семьи судит", [w.model for w in who] == ["claude-opus-5-5", "gpt-5.6-sol"])
+    Args.self_edit = "last"
+    who, _ = B.judges(Args(), Ms(), Fake("claude", "claude-haiku-4-5", "medium"))
+    ok("--self-edit last: судья своей семьи последний", [w.model for w in who] == ["gpt-5.6-sol", "claude-opus-5-5"])
+    Args.self_edit = None
+    os.environ["OPENAI_BASE_URL"] = "https://router.example.org/v1"
+    w = B._who(Fake("openai", "glm-5.3", "medium"))
+    ok("у сетевой модели в отчёте адрес точки", B._spec(w) == "openai@router.example.org:glm-5.3:medium", B._spec(w))
+    del os.environ["OPENAI_BASE_URL"]
+    ok("у CLI-агента адреса нет", B._spec(B._who(Fake("codex", "gpt-6-astra", "medium"))) == "codex:gpt-6-astra:medium")
+    Args.judge = "none"
+    ok("--judge none — судей нет, перевод без суда",
+       B.judges(Args(), Ms(), Fake("openai", "glm-5.3", "medium")) == ([], []))
     Args.judge = "claude:claude-opus-5"
     ok("все судьи одной семьи — остановка",
        _raises(SystemExit, B.judges, Args(), Ms(), Fake("claude", "claude-sonnet-5", "high")))
