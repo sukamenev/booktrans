@@ -8,7 +8,9 @@ import re
 import sys
 
 from . import lang
-from .agent import OPENROUTER_ENV, make_agent, openrouter_key, openrouter_key_file
+from .agent import (OPENAI_ENV, OPENAI_URL_ENV, OPENROUTER_ENV, make_agent, openai_key,
+                    openai_key_file, openai_url, openai_url_file, openrouter_key,
+                    openrouter_key_file)
 
 # Семейства моделей: у родственниц общие слепые пятна — кальки, которые не
 # видит переводчик, не увидит и старшая модель той же линии. Порядок значим:
@@ -32,14 +34,14 @@ def family(model):
     return name
 
 
-AGENTS = ("claude", "agy", "codex", "openrouter", "cmd")
+AGENTS = ("claude", "agy", "codex", "openrouter", "openai", "cmd")
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Проходы опознавательные, а не сочинительные: разобрать вёрстку, увидеть
 # порчу распознавания и прочитать страницу умеет и самая дешёвая модель
 # поставщика.
 CHEAP_ROLES = ("formatter", "ocrfixer", "ocrmodel")
 # У claude и openrouter усилие — отдельный ключ, у agy оно вшито в имя модели.
-CHEAP_EFFORT = {"claude": "low", "openrouter": "low"}
+CHEAP_EFFORT = {"claude": "low", "openrouter": "low", "openai": "low"}
 # Ключ `--agent` — это, по сути, имя набора умолчаний: какими моделями делать
 # проходы у этого поставщика. Названная явно модель сильнее набора, набор
 # сильнее умолчания самого агента. Затем он и нужен: `--agent agy` работает
@@ -59,10 +61,10 @@ PRESETS = {
     # Платится по токенам, потому и в смысловых проходах не Opus: Sonnet
     # впятеро дешевле, а запасным — другой поставщик.
     "openrouter": {
-        "model": "anthropic/claude-sonnet-5,google/gemini-3.7-flash",
-        "formatter": "google/gemini-3.7-flash",
-        "ocrfixer": "google/gemini-3.7-flash",
-        "ocrmodel": "google/gemini-3.7-flash",
+        "model": "anthropic/claude-sonnet-5,google/gemini-3.8-flash",
+        "formatter": "google/gemini-3.8-flash",
+        "ocrfixer": "google/gemini-3.8-flash",
+        "ocrmodel": "google/gemini-3.8-flash",
     },
 }
 # Ключи, из которых собираются цепочки: проверяются все разом при старте.
@@ -147,6 +149,9 @@ class Models:
                 used.add(name)
         if "openrouter" in used and not openrouter_key():
             sys.exit(lang.T("openrouter_key", OPENROUTER_ENV, openrouter_key_file()))
+        if "openai" in used and not (openai_key() and openai_url()):
+            sys.exit(lang.T("openai_key", OPENAI_URL_ENV, OPENAI_ENV,
+                            openai_url_file(), openai_key_file()))
 
     def _agent(self, name, model, effort=None):
         a = self.args

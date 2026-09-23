@@ -511,7 +511,7 @@ Thoat — тоат, восьминогое ездовое животное; не
 ```
 # profiles/agy.conf — Gemini впереди, Claude на подстраховке
 --agent agy
---translator gemini-3.7-flash-high,claude:claude-opus-5
+--translator gemini-3.8-flash-high,claude:claude-opus-5
 --editor     claude:claude-opus-5,gemini-3.1-pro-high
 --jobs 5
 ```
@@ -971,7 +971,7 @@ pandoc книга.docx -o книга.epub         # pandoc
 --ocrfixer ID         модель, правящая дефекты распознавания в оригинале
 --ocrmodel ID         модель, читающая страницы pdf с картинки
 --model ID            модель
---agent ИМЯ           агент: claude|agy|codex|openrouter|cmd
+--agent ИМЯ           агент: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     своя команда: {system} или {system_file}
 --jobs N              потоков на редактуре и сверке
 --scout-jobs N        потоков на разборах частей разведки (по умолчанию выключено — см. «Разведка тоже умеет»)
@@ -1021,7 +1021,7 @@ macOS — `~/Library/Application Support/booktrans`): одной строкой,
 ./booktrans книга.epub --agent agy \
     --editor gemini-3.1-pro-high,openrouter:deepseek/deepseek-v4-pro:high
 ./booktrans книга.epub --agent openrouter \
-    --translator anthropic/claude-sonnet-5:max,google/gemini-3.7-flash
+    --translator anthropic/claude-sonnet-5:max,google/gemini-3.8-flash
 ```
 
 Усилие уходит в `reasoning.effort` OpenRouter; модели, которая не думает,
@@ -1032,6 +1032,28 @@ macOS — `~/Library/Application Support/booktrans`): одной строкой,
 
 Набор `--agent openrouter`: на смысловых проходах Sonnet с Gemini Flash за
 спиной, на разметке, правке распознавания и чтении страниц — Flash.
+
+## Любая точка протокола OpenAI
+
+Роутеры и локальные серверы, говорящие по протоколу OpenAI (chat
+completions), подключаются ключом `--agent openai`. Адрес точки и ключ
+берутся из тех же переменных, что читает SDK OpenAI, либо из файлов в папке
+настроек — по одной строке:
+
+```bash
+export OPENAI_BASE_URL=https://router.example.com/v1
+export OPENAI_API_KEY=sk-…
+./booktrans book.epub --agent openai --model deepseek-v4.1-flash
+```
+
+Файлы: `~/.config/booktrans/openai.url` и `openai.key` (та же папка, что у
+ключа OpenRouter). Модель обязательна — умолчания у роутеров нет. В цепочке
+агент идёт первым: `--editor openai:glm-5.3-flash:high`. Тело запроса —
+чистый стандарт без добавок OpenRouter, так что его примет любая
+совместимая точка; `reasoning_effort` посылается, когда названо усилие, и
+снимается, если модель его отвергла. В отличие от OpenRouter — без кэша
+промпта и без цены в долларах: только счёт токенов, если точка его отдаёт.
+`./booktrans --check --agent openai` говорит, найдены ли адрес и ключ.
 
 ## Свой агент
 

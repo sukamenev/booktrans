@@ -579,7 +579,7 @@ A profile is a file holding the same keys you would have typed:
 ```
 # profiles/agy.conf — Gemini in front, Claude behind it
 --agent agy
---translator gemini-3.7-flash-high,claude:claude-opus-5
+--translator gemini-3.8-flash-high,claude:claude-opus-5
 --editor     claude:claude-opus-5,gemini-3.1-pro-high
 --jobs 5
 ```
@@ -977,7 +977,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --scout / --translator / --editor / --verifier ID   model for one pass
 --bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
 --judge ID            judge model for the benchmark (default claude:claude-opus-5:high, backup codex:gpt-5.6-sol:high)
---agent NAME          agent: claude|agy|codex|openrouter|cmd
+--agent NAME          agent: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes
 --scout-jobs N        threads for scouting parts (off by default — see "Scouting can too")
@@ -1022,7 +1022,7 @@ from the agent:
 ./booktrans book.epub --agent agy \
     --editor gemini-3.1-pro-high,openrouter:deepseek/deepseek-v4-pro:high
 ./booktrans book.epub --agent openrouter \
-    --translator anthropic/claude-sonnet-5:max,google/gemini-3.7-flash
+    --translator anthropic/claude-sonnet-5:max,google/gemini-3.8-flash
 ```
 
 The effort goes to OpenRouter's `reasoning.effort`; a model that does not
@@ -1034,6 +1034,28 @@ reply and goes into the spending report.
 
 The set of `--agent openrouter`: Sonnet for the meaning-bearing passes with
 Gemini Flash behind it, Flash for markup, OCR repair and page reading.
+
+## Any OpenAI-compatible endpoint
+
+Routers and local servers that speak the OpenAI chat-completions protocol
+are reached with `--agent openai`. The endpoint URL and the key are read
+from the variables the OpenAI SDK itself uses, or from files in the settings
+folder — a single line each:
+
+```bash
+export OPENAI_BASE_URL=https://router.example.com/v1
+export OPENAI_API_KEY=sk-…
+./booktrans book.epub --agent openai --model deepseek-v4.1-flash
+```
+
+Files: `~/.config/booktrans/openai.url` and `openai.key` (the same folder
+as the OpenRouter key). A model is required — routers have no default.
+Inside a chain the agent goes first: `--editor openai:glm-5.3-flash:high`.
+The request body is plain standard: no OpenRouter extras, so any compliant
+endpoint accepts it; `reasoning_effort` is sent when an effort is named and
+dropped if the model rejects it. Unlike OpenRouter, no prompt caching and
+no cost in dollars — only token counts, when the endpoint reports them.
+`./booktrans --check --agent openai` says whether the URL and the key are found.
 
 ## Your own agent
 

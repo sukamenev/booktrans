@@ -88,6 +88,12 @@ def check(log=print, agent="claude"):
         from .agent import OPENROUTER_ENV, openrouter_key, openrouter_key_file
         line(bool(openrouter_key()), "openrouter key", T("doc_or_key"),
              T("doc_or_key_how", OPENROUTER_ENV, openrouter_key_file()))
+    if agent == "openai":
+        from .agent import (OPENAI_ENV, OPENAI_URL_ENV, openai_key, openai_key_file,
+                            openai_url, openai_url_file)
+        line(bool(openai_url() and openai_key()), "openai endpoint", T("doc_oa_key"),
+             T("doc_oa_key_how", OPENAI_URL_ENV, OPENAI_ENV, openai_url_file(),
+               openai_key_file()))
 
     log("")
     log("  " + T("doc_opt"))

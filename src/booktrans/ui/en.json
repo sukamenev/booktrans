@@ -353,5 +353,9 @@
  "bench_area_note": "Footnotes",
  "bench_area_reg": "Register and frankness",
  "bench_r_tokens_translate": "Translation tokens: input {0} (cached {1}), output {2} (reasoning {3})",
- "bench_r_tokens_judge": "Judging tokens: input {0} (cached {1}), output {2} (reasoning {3})"
+ "bench_r_tokens_judge": "Judging tokens: input {0} (cached {1}), output {2} (reasoning {3})",
+ "openai_key": "STOP: the openai agent needs an endpoint URL and a key. URL in the variable {0} or in the file {2}, key in the variable {1} or in the file {3} (a single line, nothing else).\n  Not on the command line: it is kept in running.pid and shown by ps.",
+ "openai_model": "STOP: the openai agent needs a model — routers have no default: --model name or openai:name in a chain",
+ "doc_oa_key": "OpenAI endpoint URL and key: without them there is nowhere to send requests",
+ "doc_oa_key_how": "export {0}=https://…/v1 and {1}=sk-… or write them into {2} and {3}, one line each"
 }

@@ -777,15 +777,16 @@ def openrouter_key():
         return ""
 
 
-def openrouter_post(body, key, timeout):
+def openrouter_post(body, key, timeout, url=OPENROUTER_URL):
     """Запрос к OpenRouter потоком. -> (код HTTP, [события json]).
 
     Потоком, а не одним ответом: думающая модель на большом куске молчит
     минутами, и посредники рвут тихое соединение — а со служебными строками
-    `: OPENROUTER PROCESSING` оно живо. Срок один на весь ответ.
+    `: OPENROUTER PROCESSING` оно живо. Срок один на весь ответ. Адрес
+    подменяет агент `openai`: протокол тот же, точка другая.
     """
     req = urllib.request.Request(
-        OPENROUTER_URL, data=json.dumps(body).encode(), method="POST",
+        url, data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": f"Bearer {key}",
                  "Content-Type": "application/json",
                  "HTTP-Referer": "https://github.com/sukamenev/booktrans",
@@ -889,26 +890,118 @@ class OpenRouterAgent(Agent):
             err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)
-        text, model, cost, tok, finish = [], self.model, None, None, None
-        for ev in events:
-            if ev.get("error"):
-                raise openrouter_error(ev["error"].get("code"), ev["error"])
-            for ch in ev.get("choices") or ():
-                piece = (ch.get("delta") or {}).get("content")
-                if piece:
-                    text.append(piece)
-                finish = ch.get("finish_reason") or finish
-            model = ev.get("model") or model
-            u = ev.get("usage")
-            if u:
-                cost = u.get("cost")
-                tok = tokens(u.get("prompt_tokens"),
-                             (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
-                             u.get("completion_tokens"),
-                             (u.get("completion_tokens_details") or {}).get("reasoning_tokens"))
-        if finish == "content_filter":
-            raise Blocked(T("or_filter", model))
-        return "".join(text), {"model": model, "cost_usd": cost, "tokens": tok}
+        return collect_stream(events, self.model)
+
+
+def collect_stream(events, model):
+    """Собрать ответ из потока chat completions: текст, модель, цена, токены.
+    Общее для OpenRouter и любой точки протокола OpenAI."""
+    text, cost, tok, finish = [], None, None, None
+    for ev in events:
+        if ev.get("error"):
+            raise openrouter_error(ev["error"].get("code"), ev["error"])
+        for ch in ev.get("choices") or ():
+            piece = (ch.get("delta") or {}).get("content")
+            if piece:
+                text.append(piece)
+            finish = ch.get("finish_reason") or finish
+        model = ev.get("model") or model
+        u = ev.get("usage")
+        if u:
+            cost = u.get("cost")
+            tok = tokens(u.get("prompt_tokens"),
+                         (u.get("prompt_tokens_details") or {}).get("cached_tokens"),
+                         u.get("completion_tokens"),
+                         (u.get("completion_tokens_details") or {}).get("reasoning_tokens"))
+    if finish == "content_filter":
+        raise Blocked(T("or_filter", model))
+    return "".join(text), {"model": model, "cost_usd": cost, "tokens": tok}
+
+
+OPENAI_ENV, OPENAI_URL_ENV = "OPENAI_API_KEY", "OPENAI_BASE_URL"
+
+
+def openai_key_file():
+    return os.path.join(config_dir(), "openai.key")
+
+
+def openai_url_file():
+    return os.path.join(config_dir(), "openai.url")
+
+
+def _setting(env, path):
+    """Значение из переменной окружения, иначе из файла одной строкой."""
+    v = os.environ.get(env, "").strip()
+    if v:
+        return v
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def openai_key():
+    return _setting(OPENAI_ENV, openai_key_file())
+
+
+def openai_url():
+    return _setting(OPENAI_URL_ENV, openai_url_file())
+
+
+class OpenAIAgent(OpenRouterAgent):
+    """Любая точка, говорящая по протоколу OpenAI (chat completions): чужой
+    роутер, локальный сервер, сам OpenAI. Адрес и ключ — те же переменные, что
+    читает SDK OpenAI, либо файлы `openai.url` и `openai.key` в папке настроек.
+
+    Тело запроса — по стандарту, без добавок OpenRouter (пометка кэша в
+    системном сообщении, объект `reasoning`, поле `usage`): чужая точка их
+    вправе отвергнуть. Модель обязательна — умолчания у роутеров нет.
+    """
+
+    kind = "openai"
+
+    def default_model(self):
+        return ""
+
+    def body(self, system, user, image=None):
+        content = user
+        if image:
+            mime = mimetypes.guess_type(image)[0] or "image/png"
+            with open(image, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            content = [{"type": "text", "text": user},
+                       {"type": "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{b64}"}}]
+        messages = [{"role": "user", "content": content}]
+        if system:
+            messages.insert(0, {"role": "system", "content": system})
+        out = {"model": self.model, "messages": messages, "stream": True,
+               "stream_options": {"include_usage": True}}
+        if self.effort:
+            out["reasoning_effort"] = self.effort
+        return out
+
+    def run(self, system, user, image=None):
+        key, url = openai_key(), openai_url()
+        if not key or not url:
+            raise Fatal(T("openai_key", OPENAI_URL_ENV, OPENAI_ENV,
+                          openai_url_file(), openai_key_file()))
+        if not self.model:
+            raise Fatal(T("openai_model"))
+        endpoint = url.rstrip("/") + "/chat/completions"
+        body = self.body(system, user, image)
+        status, events = openrouter_post(body, key, self.timeout, endpoint)
+        err = (events[0].get("error") or events[0]) if events else {}
+        if status == 400 and "reasoning_effort" in body \
+                and "reasoning" in str(err.get("message")).lower():
+            # Модель не думает вовсе — усилие ей ни к чему.
+            del body["reasoning_effort"]
+            status, events = openrouter_post(body, key, self.timeout, endpoint)
+            err = (events[0].get("error") or events[0]) if events else {}
+        if status != 200:
+            raise openrouter_error(status, err)
+        return collect_stream(events, self.model)
 
 
 def make_agent(kind="claude", model=None, command=None, timeout=1800,
@@ -921,6 +1014,8 @@ def make_agent(kind="claude", model=None, command=None, timeout=1800,
         inner = CodexAgent(model, timeout, effort)
     elif kind == "openrouter":
         inner = OpenRouterAgent(model, timeout, effort)
+    elif kind == "openai":
+        inner = OpenAIAgent(model, timeout, effort)
     elif kind == "local":
         class LocalAgent(Agent):
             def __init__(self, model):
