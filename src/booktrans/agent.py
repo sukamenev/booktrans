@@ -355,6 +355,10 @@ class WaitingAgent:
             # а лишний отказ стоит целой попытки.
             pause = reset_after(str(e))
             LIMITS.note(key_of(self), pause + 30 if pause else self.interval)
+            # Слова самого поставщика: по одному «лимиты исчерпаны» не
+            # понять, квота это, частота запросов или перегрузка у него.
+            if self.log:
+                self.log("    " + T("lim_said", self.model, " ".join(str(e).split())[:300]))
             raise
         # Усилие — свойство запуска, а не ответа: в мету оно попадает отсюда,
         # чтобы лог назвал модель вместе с ним.
