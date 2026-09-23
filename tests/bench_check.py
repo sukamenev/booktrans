@@ -14,7 +14,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 
-from booktrans import bench as B, cli, extract as E, lang, pipeline as P   # noqa: E402
+from booktrans import bench as B, cli, extract as E, lang, pipeline as P, agent as A_  # noqa: E402
 from booktrans.models import CHAIN_KEYS                                     # noqa: E402
 
 for k in list(os.environ):
@@ -164,6 +164,28 @@ def main():
     ok("у сетевой модели в отчёте адрес точки", B._spec(w) == "openai@router.example.org:glm-5.3:medium", B._spec(w))
     del os.environ["OPENAI_BASE_URL"]
     ok("у CLI-агента адреса нет", B._spec(B._who(Fake("codex", "gpt-6-astra", "medium"))) == "codex:gpt-6-astra:medium")
+    # ---- чья вина в несделанном куске: модели — ноль, связи — не в счёт
+    AG = A_
+    P.RETRY_PAUSE = 0
+    class Bad:
+        kind, model, effort = "openai", "m", None
+        def __init__(self, errs): self.errs = list(errs)
+        def run(self, system, user):
+            e = self.errs.pop(0)
+            if isinstance(e, Exception): raise e
+            return e, {}
+    def parse(out): raise ValueError("не по форме")
+    def fault(errs):
+        try:
+            P._run(Bad(errs), "", "", len(errs), parse, lambda *a: None)
+        except Exception:
+            pass
+        return P.FAULT.kind
+    ok("все попытки не по форме — срыв модели", fault(["x", "y", "z"]) == "model", P.FAULT.kind)
+    ok("зациклилась до предела вывода — срыв модели",
+       fault([AG.OutputLimit("65536"), AG.OutputLimit("65536")]) == "model", P.FAULT.kind)
+    ok("хоть одну попытку сорвала связь — вина роутера",
+       fault([AG.AgentError("connection interrupted"), "x", AG.OutputLimit("1")]) == "net", P.FAULT.kind)
     Args.judge = "none"
     ok("--judge none — судей нет, перевод без суда",
        B.judges(Args(), Ms(), Fake("openai", "glm-5.3", "medium")) == ([], []))

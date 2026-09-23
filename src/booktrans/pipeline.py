@@ -320,9 +320,18 @@ class Truncated(ValueError):
 
 
 
+# Чья вина в последнем несделанном куске этого потока: "model" — все
+# попытки кончились на самой модели (зациклилась до предела вывода, обрывала
+# ответ, отвечала не по форме, отказала), "net" — хоть одну сорвала связь,
+# лимит или сам поставщик. Бенчмарку это решает судьбу прогона: срыв модели —
+# ноль, сбой роутера — прогон не в счёт.
+FAULT = threading.local()
+
+
 def _run(agent, system, prompt, retries, parse_fn, log):
     cur = prompt
     stops, last, err = [], None, None
+    FAULT.kind, net = None, False
     for attempt in range(1, retries + 1):
         if STOP.is_set():
             raise KeyboardInterrupt
@@ -344,12 +353,14 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             # b0038, b0034, b0002, b0034, b0038 — пять раз об одно и то же,
             # и ни разу дважды кряду.
             if e.first in stops:
+                FAULT.kind = "net" if net else "model"
                 raise Refused(e.first, e.n, e.total) from None
             stops.append(e.first)
             last = e
             cur = prompt + "\n\n---\n\n" + \
                 lang.prompt("retry_reject")[0].format(err=e)
-        except (Fatal, RateLimited, Blocked):
+        except (Fatal, RateLimited, Blocked) as e:
+            FAULT.kind = "model" if isinstance(e, Blocked) and not net else "net"
             # Повторять нечего. У Fatal беда не в тексте, а лимит — вообще не
             # осечка запроса, а состояние времени: до срока модель ответит
             # тем же самым. Blocked — фильтр на входе шлюза: тот же промпт
@@ -370,11 +381,14 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             # minute» пять раз подряд за одну секунду это не пять попыток, а
             # одна: сервер за это время не разгрузился. На разборе ответа
             # пауза, наоборот, лишняя — там дело не в сервере, а в тексте.
+            if isinstance(e, AgentError) and not isinstance(e, agent_mod.OutputLimit):
+                net = True
             if isinstance(e, AgentError) and attempt < retries:
                 time.sleep(min(RETRY_PAUSE * attempt, RETRY_PAUSE * 4))
             err = e
             cur = prompt + "\n\n---\n\n" + \
                 lang.prompt("retry_reject")[0].format(err=e)
+    FAULT.kind = "net" if net else "model"
     if last is not None:
         # Кусок обрывался до последней попытки — это отказ, а не сбой связи.
         # Через Refused его подхватит запасная модель; RuntimeError валил

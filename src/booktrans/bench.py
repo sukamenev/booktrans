@@ -453,7 +453,14 @@ def _one(args, models, bench, work, who, log, main):
         r.measure()
         if len(r.chunks) != 1:
             sys.exit(T("bench_chunks", len(r.chunks)))
+        pipeline.FAULT.kind = None
         if not r.step_translate():
+            # Модель сорвалась сама — прогон в серии нулём: иначе модель,
+            # которая срывается каждый третий раз, выглядела бы надёжной.
+            # Сбой роутера или лимит — не её вина, и прогон не в счёт.
+            if getattr(pipeline.FAULT, "kind", None) == "model":
+                return _failed(args, bench, key, work, models.first("translator"),
+                               time.time() - t0, who, main)
             sys.exit(T("bench_unfinished"))
     t_tr = time.time() - t0
     files = pipeline.chunk_files(pipeline.lpath(work, "tr", args.to))
@@ -520,6 +527,28 @@ def _one(args, models, bench, work, who, log, main):
     main("  " + T("bench_run_judged", os.path.basename(work), f"{s['score']:.1f}",
                   len(key["checks"]) - sum(1 for v in verdicts.values() if v[0]),
                   -sum(s["penalty"].values())))
+    return result
+
+
+def _failed(args, bench, key, work, translator, t_tr, who, main):
+    """Итог прогона, в котором модель так и не выдала перевод: все точки
+    провалены, балл ноль. Лежит на диске, как осуждённый: повторный запуск
+    в ту же папку его не переигрывает."""
+    verdicts = {c["id"]: (False, lang.T("bench_model_failed")) for c in key["checks"]}
+    s = score(key, verdicts, [])
+    result = {
+        "score": s, "key": key, "set": bench["name"], "to": args.to,
+        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "booktrans": release_version(), "translator": _who(translator),
+        "judge": _who(who[0]) if who else {"provider": "", "model": "—", "effort": ""},
+        "verdicts": verdicts, "penalties": [], "remarks": [], "code_checks": [],
+        "footnotes": 0, "attempts": int(args.retries), "failed": "model",
+        "cost": {"translate": None, "judge": None}, "tokens": {"translate": None, "judge": None},
+        "time": {"translate": t_tr, "judge": 0}, "work": work,
+    }
+    json.dump(_slim(result), open(pipeline.lpath(work, "bench.json", args.to), "w",
+                                  encoding="utf-8"), ensure_ascii=False, indent=1)
+    main("  " + lang.T("bench_run_model_failed", os.path.basename(work)))
     return result
 
 

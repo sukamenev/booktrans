@@ -317,6 +317,8 @@
  "bench_start": "benchmark: set {0} {1}, translator {2}, judge {3}, runs {4}",
  "bench_chunks": "STOP: the benchmark text was cut into {0} chunks, one expected — check --chunk-words and tuning",
  "bench_unfinished": "STOP: translation unfinished, nothing to judge",
+ "bench_model_failed": "model failure: no translation",
+ "bench_run_model_failed": "{0}: the model broke down — no translation in any attempt, the run counts as zero",
  "bench_translated_only": "translations ready, judging deferred; to judge: the same command with --judge and -w {}",
  "bench_key_blocks": "STOP: the key refers to blocks absent from the text: {0}",
  "bench_judging": "judging: {0}",
