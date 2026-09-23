@@ -455,17 +455,18 @@ def _one(args, models, bench, work, who, log, main):
         if len(r.chunks) != 1:
             sys.exit(T("bench_chunks", len(r.chunks)))
         pipeline.FAULT.kind = None
-        if not r.step_translate():
-            # Модель сорвалась сама — прогон в серии нулём: иначе модель,
-            # которая срывается каждый третий раз, выглядела бы надёжной.
-            # Сбой роутера или лимит — не её вина, и прогон не в счёт.
-            if getattr(pipeline.FAULT, "kind", None) == "model":
-                return _failed(args, bench, key, work, models.first("translator"),
-                               time.time() - t0, who, main)
-            sys.exit(T("bench_unfinished"))
+        ok = r.step_translate()
     t_tr = time.time() - t0
     files = pipeline.chunk_files(pipeline.lpath(work, "tr", args.to))
-    if not files:
+    # Несделанный кусок конвейер пропускает, и шаг перевода может закончиться
+    # «успешно» без перевода — поэтому судьба прогона решается по файлу, а не
+    # по ответу шага. Модель сорвалась сама — прогон в серии нулём: иначе
+    # модель, которая срывается каждый третий раз, выглядела бы надёжной.
+    # Сбой роутера или лимит — не её вина, и прогон не в счёт.
+    if not ok or not files:
+        if getattr(pipeline.FAULT, "kind", None) == "model":
+            return _failed(args, bench, key, work, models.first("translator"),
+                           t_tr, who, main)
         sys.exit(T("bench_unfinished"))
     tr_json = json.load(open(files[-1][1], encoding="utf-8"))
     tr, footnotes = tr_json.get("tr", {}), tr_json.get("footnotes", [])
