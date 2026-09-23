@@ -17,6 +17,7 @@ penalty — штрафы суммой. Методика — в [README.md](READM
 | 2026-09-23 | agy:gemini-3.8-flash:medium | 88.0 | 3 (82–91) | 1/1/1 | 15 | 9 | 10 | 9 | 9 | 8 | 7 | 8 | 6 | 5 | 4 | 2 | -1 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | codex:gpt-5.6-sol:medium | 86.7 | 3 (85–89) | 1/1/1 | 12 | 8 | 9 | 9 | 9 | 6 | 8 | 7 | 7 | 5 | 4 | 3 | -1 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | openai@router.bynara.id:glm-5.3:medium | 84.0 | 3 (78–88) | 2/2/2 | 14 | 9 | 11 | 9 | 10 | 7 | 8 | 7 | 5 | 4 | 4 | 2 | -4 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking |
+| 2026-09-23 | openai@router.bynara.id:muse-spark-1.3:medium | 84.0 | 3 (80–87) | 1/1/1 | 14 | 9 | 9 | 9 | 8 | 6 | 8 | 7 | 6 | 6 | 4 | 2 | -3 | 1.10.89 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | agy:gemini-3.1-pro:high | 83.0 | 3 (81–85) | 1/1/1 | 12 | 9 | 9 | 7 | 8 | 7 | 8 | 7 | 7 | 3 | 3 | 3 | 0 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | openai@router.bynara.id:muse-spark-1.3-contributor:medium | 82.7 | 3 (82–83) | 1/1/1 | 13 | 9 | 9 | 9 | 9 | 6 | 7 | 6 | 6 | 5 | 2 | 2 | 0 | 1.10.77 | 1.3 | claude:claude-opus-5-5:medium |
 | 2026-09-23 | openai@router.bynara.id:deepseek-v4-flash:medium | 82.3 | 3 (78–88) | 1/3/2 | 13 | 9 | 8 | 9 | 10 | 7 | 8 | 7 | 5 | 5 | 4 | 3 | -7 | 1.10.80 | 1.3 | agy:claude-opus-4-6-thinking, openai@router.bynara.id:claude-opus-5:medium |
