@@ -44,8 +44,10 @@ def _zpath(base, href):
     return os.path.normpath(os.path.join(base, urllib.parse.unquote(href or "")))
 DC = "{http://purl.org/dc/elements/1.1/}"
 FB = "{http://www.gribuser.ru/xml/fictionbook/2.0}"
+# FB2 называет курсив и зачёркивание своими словами: без них книга из fb2
+# теряла курсив ещё при чтении, а собранный из неё fb2 — уже насовсем.
 KEEP_INLINE = {"i", "em", "b", "strong", "sup", "sub", "code",
-               "s", "del", "strike"}
+               "s", "del", "strike", "emphasis", "strikethrough"}
 
 
 SKIP_LINK = re.compile(r"oceanofpdf|authoralerts|contents\.xhtml|#", re.I)
@@ -203,7 +205,8 @@ def _inner(el, keep=KEEP_INLINE, note=False):
         for ch in node:
             tag = re.sub(r"\{.*?\}", "", ch.tag)
             if tag in keep:
-                t = {"em": "i", "strong": "b", "del": "s", "strike": "s"}.get(tag, tag)
+                t = {"em": "i", "emphasis": "i", "strong": "b", "del": "s",
+                     "strike": "s", "strikethrough": "s"}.get(tag, tag)
                 out.append(f"<{t}>")
                 if ch.text:
                     out.append(ch.text)

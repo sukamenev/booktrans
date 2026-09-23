@@ -697,6 +697,30 @@ Translation carries the literary quality and the responsibility for meaning;
 editing is more mechanical, and its every change is visible in `--diff` and
 reversible. That is where a cheaper model is worth trying first.
 
+## Benchmark: how well does a model translate?
+
+```bash
+booktrans --bench --to ru --translator claude:claude-sonnet-5:high
+```
+
+No book needed. The pipeline translates a built-in short story (about 3,100
+words, one chunk) laden with 100 planted traps in twelve areas, one point each — accuracy,
+completeness, calques, rare vocabulary, imagery, verse and puns, consistency
+of names and repeated phrases, gender revealed late, sound-based
+transliteration of names like Cholmondeley and Siobhan, target-language norm,
+footnotes, register — and a judge model (Opus by default, `--judge` to change)
+answers ok/fail on every trap against an answer key. The score, 0 to 100, is
+computed by code, not by the judge; additions, untranslated fragments,
+broken structure and foreign scripts are penalised. Only the translator is
+measured: no scouting (its reference would be a cheat sheet) and no editor.
+
+The result is a work directory `benchmark-en-ru-<provider-model-effort>-<stamp>.work`
+with the translation to read, and a Markdown report next to it whose first
+line is the score. Compare only runs of the same test version and the same
+judge. Method, areas, key format and the results table:
+[docs/bench/README.md](docs/bench/README.md),
+[docs/bench/results-en-ru.md](docs/bench/results-en-ru.md).
+
 ## What goes into the book
 
 - **the whole text**, including epigraphs, prefaces, acknowledgements, "About
@@ -951,6 +975,8 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --ocrmodel ID         model that reads pdf pages from the image
 --model ID            model for every pass
 --scout / --translator / --editor / --verifier ID   model for one pass
+--bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
+--judge ID            judge model for the benchmark (default claude:claude-opus-5:high, backup codex:gpt-5.6-sol:high)
 --agent NAME          agent: claude|agy|codex|openrouter|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes

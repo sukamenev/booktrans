@@ -67,7 +67,7 @@ PRESETS = {
 }
 # Ключи, из которых собираются цепочки: проверяются все разом при старте.
 CHAIN_KEYS = ("model", "translator", "scout", "editor", "verifier",
-              "formatter", "ocrfixer", "ocrmodel")
+              "formatter", "ocrfixer", "ocrmodel", "judge")
 
 
 def parse_chain(s, agent=None):

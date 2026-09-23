@@ -203,6 +203,9 @@ def parser(ui):
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
     ap.add_argument("--verifier", help=T("h_verifier"))
+    # Бенчмарк: без книги, с встроенным текстом; «-» — набор по умолчанию.
+    ap.add_argument("--bench", nargs="?", const="-", metavar="DIR", help=T("h_bench"))
+    ap.add_argument("--judge", help=T("h_judge"))
     ap.add_argument("--full-verify", action=argparse.BooleanOptionalAction,
                     default=True, help=T("h_full_verify"))
     ap.add_argument("--ocrmodel", help=T("h_ocrmodel"))
@@ -272,6 +275,9 @@ def main():
     if args.check:
         log(T("doc_head"))
         return 1 if doctor.check(log, args.agent) else 0
+    if args.bench:
+        from . import bench
+        return bench.run(args, log)
     if not args.book:
         ap.error(T("h_book"))
     models = Models(args, log)
