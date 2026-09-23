@@ -365,6 +365,7 @@
  "notes_lost": "the text carries {0} footnote pointers [^N] but only {1} footnote blocks were parsed: every footnote is a separate block [[[NOTE block_id kind]]] with TERM: and TEXT: lines, kind is reference|fact|term|source",
  "oa_length": "the reply was cut at the output length limit ({0} tokens, finish_reason=length)",
  "oa_cut": "the answer stream ended with no finish reason after {} characters — the endpoint dropped the connection",
+ "oa_empty": "no answer: all {} output tokens went into reasoning",
  "h_bench_runs": "how many times to translate and judge the benchmark text; the report carries the median (default 3)",
  "bench_run_translated": "{0}: translated in {1} min [{2}]",
  "bench_run_judged": "{0}: score {1}, failed {2}, penalty {3}",

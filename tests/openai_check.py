@@ -54,6 +54,12 @@ def main():
         ok("поток без причины остановки — ошибка, не обрывок", False)
     except A.AgentError as e:
         ok("поток без причины остановки — ошибка, не обрывок", "8" in str(e), str(e)[:60])
+    try:
+        A.collect_stream([{"choices": [{"delta": {"reasoning_content": "думаю"}, "finish_reason": "stop"}]},
+                          {"usage": {"prompt_tokens": 9, "completion_tokens": 32768}}], "m")
+        ok("пустой ответ при потраченном выводе — упор в предел", False)
+    except A.OutputLimit as e:
+        ok("пустой ответ при потраченном выводе — упор в предел", "32768" in str(e), str(e)[:60])
     ok("без усилия поля нет",
        "reasoning_effort" not in A.make_agent("openai", "m", wait=0).body("", "q"))
     ok("семья модели роутера — по имени", family("openai:glm-5.3-flash:high") == "glm")
