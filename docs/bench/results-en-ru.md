@@ -8,6 +8,20 @@ lex — словарь и идиомы, style — образность и сти
 клички, norm — норма языка, note — сноски, reg — регистр и откровенность;
 penalty — штрафы суммой. Методика — в [README.md](README.md).
 
+## Тест 1.2 — три прогона, медиана
+
+| date | translator | score | runs | attempts | acc | full | calq | lex | style | verse | cons | gend | name | norm | note | reg | penalty | booktrans | test | judge |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-09-23 | agy:gemini-3.8-flash:medium | 91.0 | 3 (82–91) | 1/1/1 | 15 | 9 | 10 | 9 | 9 | 8 | 7 | 8 | 6 | 5 | 4 | 2 | -1 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | codex:gpt-6-astra:medium | 90.0 | 3 (88–92) | 1/1/1 | 14 | 9 | 8 | 9 | 9 | 6 | 8 | 8 | 7 | 6 | 4 | 2 | 0 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | codex:gpt-5.6-sol:medium | 86.0 | 3 (85–89) | 1/1/1 | 12 | 8 | 9 | 9 | 9 | 6 | 8 | 7 | 7 | 5 | 4 | 3 | -1 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | openai:muse-spark-1.3-contributor:medium | 83.0 | 3 (82–83) | 1/1/1 | 13 | 9 | 9 | 9 | 9 | 6 | 7 | 6 | 6 | 5 | 2 | 2 | 0 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | agy:gemini-3.7-flash:medium | 82.5 | 2 (79–86) | 1/2 | 14 | 9 | 9 | 9 | 9 | 6 | 6 | 7 | 7 | 4 | 4 | 2 | 0 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | codex:gpt-5.6-terra:medium | 78.0 | 3 (76–81) | 1/2/1 | 12 | 9 | 6 | 9 | 9 | 4 | 8 | 7 | 6 | 4 | 2 | 2 | 0 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+| 2026-09-23 | codex:gpt-5.6-luna:medium | 72.0 | 3 (72–74) | 1/1/1 | 12 | 9 | 6 | 8 | 8 | 4 | 8 | 5 | 5 | 4 | 2 | 2 | -1 | 1.10.77 | 1.2 | claude:claude-opus-5-5:medium |
+
+## Тест 1.1 — один прогон
+
 | date | translator | score | runs | attempts | acc | full | calq | lex | style | verse | cons | gend | name | norm | note | reg | penalty | booktrans | test | judge |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-09-23 | codex:gpt-6-astra:medium | 95.0 | 1 | 1 | 15 | 9 | 9 | 9 | 10 | 7 | 8 | 8 | 7 | 6 | 4 | 3 | 0 | 1.10.76 | 1.1 | claude:claude-opus-5:high |

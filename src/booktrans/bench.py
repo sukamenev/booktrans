@@ -413,6 +413,14 @@ def _one(args, models, bench, work, who, log, main):
     """Один прогон: перевод штатным проходом, суд, счёт. -> словарь итога."""
     key, T = bench["key"], lang.T
     os.makedirs(work, exist_ok=True)
+    done = pipeline.lpath(work, "bench.json", args.to)
+    if os.path.exists(done):
+        # Прогон уже судился: повторный запуск в ту же папку досуживает
+        # только то, что не доехало, а не платит за готовое второй раз.
+        r = json.load(open(done, encoding="utf-8"))
+        if r.get("key", {}).get("version") == key["version"]:
+            main("  " + T("bench_run_kept", os.path.basename(work), f"{r['score']['score']:.1f}"))
+            return dict(r, key=key)
     book = os.path.join(work, "bench.fb2")
     with open(book, "w", encoding="utf-8") as f:
         f.write(bench["text"])

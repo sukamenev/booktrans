@@ -366,5 +366,6 @@
  "bench_run_failed": "{0}: run not finished — {1}",
  "bench_r_runs": "Runs: {0}",
  "bench_r_median": "Median {0} (from {1} to {2}); areas and failed checks below are those of the run nearest the median; directory {3}",
- "bench_r_attempts": "Translation attempts before a well-formed reply: {0}"
+ "bench_r_attempts": "Translation attempts before a well-formed reply: {0}",
+ "bench_run_kept": "{0}: already judged, score {1} — kept"
 }
