@@ -98,7 +98,7 @@ def main():
     sc = B.score(k, v, pens)
     ok("счёт: области, штрафы, сырой итог", sc["areas"] == {"a": 2, "b": 1}
        and sc["penalty"] == {"ADD": 6, "UNTR": 3} and sc["raw"] == -6, sc)
-    ok("нормированный итог не ниже нуля", sc["score"] == 0, sc["score"])
+    ok("нормированный итог не ниже нуля", sc["score"] == 0.0, sc["score"])
     many = [("ADD-minor", "s01.b0001", "x")] * 9
     ok("потолок штрафа общий для градаций",
        B.score(k, v, many + [("ADD-major", "s01.b0001", "y")])["penalty"]["ADD"] == 20)
@@ -156,16 +156,16 @@ def main():
          "cost": {"translate": None, "judge": 1.0}, "time": {"translate": 60, "judge": 60},
          "work": "w"}
     md = B.report_md(r, "en")
-    ok("отчёт начинается с нормированного балла", md.startswith("# 0 / 100\n"), md[:20])
+    ok("отчёт начинается с нормированного балла", md.startswith("# 0.0 / 100\n"), md[:20])
     ok("в отчёте провал с причиной и штраф",
        "**X2**" in md and "потеряно предложение" in md and "ADD-major s01.b0002" in md)
     ok("строка таблицы: дата, модели, итог, области, штраф",
-       B.table_row(r) == "| 2026-09-23 | agy:m:high | claude:j | 1.0.0 | 9.9 | 0 | 2 | 1 | -9 |",
+       B.table_row(r) == "| 2026-09-23 | agy:m:high | 0.0 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
        B.table_row(r))
     allok = {c["id"]: (True, "") for c in key["checks"]}
     full_r = dict(r, key=key, score=B.score(key, allok, []), verdicts=allok, penalties=[])
     ok("отчёт по-русски называет области по-русски",
-       "Точность смысла" in B.report_md(full_r, "ru") and B.table_row(full_r).endswith("| 100 |" + " 15 | 9 | 11 | 9 | 11 | 8 | 8 | 8 | 7 | 6 | 4 | 4 | 0 |"),
+       "Точность смысла" in B.report_md(full_r, "ru") and "| 100.0 | 15 | 9 | 11 | 9 | 11 | 8 | 8 | 8 | 7 | 6 | 4 | 4 | 0 |" in B.table_row(full_r),
        B.table_row(full_r))
     lang.set_ui("ru")
 

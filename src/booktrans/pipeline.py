@@ -1653,6 +1653,11 @@ def _parse_translate(out, expected, src=None):
     found = parse_notes_blocks(out, ids)
     body = re.split(r"\[\[\[NOTE\s", out)[0]
     res, extra = parse_blocks(body, expected=expected, extra_tag="META")
+    # Указатели [^N] в тексте есть, а блоков сносок к ним меньше: сноски
+    # написаны не по форме и молча пропали бы, оставив в книге голые номера.
+    marks = sum(len(re.findall(r"\[\^\d+\]", t)) for t in res.values())
+    if marks > len(found):
+        raise ValueError(T("notes_lost", marks, len(found)))
     # Обрубок вместо перевода: модель оборвалась ПОСРЕДИ блока — «Пациент»
     # вместо сцены на две сотни знаков. Пропавшие и пустые блоки ловятся
     # выше, а полупустой сходил за переведённый, и отпечаток записывал кусок

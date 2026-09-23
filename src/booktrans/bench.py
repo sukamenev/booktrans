@@ -255,7 +255,9 @@ def score(key, verdicts, pens):
         g["cap"] = max(g["cap"], cap)
     penalty = {g: min(v["raw"], v["cap"]) for g, v in groups.items()}
     raw = sum(areas.values()) - sum(penalty.values())
-    norm = round(100 * max(0, raw) / key["max"])
+    # Один знак после запятой: при максимуме ключа не в сто очков доля не
+    # целая, а при ста — читается тем же числом.
+    norm = round(100 * max(0, raw) / key["max"], 1)
     return {"areas": areas, "penalty": penalty, "counts": {g: v["n"] for g, v in groups.items()},
             "raw": raw, "score": norm, "max": key["max"]}
 
@@ -283,7 +285,7 @@ def report_md(r, ui):
         return name if label == f"bench_area_{code}" else label
 
     names = {code: area_name(code, name) for code, _, name in key["areas"]}
-    lines = [f"# {r['score']['score']} / 100", "",
+    lines = [f"# {r['score']['score']:.1f} / 100", "",
              T("bench_r_head", r["set"], key["version"], r["booktrans"]),
              T("bench_r_date", r["date"]),
              T("bench_r_translator", _spec(r["translator"])),
@@ -336,16 +338,16 @@ def table_row(r):
     """Строка для docs/bench/results-<пара>.md: дата, переводчик, судья,
     версии, итог, области, штрафы."""
     s = r["score"]
-    cells = [r["date"][:10], _spec(r["translator"]), _spec(r["judge"]),
-             r["booktrans"], r["key"]["version"], str(s["score"])]
+    cells = [r["date"][:10], _spec(r["translator"]), f"{s['score']:.1f}"]
     cells += [str(s["areas"][code]) for code, _, _ in r["key"]["areas"]]
-    cells.append(str(-sum(s["penalty"].values())) if s["penalty"] else "0")
+    cells += [str(-sum(s["penalty"].values())) if s["penalty"] else "0",
+              r["booktrans"], r["key"]["version"], _spec(r["judge"])]
     return "| " + " | ".join(cells) + " |"
 
 
 def table_head(key):
-    cells = ["date", "translator", "judge", "booktrans", "test", "score"]
-    cells += [code for code, _, _ in key["areas"]] + ["penalty"]
+    cells = ["date", "translator", "score"] + [code for code, _, _ in key["areas"]]
+    cells += ["penalty", "booktrans", "test", "judge"]
     return "| " + " | ".join(cells) + " |\n|" + "---|" * len(cells)
 
 

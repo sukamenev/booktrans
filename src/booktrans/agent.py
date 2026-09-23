@@ -915,10 +915,15 @@ def collect_stream(events, model):
                          (u.get("completion_tokens_details") or {}).get("reasoning_tokens"))
     if finish == "content_filter":
         raise Blocked(T("or_filter", model))
+    if finish == "length":
+        # Потолок вывода: без этого обрыв выглядел как «модель встала на
+        # блоке N» и списывался на содержание куска.
+        raise AgentError(T("oa_length", (tok or {}).get("out", "?")))
     return "".join(text), {"model": model, "cost_usd": cost, "tokens": tok}
 
 
 OPENAI_ENV, OPENAI_URL_ENV = "OPENAI_API_KEY", "OPENAI_BASE_URL"
+OPENAI_MAX_TOKENS = 65536
 
 
 def openai_key_file():
@@ -976,8 +981,11 @@ class OpenAIAgent(OpenRouterAgent):
         messages = [{"role": "user", "content": content}]
         if system:
             messages.insert(0, {"role": "system", "content": system})
+        # Предел вывода называем сами: умолчание роутера (16k у одного из
+        # них) короче перевода куска, и ответ молча обрывался посреди текста.
         out = {"model": self.model, "messages": messages, "stream": True,
-               "stream_options": {"include_usage": True}}
+               "stream_options": {"include_usage": True},
+               "max_tokens": OPENAI_MAX_TOKENS}
         if self.effort:
             out["reasoning_effort"] = self.effort
         return out
@@ -993,12 +1001,13 @@ class OpenAIAgent(OpenRouterAgent):
         body = self.body(system, user, image)
         status, events = openrouter_post(body, key, self.timeout, endpoint)
         err = (events[0].get("error") or events[0]) if events else {}
-        if status == 400 and "reasoning_effort" in body \
-                and "reasoning" in str(err.get("message")).lower():
-            # Модель не думает вовсе — усилие ей ни к чему.
-            del body["reasoning_effort"]
-            status, events = openrouter_post(body, key, self.timeout, endpoint)
-            err = (events[0].get("error") or events[0]) if events else {}
+        # Точка отвергла необязательное поле — повторяем без него: модель не
+        # думает вовсе, или предел вывода у неё ниже названного.
+        for field, word in (("reasoning_effort", "reasoning"), ("max_tokens", "max_tokens")):
+            if status == 400 and field in body and word in str(err.get("message")).lower():
+                del body[field]
+                status, events = openrouter_post(body, key, self.timeout, endpoint)
+                err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)
         return collect_stream(events, self.model)

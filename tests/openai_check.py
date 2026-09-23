@@ -42,6 +42,13 @@ def main():
        body.get("reasoning_effort") == "high" and "reasoning" not in body and "usage" not in body,
        body)
     ok("поток с учётом токенов", body["stream"] and body["stream_options"] == {"include_usage": True})
+    ok("предел вывода назван явно", body["max_tokens"] == A.OPENAI_MAX_TOKENS >= 32000, body.get("max_tokens"))
+    try:
+        A.collect_stream([{"choices": [{"delta": {"content": "x"}, "finish_reason": "length"}],
+                           "usage": {"completion_tokens": 16384}}], "m")
+        ok("обрыв по длине — ошибка, не обрывок", False)
+    except A.AgentError as e:
+        ok("обрыв по длине — ошибка, не обрывок", "16384" in str(e), str(e)[:60])
     ok("без усилия поля нет",
        "reasoning_effort" not in A.make_agent("openai", "m", wait=0).body("", "q"))
     ok("семья модели роутера — по имени", family("openai:glm-5.3-flash:high") == "glm")
