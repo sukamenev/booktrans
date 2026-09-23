@@ -366,12 +366,12 @@
  "oa_length": "the reply was cut at the output length limit ({0} tokens, finish_reason=length)",
  "oa_cut": "the answer stream ended with no finish reason after {} characters — the endpoint dropped the connection",
  "oa_empty": "no answer: all {} output tokens went into reasoning",
- "h_bench_runs": "how many times to translate and judge the benchmark text; the report carries the median (default 3)",
+ "h_bench_runs": "how many times to translate and judge the benchmark text; the report carries the mean (default 3)",
  "bench_run_translated": "{0}: translated in {1} min [{2}]",
  "bench_run_judged": "{0}: score {1}, failed {2}, penalty {3}",
  "bench_run_failed": "{0}: run not finished — {1}",
  "bench_r_runs": "Runs: {0}",
- "bench_r_median": "Median {0} (from {1} to {2}); areas and failed checks below are those of the run nearest the median; directory {3}",
+ "bench_r_mean": "Mean {0} (from {1} to {2}); areas and failed checks below are those of the run nearest the mean; directory {3}",
  "bench_r_attempts": "Translation attempts before a well-formed reply: {0}",
  "bench_run_kept": "{0}: already judged, score {1} — kept"
 }

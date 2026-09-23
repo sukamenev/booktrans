@@ -107,8 +107,7 @@ def main():
        B.score(k, v, many + [("ADD-major", "s01.b0001", "y")])["penalty"]["ADD"] == 20)
     full = {i: (True, "") for i in ("X1", "X2", "Y1")}
     ok("всё пройдено без штрафов — 100", B.score(k, full, [])["score"] == 100)
-    ok("медиана: нечётное, чётное, одно", B.median([88, 70, 82]) == 82
-       and B.median([70, 82]) == 76 and B.median([5]) == 5)
+    ok("среднее: срыв нулём не пропадает", B.mean([0, 78, 80]) == 52.7 and B.mean([5]) == 5)
 
     # ---- проверки кодом
     blocks = [{"id": "s01.b0001", "kind": "p", "text": "One <i>two</i> three."},
@@ -213,12 +212,12 @@ def main():
        "Точность смысла" in B.report_md(full_r, "ru") and "| 100.0 | 1 | 1 | 15 | 9 | 11 | 9 | 11 | 8 | 8 | 8 | 7 | 6 | 4 | 4 | 0 |" in B.table_row(full_r),
        B.table_row(full_r))
     multi = dict(full_r, runs=[full_r, dict(r, attempts=2), full_r], scores=[100.0, 0.0, 100.0],
-                 median=100.0, work="w")
+                 mean=100.0, work="w")
     row = B.table_row(multi)
-    ok("три прогона: медиана, разброс и попытки в строке", "| 100.0 | 3 (0–100) | 1/2/1 |" in row, row)
+    ok("три прогона: среднее, разброс и попытки в строке", "| 100.0 | 3 (0–100) | 1/2/1 |" in row, row)
     md3 = B.report_md(multi, "en")
-    ok("отчёт трёх прогонов: таблица прогонов и медиана",
-       md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Median 100.0 (from 0.0 to 100.0)" in md3,
+    ok("отчёт трёх прогонов: таблица прогонов и среднее",
+       md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Mean 100.0 (from 0.0 to 100.0)" in md3,
        md3[:40])
     lang.set_ui("ru")
 

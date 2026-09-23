@@ -712,7 +712,7 @@ of names and repeated phrases, gender revealed late, sound-based
 transliteration of names like Cholmondeley and Siobhan, target-language norm,
 footnotes, register — and a judge model (Opus by default, `--judge` to change)
 answers ok/fail on every trap against an answer key. The text is translated
-and judged three times and the median is reported. The score, 0 to 100, is
+and judged three times and the mean is reported. The score, 0 to 100, is
 computed by code, not by the judge; additions, untranslated fragments,
 broken structure and foreign scripts are penalised. Only the translator is
 measured: no scouting (its reference would be a cheat sheet) and no editor.
@@ -979,7 +979,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --model ID            model for every pass
 --scout / --translator / --editor / --verifier ID   model for one pass
 --bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
---bench-runs N        how many times to translate and judge the benchmark text; the median is reported (default 3)
+--bench-runs N        how many times to translate and judge the benchmark text; the mean is reported (default 3)
 --judge ID            judge model for the benchmark (default claude:claude-opus-5-5:medium, backup codex:gpt-5.6-sol:medium)
 --agent NAME          agent: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}

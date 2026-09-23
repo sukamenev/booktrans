@@ -298,7 +298,7 @@ def report_md(r, ui):
 
     names = {code: area_name(code, name) for code, _, name in key["areas"]}
     runs = r.get("runs") or [r]
-    med = r.get("median", r["score"]["score"])
+    med = r.get("mean", r["score"]["score"])
     lines = [f"# {med:.1f} / 100", "",
              T("bench_r_head", r["set"], key["version"], r["booktrans"]),
              T("bench_r_date", r["date"]),
@@ -318,7 +318,7 @@ def report_md(r, ui):
                          f"{_money(x['cost']['translate'])} / {_money(x['cost']['judge'])} | "
                          f"{_mins(x['time']['translate'])} / {_mins(x['time']['judge'])} |")
         lines.append("")
-        lines.append(T("bench_r_median", f"{med:.1f}", f"{min(sc for sc in r['scores']):.1f}",
+        lines.append(T("bench_r_mean", f"{med:.1f}", f"{min(sc for sc in r['scores']):.1f}",
                        f"{max(sc for sc in r['scores']):.1f}", os.path.basename(r["work"])))
     lines += ["", "## " + T("bench_r_areas"), "",
              "| " + T("bench_r_col_area") + " | " + T("bench_r_col_points") + " |",
@@ -368,7 +368,7 @@ def table_row(r):
     версии, итог, области, штрафы."""
     s = r["score"]
     scores = r.get("scores") or [s["score"]]
-    med = r.get("median", s["score"])
+    med = r.get("mean", s["score"])
     spread = f"{len(scores)} ({min(scores):.0f}–{max(scores):.0f})" if len(scores) > 1 else "1"
     # Попытки по прогонам: «1/1/2» — третий перевод принят со второго захода.
     tries = "/".join(str(x.get("attempts", 1)) for x in (r.get("runs") or [r]))
@@ -410,10 +410,11 @@ def judges(args, models, translator):
     return out, dropped
 
 
-def median(xs):
-    xs = sorted(xs)
-    n = len(xs)
-    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+def mean(xs):
+    """Итог серии — среднее, а не медиана. Книга из тридцати кусков выйдет
+    средней по качеству, и каждая провальная глава в ней останется; медиана
+    трёх прогонов худший выбрасывает целиком, а с ним и ноль за срыв модели."""
+    return round(sum(xs) / len(xs), 1)
 
 
 def _file_log(path):
@@ -568,7 +569,7 @@ def _slim(r):
 
 
 def run(args, log):
-    """Весь бенчмарк: рабочая папка, N прогонов перевода и суда, медиана,
+    """Весь бенчмарк: рабочая папка, N прогонов перевода и суда, среднее,
     отчёт. Прогоны идут разом, каждый пишет свой лог в своей папке."""
     T = lang.T
     bench = load_set(args.bench if args.bench != "-" else None)
@@ -628,10 +629,10 @@ def run(args, log):
         sys.exit(T("bench_unfinished"))
 
     scores = [r["score"]["score"] for r in done]
-    med = median(scores)
-    # Разбивка по областям и провалы — у прогона, ближайшего к медиане.
+    med = mean(scores)
+    # Разбивка по областям и провалы — у прогона, ближайшего к среднему.
     mid = min(done, key=lambda r: (abs(r["score"]["score"] - med), -r["score"]["score"]))
-    final = dict(mid, runs=[_slim(r) for r in done], median=med,
+    final = dict(mid, runs=[_slim(r) for r in done], mean=med,
                  scores=scores, work=work,
                  date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
     md = report_md(final, args.ui)
