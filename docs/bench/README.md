@@ -9,9 +9,9 @@ No book is needed: the text ships in the package. Required: the target
 language (`--to`) and the translator (`--translator`). The default judge is
 `codex:gpt-6-sol:medium`, the backup `claude:claude-opus-5-5:medium`;
 another is set with `--judge`. The text is translated and judged three times
-(`--bench-runs`) and the mean is reported, not the median: a book of thirty
-chunks comes out average in quality with its failed chapter still in it,
-whereas the median would throw the worst run away. A run in which the model itself
+(`--bench-runs`) and the mean is reported, not the median: the median throws
+the worst run away, even a zero, while in a whole book the failed chapter
+stays where it is. A run in which the model itself
 produced no translation (hit the output limit, kept cutting the reply off,
 answered malformed) counts as zero; a run broken by the router or a rate
 limit does not count and is redone on a repeated launch into the same
