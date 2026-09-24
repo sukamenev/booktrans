@@ -711,28 +711,21 @@ reversible. That is where a cheaper model is worth trying first.
 booktrans --bench --to ru --translator claude:claude-sonnet-5:high
 ```
 
-No book needed. The pipeline translates a built-in short story (about 3,100
-words, one chunk) laden with 107 planted traps in thirteen areas, weighted 4, 2 or 1 by what the
-reader loses — accuracy, completeness, calques, rare vocabulary, imagery,
-verse and puns, consistency of names and repeated phrases, gender revealed
-late, sound-based transliteration of names like Cholmondeley and Siobhan,
-target-language norm and punctuation, adaptation of measures, money and
-realia, footnotes, register — and a judge model (GPT-6 Sol by default, `--judge` to change)
-answers ok/fail on every trap against an answer key. GPT-6 Sol is the default
-because it is the stricter judge and follows the key most closely; Opus 5.5
-scores the same translations about 8 points higher on average (3 to 15),
-passing calques and softened register that the key forbids. Scores from
-different judges are not comparable. The text is translated and judged three
-times and the mean is reported. The score, 0 to 100, is
-computed by code, not by the judge; additions, untranslated fragments,
-broken structure and foreign scripts are penalised. Only the translator is
-measured: no scouting (its reference would be a cheat sheet) and no editor.
+No book needed. The pipeline translates a built-in short story of about
+3,100 words laden with 107 planted traps in thirteen areas — accuracy, calques,
+verse, gender, names, punctuation, adaptation of measures and realia, register
+and more, weighted 4, 2 or 1 by what the reader loses — and a judge model
+answers ok/fail on every trap against an answer key. The score, 0 to 100, is
+computed by code from the verdicts and the penalties for additions,
+omissions, untranslated fragments and broken structure. Only the translator
+is measured: no scouting and no editor. The judge by default is GPT-6 Sol,
+the stricter one; Opus 5.5 scores the same translations about 8 points
+higher on average and is the backup. Scores of different judges or test
+versions are not comparable.
 
-The result is a work directory `benchmark-en-ru-<provider-model-effort>-<stamp>.work`
-with the translation to read, and a Markdown report next to it whose first
-line is the score. Compare only runs of the same test version and the same
-judge. Method, areas, key format and the results table:
-[docs/bench/README.md](docs/bench/README.md),
+Method, areas, key format, judge selection and the results table:
+[docs/bench/README.md](docs/bench/README.md) (Russian:
+[docs/bench/README.ru.md](docs/bench/README.ru.md)),
 [docs/bench/results-en-ru.md](docs/bench/results-en-ru.md).
 
 ## What goes into the book

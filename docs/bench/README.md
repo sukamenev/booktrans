@@ -1,117 +1,121 @@
-# Бенчмарк перевода
+# Translation benchmark
 
-Одна модель, один текст, нашпигованный ловушками, судья с ключом ответов и
-балл от 0 до 100, который считает код. Отвечает на вопрос «насколько хорошо
-эта модель переводит художественную прозу с английского на язык X» — так,
-чтобы два прогона одной модели давали близкие числа, а числа разных моделей
-можно было ставить рядом.
+One model, one text laden with traps, a judge with an answer key, and a
+score from 0 to 100 computed by code. It answers the question "how well does
+this model translate literary prose from English into language X" — so that
+two runs of one model give close numbers and the numbers of different models
+can be put side by side.
 
     booktrans --bench --to ru --translator claude:claude-sonnet-5:medium
 
-Книга не нужна: текст в пакете. Нужен только язык перевода (`--to`) и
-переводчик (`--translator`; без него — модель агента по умолчанию). Судья
-по умолчанию — `claude:claude-opus-5-5:medium`, запасной
-`codex:gpt-5.6-sol:medium`; другого называют ключом `--judge`. Текст
-переводится и судится **три раза** (`--bench-runs`), в отчёт идёт среднее:
-у средних моделей два перевода одного текста расходятся на 10–20 баллов,
-у сильных на 3–7, и один прогон их не ранжирует. Среднее, а не медиана:
-книга из тридцати кусков выйдет средней по качеству, и провальная глава в
-ней останется, а медиана трёх прогонов худший выбрасывает целиком — вместе с
-нулём за срыв модели.
+No book is needed: the text ships inside the package. Only the target
+language (`--to`) and the translator (`--translator`; without it, the
+agent's default model) are required. The default judge is
+`codex:gpt-6-sol:medium`, the backup `claude:claude-opus-5-5:medium`; name
+another with `--judge`. The text is translated and judged **three times**
+(`--bench-runs`) and the mean goes into the report: two translations of the
+same text by a mid-range model differ by 10–20 points, by a strong one by
+3–7, and a single run does not rank them. The mean rather than the median: a
+book of thirty chunks comes out average in quality, and its failed chapter
+stays in it, whereas the median of three runs throws the worst one away —
+together with a zero for a model that broke down.
 
-Прогон, в котором модель так и не выдала перевод, засчитывается нулём, если
-сорвалась сама модель: все попытки упёрлись в предел вывода (зациклилась),
-обрывали ответ на одном месте или приходили не по форме. Если хоть одну
-попытку сорвала связь — роутер уронил поток, вернул ошибку сервиса или лимит, —
-прогон не в счёт: вина не модели. Повторный запуск в ту же папку такой
-прогон переводит заново, а нулевой оставляет.
+A run in which the model never produced a translation counts as zero if the
+model itself broke: every attempt hit the output limit (it looped), cut the
+reply off at the same place, or came back malformed. If even one attempt was
+broken by the connection — the router dropped the stream, returned a service
+error or a rate limit — the run does not count: not the model's fault. A
+repeated launch into the same directory redoes such a run and keeps the zero.
 
-## Что меряется
+## What is measured
 
-Только переводчик. Разведки нет намеренно: её справочник фиксирует решения
-об именах, роде и терминах — ровно то, что тест проверяет, и готовый
-справочник был бы шпаргалкой. Редактора и сверщика нет тоже: редактура у
-конвейера слепая (без оригинала) и заслуживает отдельного бенчмарка.
-Перевод идёт штатным проходом конвейера — те же промпты, тот же разбор
-ответа, тот же файл куска, что у настоящей книги, — поэтому результат
-описывает модель в реальных условиях конвейера, а не в чате.
+Only the translator. There is no scouting on purpose: its reference fixes
+the decisions on names, gender and terms — exactly what the test checks —
+and a ready reference would be a cheat sheet. No editor or verifier either:
+the pipeline's editing is blind (without the source) and deserves a benchmark
+of its own. The translation goes through the regular pipeline pass — the
+same prompts, the same reply parsing, the same chunk file as for a real book
+— so the result describes the model under real pipeline conditions, not in a
+chat.
 
-## Текст
+## The text
 
-Рассказ на 66 абзацев и четверостишие в эпиграфе, около 3100 слов — ровно
-один кусок конвейера. Основа — рассказ О. Генри «The Skylight Room»
-(1906, общественное достояние), переработанный: время перенесено в наши дни,
-устаревшие обороты заменены, название и имена изменены, финал переписан.
-Сюжет сохранён — это цельная история, а не набор фраз.
+A story of 66 paragraphs and a four-line epigraph, about 3,100 words —
+exactly one pipeline chunk. Based on O. Henry's "The Skylight Room" (1906,
+public domain), reworked: moved to the present day, dated phrasing replaced,
+title and names changed, ending rewritten. The plot is kept — it is a whole
+story, not a set of sentences.
 
-В текст посажено 107 ловушек по тринадцати областям. У каждой вес: 4 —
-читателя обманули (смысл, пол персонажа, стих), 2 — читатель спотыкается
-(калька, регистр, имя, норма языка, адаптация, словарь), 1 — заметит
-знаток (образ, согласованность, сноска, полнота). Максимум ключа — 250
-очков, итог нормируется к 100. Каждая ловушка описана в ключе судьи: где
-она, что считается верным и что — провалом, с примерами.
+The text carries 107 planted traps in thirteen areas. Each has a weight: 4 —
+the reader is misled (meaning, a character's gender, verse), 2 — the reader
+stumbles (a calque, register, a name, language norm, adaptation,
+vocabulary), 1 — a connoisseur notices (imagery, consistency, a footnote,
+completeness). The key's maximum is 250 points; the score is normalised to
+100. Every trap is described in the judge's key: where it is, what counts as
+correct and what as a fail, with examples.
 
-| Область | Очки | Что проверяется |
+| Area | Points | What is checked |
 |---|---|---|
-| Точность смысла | 68 | искажения, ложные друзья, «would» привычки, «couldn't care less», «hardly», «the former / the latter», числа и приблизительность |
-| Полнота | 4 | плотные перечисления, мелкие уточнители («a little more», «roughly») |
-| Отсутствие калек | 30 | «ты в порядке?», «имеет смысл», пассив, «there was talk of», «why, there's…», «a beat late», местоимения |
-| Словарь и идиомы | 20 | редкие книжные слова, астрономические и медицинские термины, фразовые глаголы, идиомы по смыслу |
-| Образность и стиль | 10 | образы без нагромождений, ритм эпитетов, цепочки «и… и… и», серия иронических скобок, перекличка с названием |
-| Стихи и игра слов | 28 | четверостишие размером и рифмой, каламбуры, «гамма — альфа» как оценка |
-| Согласованность | 6 | повторяющаяся реплика, термин, прозвища, эхо эпитетов, три значения «fair» |
-| Пол и обращения | 24 | пол персонажа, раскрытый позже его первых реплик; согласование с человеком, а не с родом прозвища; ты/вы постоянны |
-| Имена и клички | 14 | транслитерация по звучанию (Cholmondeley, Siobhan, Leigh, Beauchamp, Waugh, Worcester), инициал под полное имя, клички по смыслу |
-| Норма языка и пунктуация | 14 | оформление диалога, курсив, орфография, запятые у придаточных и оборотов, вводные слова, числа в диалоге словами |
-| Адаптация | 20 | футы, фунты, °F, кварты — с точностью автора; идиомы без пересчёта; деньги и монеты; этажи; школа и колледж; время и дата; обращения и адрес |
-| Сноски | 4 | есть к мифологии, Дню труда и реалиям Нью-Йорка |
-| Регистр и откровенность | 8 | ругательства не смягчены, телесные детали не выброшены |
+| Accuracy of meaning | 68 | distortions, false friends, habitual "would", "couldn't care less", "hardly", "the former / the latter", numbers and hedges |
+| Completeness | 4 | dense enumerations, small qualifiers ("a little more", "roughly") |
+| Freedom from calques | 30 | "are you okay?", "makes sense", passives, "there was talk of", "why, there's…", "a beat late", pronoun overload |
+| Vocabulary and idioms | 20 | rare bookish words, astronomical and medical terms, phrasal verbs, idioms by sense |
+| Imagery and style | 10 | images without pile-up, the rhythm of epithets, "and… and… and" chains, a series of ironic parentheses, the echo of the title |
+| Verse and wordplay | 28 | the quatrain in metre and rhyme, puns, "gamma — alpha" as a school mark |
+| Consistency | 6 | the repeated line, the term, nicknames, the echo of epithets, three senses of "fair" |
+| Gender and address | 24 | a character's gender revealed after her first lines; agreement with the person, not with the gender of a nickname; formal/informal "you" kept |
+| Names and nicknames | 14 | transliteration by sound (Cholmondeley, Siobhan, Leigh, Beauchamp, Waugh, Worcester), an initial matching the full name, nicknames by sense |
+| Target-language norm and punctuation | 14 | dialogue layout, italics, spelling, commas at subordinate clauses and phrases, introductory words, numbers in dialogue as words |
+| Adaptation | 20 | feet, pounds, °F, quarts — with the author's precision; idioms not converted; money and coins; floors; school and college; time and date; forms of address and the street address |
+| Footnotes | 4 | present for mythology, Labor Day and New York realia |
+| Register and frankness | 8 | swearing not softened, bodily details not dropped |
 
-Штрафы сверх ключа, в тех же очках: отсебятина — факт, действие или оценка,
-которых нет в оригинале (−2 за оборот, −8 если меняет происходящее, потолок
-−32; усиленный эпитет или слово, развёрнутое в два, отсебятиной не
-считается); пропуск — потерянное слово или оборот со смыслом (−2) или
-предложение и больше (−8), потолок −126, половина максимума: перевод, из
-которого выкинута половина, не стоит почти столько же, сколько полный;
-непереведённый фрагмент (−4, потолок −20); лишняя сноска — к теме вне белого
-списка ключа (−2, потолок −12); порча структуры — потерянный абзац,
-разошедшиеся теги (−8, потолок −38); чужая письменность — буквы не исходного
-и не целевого языка (−4 за блок, потолок −20); лишние попытки — каждый
-повторный запрос, который понадобился конвейеру, чтобы получить ответ по
-форме (−8, потолок −126). Один изъян наказывается один раз: провалившее
-точку ключа штрафом не отмечается. Последние три штрафа считает код, не
-судья.
+Penalties beyond the key, in the same points: additions — a fact, action or
+judgement absent from the source (−2 per phrase, −8 if it changes what
+happens, cap −32; an amplified epithet or one word unpacked into two is not
+an addition); omissions — a lost word or phrase with a sense of its own (−2)
+or a sentence and more (−8), cap −126, half the maximum: a translation with
+half the text thrown out must not score near a full one; an untranslated
+fragment (−4, cap −20); a needless footnote — on a subject outside the key's
+whitelist (−2, cap −12); broken structure — a lost paragraph, mismatched
+tags (−8, cap −38); a foreign script — letters of neither the source nor the
+target language (−4 per block, cap −20); extra attempts — every repeated
+request the pipeline needed to get a well-formed reply (−8, cap −126). One
+flaw is punished once: what already failed a check is not penalised again.
+The last three penalties are counted by code, not by the judge.
 
-Ругательства в тексте средней тяжести, нагота — без сексуальных сцен: тест
-меряет перевод, а не готовность модели переводить. Набор с жёстким
-контентом для проверки цензуры планируется отдельным.
+The swearing in the text is moderate and the nudity has no sexual scenes: the
+test measures translation, not a model's willingness to translate. A set with
+hard content, to test censorship, is planned separately.
 
-## Судья
+## The judge
 
-Судья получает оригинал и перевод блок за блоком, сноски переводчика,
-правила целевого языка (те же, что даны переводчику) и ключ. По каждой из
-107 точек он отвечает `ok` или `fail` с причиной; сверх ключа отмечает
-отсебятину, пропуски, непереведённое и лишние сноски. Балл он не ставит —
-балл считает код:
+The judge receives the source and the translation block by block, the
+translator's footnotes, the target-language rules (the same ones the
+translator got) and the key. On each of the 107 checks it answers `ok` or
+`fail` with a reason; beyond the key it marks additions, omissions,
+untranslated fragments and needless footnotes. It gives no score — the code
+does:
 
-    балл области = сумма очков пройденных точек
-    сырой итог   = сумма областей − штрафы
-    результат    = 100 × max(0, сырой итог) / максимум ключа
+    area score = sum of the points of the passed checks
+    raw total  = sum of the areas − penalties
+    result     = 100 × max(0, raw total) / key maximum
 
-Судья одной семьи с переводчиком допущен: на проверке 1.4.0 самосуд себе
-не льстил — GPT-6 Sol поставил своему переводу меньше, чем ему дал Opus, — а
-вычёркивать его значило бы отдавать целую семью моделей запасному судье с
-другой шкалой (Opus щедрее GPT-6 Sol на 5–10 баллов по всем моделям). Один
-судья на всех важнее. `--self-edit never` возвращает запрет, `--self-edit
-last` ставит судью своей семьи последним в цепочке; в колонке judge судья
-виден всегда.
+A judge of the translator's own family is allowed: in the 1.4.0 validation
+self-judging did not flatter — GPT-6 Sol gave its own translation less than
+Opus gave it — while striking it out would hand a whole family of models to
+the backup judge with a different scale (Opus is 5–10 points more generous
+than GPT-6 Sol across all models). One judge for everyone matters more.
+`--self-edit never` restores the ban, `--self-edit last` puts the same-family
+judge last in the chain; the judge column always shows who judged.
 
-`--judge none` только переводит: когда лимиты судей кончились, переводы
-можно сделать заранее, а осудить потом тем же запуском с судьёй и `-w` в
-ту же рабочую папку — готовые переводы второй раз не оплачиваются.
+`--judge none` only translates: when the judges' limits are exhausted, the
+translations can be made in advance and judged later with the same command
+plus a judge and `-w` into the same work directory — ready translations are
+not paid for twice.
 
-Локальная модель подключается так же, как роутер: llama.cpp, Ollama,
-LM Studio и vLLM отвечают по протоколу OpenAI.
+A local model connects like a router: llama.cpp, Ollama, LM Studio and vLLM
+speak the OpenAI protocol.
 
 ```bash
 export OPENAI_BASE_URL=http://localhost:11434/v1   # Ollama
@@ -119,142 +123,151 @@ export OPENAI_API_KEY=local
 booktrans --bench --to ru --translator openai:qwen3.8:27b:medium --judge none
 ```
 
-Двоеточие в имени модели Ollama разбору не мешает: последнее слово — усилие,
-первое — агент, всё между ними — модель. Окно контекста сервера нужно не меньше
-64 тыс. токенов (у Ollama — `OLLAMA_CONTEXT_LENGTH=65536`, у llama.cpp —
-`-c 65536`): кусок с промптом занимает около 20 тыс., и ещё столько же уходит
-на перевод с рассуждениями.
+A colon inside an Ollama model name does not confuse the parser: the last
+word is the effort, the first the agent, everything between is the model.
+The server's context window must be at least 64k tokens (Ollama:
+`OLLAMA_CONTEXT_LENGTH=65536`, llama.cpp: `-c 65536`): the chunk with its
+prompt takes about 20k, and as much again goes to the translation with its
+reasoning.
 
-У моделей, которые идут по сети (`openai`, `openrouter`), в отчёт и таблицу
-пишется ещё и адрес точки: `openai@router.bynara.id:glm-5.3:medium`. Одна
-модель у двух роутеров — два разных замера: роутер не обязан отдавать
-названную модель.
+For models reached over the network (`openai`, `openrouter`) the report and
+the table also record the endpoint: `openai@router.bynara.id:glm-5.3:medium`.
+One model at two routers is two different measurements: a router is not
+bound to serve the model it was asked for.
 
-Ответ судьи — строки строгого вида; точка без вердикта возвращает запрос на
-доработку с перечислением пропущенных. Один запрос покрывает все точки;
-если какая-то модель-судья не справится за один ответ, повтор попросит
-только недостающее.
+The judge's reply is lines of a strict form; a check without a verdict sends
+the request back with the missing ones listed. One request covers all the
+checks; if a judge model cannot manage in one reply, the retry asks only for
+what is missing.
 
-## Что получается
+## What comes out
 
-Рабочая папка `benchmark-en-ru-<провайдер-модель-усилие>-<дата_время>.work`
-в текущем каталоге, внутри — по папке на прогон (`run1`, `run2`, `run3`) с
-обычным устройством конвейера: `book.json`, `ru/tr/0001.json` с переводом
-(его стоит прочитать глазами — счёт льстит осторожному переводчику и
-штрафует смелого), `ru/bench.json` с вердиктами и `bench.log` с ходом
-прогона; прогоны идут одновременно. В корне — сводный `bench.json`. Рядом —
-отчёт `benchmark-en-ru-<…>.md`: первая строка — среднее, дальше версия
-теста и конвейера, провайдер, модель и усилие переводчика, судья, таблица
-прогонов (балл, штрафы, провалы, попытки, деньги, минуты), затем области,
-проваленные точки с причинами и штрафы прогона, ближайшего к среднему, и
-готовая строка для таблицы результатов. Язык отчёта — `--ui`.
+A work directory `benchmark-en-ru-<provider-model-effort>-<date_time>.work`
+in the current directory, with a directory per run (`run1`, `run2`, `run3`)
+laid out like any pipeline run: `book.json`, `ru/tr/0001.json` with the
+translation (worth reading with your own eyes — the score flatters a cautious
+translator and penalises a bold one), `ru/bench.json` with the verdicts and
+`bench.log` with the run's progress; the runs go in parallel. At the root a
+summary `bench.json`. Next to it a report `benchmark-en-ru-<…>.md`: the first
+line is the mean, then the test and pipeline versions, the translator's
+provider, model and effort, the judge, a table of runs (score, penalties,
+fails, attempts, money, minutes), then the areas, the failed checks with
+reasons and the penalties of the run nearest the mean, and a ready row for
+the results table. The report's language is `--ui`.
 
-Сравнивать можно только результаты одной версии бенчмарка и одного судьи.
-Версия бенчмарка — в ключе (`booktrans-bench-key 1.3`) и в отчёте, три
-числа X.Y.Z. Z растёт, когда уточнена формулировка, а вердикты не
-меняются: результаты сравнимы. Y — когда изменились текст или ловушки:
-нужны новые прогоны. X — когда меняется сам счёт: области, шкала,
-штрафы. Судья тоже не безошибочен: Opus и
-Sonnet на одном переводе расходятся в 4–7 точках из ста, причём в обе
-стороны, а один и тот же судья на повторе — в одной. Разница в два-три
-балла между моделями поэтому ничего не значит. Результаты замеров собираются в
-[results-en-ru.md](results-en-ru.md); строка добавляется руками из отчёта.
+Only results of one benchmark version and one judge are comparable. The
+benchmark version is in the key (`booktrans-bench-key 1.4.0`) and in the
+report, three numbers X.Y.Z. Z grows when a wording is clarified and the
+verdicts do not change: results stay comparable. Y — when the text or the
+checks changed: new runs are needed. X — when the scoring itself changes:
+areas, scale, penalties. The judge is not infallible either: the same judge
+on a repeat of the same translation disagrees with itself on 4 checks in a
+hundred (Opus 5.5) or 7 (Sol 5.6), and two different judges on 10–16 checks
+of 107. A difference of two or three points between models therefore means
+nothing, and the scores of different judges are not comparable: Opus 5.5 is
+more generous than GPT-6 Sol by 8 points on average (3 to 15), because it
+passes calques and softened register that the key forbids; GPT-6 Sol is the
+default as the judge that follows the key most closely. Measurements are
+collected in [results-en-ru.md](results-en-ru.md); a row is added by hand
+from the report.
 
-## Статистика ловушек
+## Check statistics
 
 ```bash
-booktrans --bench-stats            # версия встроенного ключа
-booktrans --bench-stats 1.4.0,1.4.1  # несколько версий разом
-booktrans --bench-stats 1.4.         # вся ветка 1.4: 1.4.0, 1.4.1…
+booktrans --bench-stats              # the built-in key's version
+booktrans --bench-stats 1.4.0,1.4.1  # several versions at once
+booktrans --bench-stats 1.4.         # the whole 1.4 branch: 1.4.0, 1.4.1…
 ```
 
-Обходит готовые прогоны `benchmark-*.work` в текущей папке (или в `-w`) и
-для каждой ловушки печатает, какая доля моделей и какая доля прогонов её
-прошла. Модель — один переводчик с усилием и точкой; вес у моделей равный,
-так что серия из пяти прогонов не перетягивает серию из трёх. Сводка серии
-повторяет вердикты одного из своих прогонов и в счёт не идёт, как и прогон,
-где сломалась модель. Версия сравнивается точно; точка на конце берёт всю
-ветку: `1.4.` — это все 1.4.N (третье число меняет только формулировки,
-вердикты те же). Звёздочки нет: zsh на `1.4.*` без подходящих файлов
-падает, а точку не трогает ни один шелл. Ловушки, которые проходят 95 %
-моделей и больше, помечены ◆ — они почти никого не отсеивают, и их стоит заменить
-в следующей версии ключа.
+Walks the finished runs `benchmark-*.work` in the current directory (or in
+`-w`) and prints, for every check, the share of models and the share of runs
+that passed it. A model is one translator with its effort and endpoint; all
+models weigh the same, so a series of five runs does not outweigh a series
+of three. A series summary repeats the verdicts of one of its runs and is not
+counted, nor is a run where the model broke. The version is matched exactly;
+a trailing dot takes the whole branch: `1.4.` is every 1.4.N (the third
+number changes only wordings, the verdicts are the same). No asterisk: zsh
+fails on `1.4.*` when no file matches, and no shell touches a dot. Checks
+that 95 % of models or more pass are marked ◆ — they hardly separate anyone
+and should be replaced in the next version of the key.
 
-## Свой набор
+## Your own set
 
-`--bench ПАПКА` берёт набор из папки с `text.fb2` и `key.txt` вместо
-встроенного. Формат ключа:
+`--bench DIR` takes the set from a directory with `text.fb2` and `key.txt`
+instead of the built-in one. Key format:
 
 ```
-booktrans-bench-key 1.3
+booktrans-bench-key 1.4.0
 source en
-title Название
+title Title
 
-[areas]        # код и название; максимум области — сумма весов её точек
+[areas]        # code and name; an area's maximum is the sum of its checks' weights
 acc Accuracy of meaning
 …
 
-[checks]       # id  область  вес  блоки :: требование и критерий провала
-A01 acc 1 b0033,b0034 :: что проверяется и что считается провалом
+[checks]       # id  area  weight  blocks :: requirement and fail criterion
+A03 acc 4 b0037 :: what is checked and what counts as a fail
 …
 
-[penalties]    # код  кто считает  за случай  потолок :: что считается одним случаем
-ADD-minor  judge  1  12 :: a word or phrase with no counterpart in the source …
-ADD-major  judge  3  12 :: an addition that changes what happens or who says what
-UNTR       judge  2   8 :: a source-language fragment left untranslated …
-OMIT-major judge  3  50 :: a sentence or more lost …
-FOOT       judge  1   5 :: a translator's footnote on a subject outside [notes] …
-STRUCT     code   3  15 :: a block lost or added, or markup tags that do not match
-SCRIPT     code   2   8 :: a block with characters of a foreign script
-RETRY      code   3  50 :: an extra request the pipeline needed …
+[penalties]    # code  who counts  per case  cap :: what counts as one case
+ADD-minor  judge  2  32 :: a word or phrase with no counterpart in the source …
+ADD-major  judge  8  32 :: an addition that changes what happens or who says what
+UNTR       judge  4  20 :: a source-language fragment left untranslated …
+OMIT-major judge  8 126 :: a sentence or more lost …
+FOOT       judge  2  12 :: a translator's footnote on a subject outside [notes] …
+STRUCT     code   8  38 :: a block lost or added, or markup tags that do not match
+SCRIPT     code   4  20 :: a block with characters of a foreign script
+RETRY      code   8 126 :: an extra request the pipeline needed …
 
-[notes]        # темы, к которым сноска переводчика допустима
+[notes]        # subjects a translator's footnote may cover
 Momus, the Greek god of mockery
 …
 ```
 
-Вес точки — сколько очков она приносит; цена и потолок штрафа — в тех же
-очках, так что штраф читается рядом с весом точки: «отсебятина-major 8 —
-как две проваленные точки веса 4». Максимум ключа — сумма весов, итог —
-набранное минус штрафы, нормированное к 100; отчёт показывает штрафы и в
-очках, и в баллах итога. Штрафы с пометкой `judge` уходят в промпт судьи
-прямо из этих строк, с пометкой `code` — считает программа, судья о них не
-знает.
+A check's weight is how many points it earns; a penalty's price and cap are
+in the same points, so a penalty reads against a check: "ADD-major 8 — two
+failed checks of weight 4". The key's maximum is the sum of the weights; the
+result is what was earned minus the penalties, normalised to 100; the report
+shows penalties both in points and in final-score terms. Penalties marked
+`judge` go into the judge's prompt straight from these lines; those marked
+`code` are counted by the program, and the judge never hears of them.
 
-Идентификаторы блоков — как их даёт разбор fb2 (`b0008`, диапазон
-`b0008-b0072`); сумма очков точек области обязана равняться объявленному
-максимуму, иначе ключ отвергается. Общая сумма очков не обязана быть
-круглой: итог нормируется к 100. Число точек ограничивает судья — весь
-ключ и весь текст он держит в одном запросе, и сколько точек он выдерживает,
-не теряя качества вердиктов, надо проверять опытом на каждом новом судье.
-Opus 5.5 и Sol 5.6 на ключах в 50, 100, 150 и 200 точек отвечают одинаково
-устойчиво: расхождение с сотней такое же, как между двумя повторами одной
-сотни (4 точки у Opus, 7 у Sol), пропущенных вердиктов нет. Ключ пишется по-английски и не зависит
-от языка перевода: примеры для русского судья переносит на другой язык по
-смыслу. Собрать набор в один файл пакета: `bench.pack(папка, en.bin)`.
+Block ids are those of the fb2 parse (`b0008`, range `b0008-b0072`); a check
+on a block the text does not have will not pack. The total of points need
+not be round: the score is normalised to 100. What bounds the number of
+checks is the judge — it holds the whole key and the whole text in one
+request, and how many checks it bears without losing verdict quality has to
+be measured on every new judge. Opus 5.5 and Sol 5.6 on keys of 50, 100, 150
+and 200 checks answer equally steadily: the disagreement with the hundred is
+the same as between two repeats of one hundred (4 checks for Opus, 7 for
+Sol), and no verdicts go missing. The key is written in English and does not
+depend on the target language: the judge carries the Russian examples over
+to another language by sense. Pack a set into one package file:
+`bench.pack(dir, en.bin)`.
 
-Штраф пропуска `OMIT` (minor — потерянное слово или оборот со смыслом,
-major — предложение и больше) судья ищет, только если ключ его объявляет:
-тогда правило о пропусках попадает в его промпт. Потолок у пропусков
-должен быть высоким: перевод, из которого выкинута половина, не может
-стоить почти столько же, сколько полный. Штраф лишней сноски `FOOT`
-работает от белого списка: раздел `[notes]` перечисляет темы, к которым
-сноска переводчика допустима, и судья штрафует сноску к любой другой теме.
-Белый список вместо чёрного, потому что «очевидное» у каждого своё: одному
-Фальстаф известен, другому нет, а перечень нужных и терпимых тем спора не
-вызывает. Штраф, которого нет в ключе, в счёт не идёт.
+The omission penalty `OMIT` (minor — a lost word or phrase with a sense of
+its own, major — a sentence and more) is looked for by the judge only when
+the key declares it: then the rule on omissions goes into its prompt. The cap
+on omissions must be high: a translation with half the text thrown out
+cannot score near a full one. The needless-footnote penalty `FOOT` works
+from a whitelist: the `[notes]` section lists the subjects a translator's
+footnote may cover, and the judge penalises a footnote on any other subject.
+A whitelist rather than a blacklist, because "obvious" differs from reader
+to reader: one knows Falstaff, another does not, while a list of needed and
+tolerated subjects raises no dispute. A penalty the key does not declare does
+not count.
 
-Правило составления ловушек: **одна точка — одно решение в одном-двух
-соседних блоках**. Точка на весь текст — только там, где проверяемое
-глобально по природе: согласованность имён, род, орфография. Лёгкие
-точки не склеиваются в одну ради экономии очков: судья, которому надо
-пройти пять мест в шести абзацах, проверяет первые и ставит «пройдено», а
-статистика перестаёт показывать, что именно провалено. Лёгкую точку —
-её проходят почти все модели (`--bench-stats`) — заменяют трудной, а
-полноту в целом держит штраф `OMIT`, а не ловушки на каждое предложение.
+The rule for writing checks: **one check — one decision in one or two
+neighbouring blocks**. A check over the whole text only where the thing is
+global by nature: consistency of names, gender, spelling. Easy checks are
+not merged into one to save points: a judge asked to visit five places in
+six paragraphs checks the first ones and says "passed", and the statistics
+stop showing what exactly failed. An easy check — one that almost every
+model passes (`--bench-stats`) — is replaced by a hard one, and completeness
+as a whole is kept by the `OMIT` penalty, not by a trap on every sentence.
 
-Встроенный набор лежит в пакете сжатым (`bench/en.bin`): репозиторий
-публичный, а открытый ключ ответов рано или поздно попал бы в обучающую
-выборку тех моделей, которые им меряют. Поэтому ни документация, ни тесты
-не цитируют текст, а отчёты содержат только адреса блоков и короткие
-цитаты из перевода.
+The built-in set is stored compressed in the package (`bench/en.bin`): the
+repository is public, and an open answer key would sooner or later end up in
+the training data of the very models it measures. That is why neither the
+documentation nor the tests quote the text, and the reports carry only block
+addresses and short quotations from the translation.
