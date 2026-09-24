@@ -17,6 +17,7 @@
 import argparse
 import concurrent.futures as cf
 import datetime
+import glob
 import json
 import os
 import re
@@ -651,3 +652,87 @@ def run(args, log):
     log("")
     log("  " + T("bench_saved", report, out_json))
     return 1 if errors else 0
+
+
+# ------------------------------------------------------------- статистика
+
+def _ver_ok(v, want):
+    """`1.4` берёт и 1.4, и 1.4.x: у правок третьей цифры вердикты те же."""
+    return any(v == w or v.startswith(w + ".") for w in want)
+
+
+def run_files(root="."):
+    """bench.json отдельных прогонов под root. Сводка серии (в ней `runs`)
+    повторяет вердикты одного из прогонов и в счёт не идёт, как и прогон,
+    где сломалась модель: его судья не видел."""
+    for f in sorted(glob.glob(os.path.join(root, "benchmark-*.work", "**", "bench.json"),
+                              recursive=True)):
+        try:
+            d = json.load(open(f, encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if "runs" in d or d.get("failed") or not d.get("verdicts"):
+            continue
+        yield f, d
+
+
+def stats(versions, root="."):
+    """Доля прохождения каждой точки ключа. Модель — одна серия (переводчик
+    с усилием и точкой), вес у всех серий равный: у кого прогонов больше,
+    тот долю не перетягивает. По языкам перевода — порознь."""
+    by_to = {}
+    for _, d in run_files(root):
+        k = d.get("key") or {}
+        v = k.get("version", "") if isinstance(k, dict) else str(k)
+        if not _ver_ok(v, versions):
+            continue
+        g = by_to.setdefault(d.get("to", "?"), {"series": {}, "checks": {}, "runs": 0})
+        g["runs"] += 1
+        for c in k.get("checks", []) if isinstance(k, dict) else []:
+            g["checks"][c["id"]] = (c["area"], c["text"])
+        g["series"].setdefault(_spec(d["translator"]), []).append(d["verdicts"])
+    out = {}
+    for to, g in by_to.items():
+        rows = []
+        for cid in sorted({c for runs in g["series"].values() for v in runs for c in v}):
+            shares, hits, seen = [], 0, 0
+            for runs in g["series"].values():
+                got = [v[cid][0] for v in runs if cid in v]
+                if got:
+                    shares.append(sum(got) / len(got))
+                    hits += sum(got)
+                    seen += len(got)
+            area, text = g["checks"].get(cid, ("?", ""))
+            rows.append({"id": cid, "area": area, "text": text,
+                         "models": sum(shares) / len(shares), "runs": hits / seen,
+                         "series": len(shares)})
+        rows.sort(key=lambda r: (-r["models"], r["id"]))
+        out[to] = {"runs": g["runs"], "series": len(g["series"]), "rows": rows}
+    return out
+
+
+def run_stats(args, log):
+    """`--bench-stats [ВЕРСИИ]`: без версии — ветка X.Y встроенного ключа."""
+    spec = args.bench_stats
+    if spec == "-":
+        v = load_set(None)["key"]["version"]
+        spec = ".".join(v.split(".")[:2])
+    want = [w.strip() for w in spec.split(",") if w.strip()]
+    res = stats(want, args.work or ".")
+    if not res:
+        sys.exit(T("bench_stats_none", ", ".join(want), os.path.abspath(args.work or ".")))
+    easy = 0.95
+    for to, g in sorted(res.items()):
+        log("")
+        log("  " + T("bench_stats_head", to, ", ".join(want), g["runs"], g["series"]))
+        log("")
+        log("  | " + T("bench_stats_cols") + " |")
+        log("  |---|---|---:|---:|---:|---|")
+        for r in g["rows"]:
+            mark = " ◆" if r["models"] >= easy else ""
+            log(f"  | {r['id']} | {r['area']} | {r['models']:.0%}{mark} | {r['runs']:.0%} "
+                f"| {r['series']} | {r['text'][:90]} |")
+        n = sum(r["models"] >= easy for r in g["rows"])
+        log("")
+        log("  " + T("bench_stats_easy", n, f"{easy:.0%}"))
+    return 0

@@ -207,6 +207,8 @@ def parser(ui):
     ap.add_argument("--bench", nargs="?", const="-", metavar="DIR", help=T("h_bench"))
     ap.add_argument("--judge", help=T("h_judge"))
     ap.add_argument("--bench-runs", type=int, default=3, help=T("h_bench_runs"))
+    ap.add_argument("--bench-stats", nargs="?", const="-", metavar="VER",
+                    help=T("h_bench_stats"))
     ap.add_argument("--full-verify", action=argparse.BooleanOptionalAction,
                     default=True, help=T("h_full_verify"))
     ap.add_argument("--ocrmodel", help=T("h_ocrmodel"))
@@ -278,6 +280,9 @@ def main():
     if args.check:
         log(T("doc_head"))
         return 1 if doctor.check(log, args.agent) else 0
+    if args.bench_stats:
+        from . import bench
+        return bench.run_stats(args, log)
     if args.bench:
         from . import bench
         return bench.run(args, log)

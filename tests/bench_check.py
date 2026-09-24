@@ -7,6 +7,7 @@
 
     python3 tests/bench_check.py
 """
+import json
 import os
 import sys
 import tempfile
@@ -219,6 +220,37 @@ def main():
     ok("отчёт трёх прогонов: таблица прогонов и среднее",
        md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Mean 100.0 (from 0.0 to 100.0)" in md3,
        md3[:40])
+    # ---- статистика ловушек по готовым прогонам
+    d = tempfile.mkdtemp()
+    kk = {"version": "9.9.1", "checks": [{"id": "X1", "area": "a", "text": "first"},
+                                         {"id": "X2", "area": "a", "text": "second"}]}
+
+    def put(path, **kw):
+        os.makedirs(os.path.join(d, os.path.dirname(path)), exist_ok=True)
+        json.dump(dict({"key": kk, "to": "ru"}, **kw), open(os.path.join(d, path), "w"))
+    tr_a = {"provider": "p", "model": "a", "effort": "medium"}
+    tr_b = {"provider": "p", "model": "b", "effort": "medium"}
+    ok_ = lambda x1, x2: {"X1": [x1, ""], "X2": [x2, ""]}             # noqa: E731
+    put("benchmark-en-ru-a.work/run1/ru/bench.json", translator=tr_a, verdicts=ok_(True, True))
+    put("benchmark-en-ru-a.work/run2/ru/bench.json", translator=tr_a, verdicts=ok_(True, False))
+    put("benchmark-en-ru-a.work/run3/ru/bench.json", translator=tr_a, verdicts=ok_(True, False))
+    put("benchmark-en-ru-a.work/run4/ru/bench.json", translator=tr_a, verdicts={}, failed="model")
+    put("benchmark-en-ru-a.work/bench.json", translator=tr_a, verdicts=ok_(True, True), runs=[1])
+    put("benchmark-en-ru-b.work/ru/bench.json", translator=tr_b, verdicts=ok_(False, True))
+    put("benchmark-en-ru-c.work/ru/bench.json", translator=tr_b, verdicts=ok_(False, False),
+        key=dict(kk, version="9.8"))
+    st = B.stats(["9.9"], d)
+    rows = {r["id"]: r for r in st.get("ru", {}).get("rows", [])}
+    ok("статистика: сводка серии и сломанный прогон не в счёте, чужая версия тоже",
+       st.get("ru", {}).get("runs") == 4 and st["ru"]["series"] == 2, st.get("ru"))
+    ok("статистика: модели с равным весом, прогоны — поровну",
+       abs(rows["X2"]["models"] - (1 / 3 + 1) / 2) < 1e-9 and rows["X2"]["runs"] == 0.5
+       and rows["X1"]["models"] == 0.5 and rows["X1"]["runs"] == 0.75, rows)
+    ok("статистика: «9.9» берёт 9.9.1, но не 9.8 и не 9.90",
+       B._ver_ok("9.9.1", ["9.9"]) and not B._ver_ok("9.8", ["9.9"])
+       and not B._ver_ok("9.90", ["9.9"]))
+    ok("статистика: сначала самые лёгкие", [r["id"] for r in st["ru"]["rows"]] == ["X2", "X1"])
+
     lang.set_ui("ru")
 
     print(f"\n{'ВСЁ СОВПАДАЕТ' if not bad else f'РАСХОЖДЕНИЙ: {bad}'} ({seen} проверок)")

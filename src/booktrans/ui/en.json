@@ -367,11 +367,16 @@
  "oa_cut": "the answer stream ended with no finish reason after {} characters — the endpoint dropped the connection",
  "oa_empty": "no answer: all {} output tokens went into reasoning",
  "h_bench_runs": "how many times to translate and judge the benchmark text; the report carries the mean (default 3)",
+ "h_bench_stats": "pass rate of every check over finished benchmark runs in the current directory (or -w); VER is a key version or several, comma-separated, \"1.4\" also takes 1.4.x; without it, the version of the built-in key",
  "bench_run_translated": "{0}: translated in {1} min [{2}]",
  "bench_run_judged": "{0}: score {1}, failed {2}, penalty {3}",
  "bench_run_failed": "{0}: run not finished — {1}",
  "bench_r_runs": "Runs: {0}",
  "bench_r_mean": "Mean {0} (from {1} to {2}); areas and failed checks below are those of the run nearest the mean; directory {3}",
+ "bench_stats_head": "Checks, translation into {0}, key {1}: {2} runs, {3} models",
+ "bench_stats_cols": "Check | Area | Models passed | Runs passed | Models | What it checks",
+ "bench_stats_easy": "◆ — passed on average by {1} of models or more, {0} such checks: they hardly separate anyone",
+ "bench_stats_none": "No runs with key {0} in {1}",
  "bench_r_attempts": "Translation attempts before a well-formed reply: {0}",
  "bench_run_kept": "{0}: already judged, score {1} — kept"
 }
