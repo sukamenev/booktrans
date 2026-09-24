@@ -230,6 +230,10 @@ def main():
     ok("отчёт трёх прогонов: таблица прогонов и среднее",
        md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Mean 100.0 (from 0.0 to 100.0)" in md3,
        md3[:40])
+    ok("судья видит заголовки, разрывы — нет",
+       "TTL" in B.judge_prompt(k, [{"id": "s01.b0001", "kind": "title", "text": "TTL"}, {"id": "s01.b0002", "kind": "break", "text": "BRK"}], {}, [])
+       and "BRK" not in B.judge_prompt(k, [{"id": "s01.b0002", "kind": "break", "text": "BRK"}], {}, []))
+
     # ---- пропуски: штраф есть, только если ключ его объявляет
     RETRY = "RETRY code 3 50 :: an extra request\n"
     ko = B.parse_key(MINI_KEY.replace(RETRY, RETRY + "OMIT-minor judge 1 50 :: a word lost\nOMIT-major judge 3 50 :: a sentence lost\n"))

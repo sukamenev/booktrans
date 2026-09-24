@@ -257,7 +257,9 @@ def judge_prompt(key, blocks, tr, footnotes):
         notes.setdefault(n.get("block"), []).append(
             f"{n.get('term', '')} — {n.get('text', '')}".strip(" —"))
     for b in blocks:
-        if b["kind"] not in ("p", "verse"):
+        # Заголовки судье тоже нужны: точка о перекличке названия с текстом
+        # без названия не судится.
+        if b["kind"] not in ("p", "verse", "title"):
             continue
         lines += ["", f"<<<{b['id']}>>>", f"SRC: {b['text']}",
                   f"TRG: {tr.get(b['id'], '')}"]
