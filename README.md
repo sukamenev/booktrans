@@ -293,6 +293,12 @@ nothing to someone installing their first tool.
 | `de` | German | `fr` | French |
 | `es` | Spanish | `hi` | Hindi |
 
+A rules file may set `ellipsis: …` (or `...`) in its header: the build then
+sets every ellipsis in the book the same way, and `ellipsis_after_mark: ..`
+writes it as two dots after `?` and `!` («?..», «!..»), as Russian
+punctuation requires. Only the built book changes; translation layers stay
+as they were. Code and formulas are left alone.
+
 **Interface language** — the `--ui` key: `en` (the default) and `ru`. Messages
 live in `ui/CODE.json` with identical keys; anything missing from a
 translation is shown as the key.

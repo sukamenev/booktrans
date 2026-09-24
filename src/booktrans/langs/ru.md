@@ -3,6 +3,8 @@
 name: русский
 name_en: Russian
 code: ru
+ellipsis: …
+ellipsis_after_mark: ..
 
 ## Оформление
 

@@ -48,6 +48,34 @@ def lang_name(code, in_ru=True):
     return m.group(1).strip() if m else code
 
 
+def field(code, name):
+    """Поле шапки правил языка (`name`, `code`, `ellipsis`…); нет — пусто."""
+    m = re.search(rf"^{name}:\s*(.+)$", rules(code) or "", re.M)
+    return m.group(1).strip() if m else ""
+
+
+ELLIPSIS_KEEP = re.compile(r"(<code>.*?</code>|\$\$.*?\$\$|\$[^$\n]+\$|<[^>]+>)", re.S)
+
+
+def ellipsis(text, glyph, after_mark=""):
+    """Многоточия к одному виду на всю книгу. Модель копирует то, что стоит в
+    оригинале, а там три точки и «…» вперемешку, и в переводе выходит
+    разнобой на соседних страницах. `glyph` — как набирать многоточие
+    (`…` или `...`), `after_mark` — как оно пишется после «?» и «!» (в
+    русском — две точки: «?..», «!..»). Код и формулы не трогаются."""
+    if not glyph:
+        return text
+
+    def fix(s):
+        if after_mark:
+            s = re.sub(r"([?!])(?:\.{3}|…)", lambda m: m.group(1) + after_mark, s)
+        if glyph == "...":
+            return s.replace("…", "...")
+        return re.sub(r"(?<![.?!])\.{3}(?!\.)", glyph, s)
+    parts = ELLIPSIS_KEEP.split(text)
+    return "".join(p if i % 2 else fix(p) for i, p in enumerate(parts))
+
+
 # Какой письменностью пишет язык. Нужно, чтобы искать в переводе остатки
 # оригинала: при переводе с русского на немецкий латиница — это норма,
 # а при переводе на русский — недоработка.

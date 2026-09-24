@@ -509,9 +509,23 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     code = meta.get("target_lang", "ru")
     st = lang.book_strings(code)
 
+    # Многоточия — к одному виду, если правила языка его задают. Правится
+    # только собранная книга: слои перевода и правок лежат как были.
+    glyph = lang.field(code, "ellipsis")
+    if glyph:
+        mark = lang.field(code, "ellipsis_after_mark")
+        keep = {b["id"] for b in blocks if b.get("asis")}
+        for k in tr:
+            if k not in keep:
+                tr[k] = lang.ellipsis(tr[k], glyph, mark)
+
     order = {b["id"]: i for i, b in enumerate(blocks)}
     notes = all_notes(work, order, to)
     notes = {k: v for k, v in notes.items() if k in tr}
+    if glyph:
+        for v in notes.values():
+            if isinstance(v, dict) and isinstance(v.get("text"), str):
+                v["text"] = lang.ellipsis(v["text"], glyph, mark)
     # Сноска сверки говорит от имени редактора: подпись курсивом в конце, как
     # принято в книгах. Переводческий префикс ей не нужен — флаг source_only
     # у всех писателей значит ровно «префикс не ставить».

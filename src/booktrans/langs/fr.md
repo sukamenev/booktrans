@@ -3,6 +3,7 @@
 name: французский
 name_en: French
 code: fr
+ellipsis: …
 
 ## Typographie
 - Guillemets français « avec espaces insécables », imbriqués “doubles anglais”.

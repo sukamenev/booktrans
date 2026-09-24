@@ -3,6 +3,7 @@
 name: немецкий
 name_en: German
 code: de
+ellipsis: …
 
 ## Typografie
 - Anführungszeichen: „doppelt unten-oben“, innen ‚einfach‘.

@@ -3,6 +3,7 @@
 name: испанский
 name_en: Spanish
 code: es
+ellipsis: …
 
 ## Variedad
 - Español neutro y culto por defecto: sin voseo, sin localismos de una sola
