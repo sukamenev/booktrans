@@ -50,7 +50,12 @@ def pack(src_dir, out):
     """Собрать набор из папки с text.fb2 и key.txt в один сжатый файл."""
     data = {n: open(os.path.join(src_dir, n), encoding="utf-8").read()
             for n in (TEXT, KEY)}
-    parse_key(data[KEY])                    # битый ключ не упаковываем
+    key = parse_key(data[KEY])              # битый ключ не упаковываем
+    from . import extract
+    _, blocks, _, _ = extract.read_book(os.path.join(src_dir, TEXT))
+    far = penalty_max_index(key)
+    if far > len(blocks):                   # ключ ссылается на блок, которого нет в тексте
+        raise ValueError(f"key refers to b{far:04d}, text has {len(blocks)} blocks")
     blob = zlib.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"), 9)
     with open(out, "wb") as f:
         f.write(blob)
@@ -97,18 +102,22 @@ def _blocks_of(s):
     return out
 
 
+PENALTY_LINE = re.compile(r"^(\S+)\s+(judge|code)\s+(\d+)\s+(\d+)\s+::\s+(.+)$")
+
+
 def parse_key(text):
-    """Ключ судьи: области, штрафы, контрольные точки. Суммы очков точек
-    по областям обязаны сходиться с объявленными максимумами: ключ пишется
-    руками, и расхождение здесь — ошибка ключа, а не судьи. Общая сумма —
-    любая: итог нормируется к 100, а число точек держит в узде судья, не
-    арифметика."""
+    """Ключ судьи: области, точки с весами, штрафы, темы сносок.
+
+    Максимум области — сумма весов её точек, максимум ключа — сумма по всем:
+    ничего не объявляется дважды. Штраф описан в ключе целиком — кто его
+    считает (судья или код), цена случая и потолок в баллах итога из 100,
+    что считается одним случаем; из этих строк собирается промпт судьи."""
     lines = text.splitlines()
     if not lines or not lines[0].startswith("booktrans-bench-key "):
         raise ValueError("not a booktrans bench key")
     key = {"version": lines[0].split()[1], "source": "", "title": "",
            "areas": [], "penalties": {}, "checks": [], "notes": []}
-    sec = None
+    names, sec = [], None
     for raw in lines[1:]:
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -122,11 +131,16 @@ def parse_key(text):
                 key[k] = v.strip()
             continue
         if sec == "areas":
-            code, pts, name = line.split(None, 2)
-            key["areas"].append((code, int(pts), name))
+            code, _, name = line.partition(" ")
+            if not name.strip() or name.split()[0].isdigit():
+                raise ValueError(f"area {code}: `code name` expected; the maximum is derived from the checks")
+            names.append((code, name.strip()))
         elif sec == "penalties":
-            code, per, cap = line.split()
-            key["penalties"][code] = (int(per), int(cap))
+            m = PENALTY_LINE.match(line)
+            if not m:
+                raise ValueError(f"bad penalty line: {line[:40]}")
+            code, who, per, cap, what = m.groups()
+            key["penalties"][code] = {"who": who, "per": int(per), "cap": int(cap), "text": what}
         elif sec == "notes":                     # темы, к которым сноска допустима
             key["notes"].append(line)
         elif sec == "checks":
@@ -134,25 +148,28 @@ def parse_key(text):
             if not m:
                 raise ValueError(f"bad check line: {line[:40]}")
             cid, area, pts, blocks, want = m.groups()
+            if int(pts) < 1:
+                raise ValueError(f"check {cid}: weight must be 1 or more")
             key["checks"].append({"id": cid, "area": area, "points": int(pts),
                                   "blocks": _blocks_of(blocks), "text": want})
-    areas = {c: p for c, p, _ in key["areas"]}
     ids = [c["id"] for c in key["checks"]]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate check ids")
     got = {}
     for c in key["checks"]:
-        if c["area"] not in areas:
+        if c["area"] not in dict(names):
             raise ValueError(f"check {c['id']}: unknown area {c['area']}")
         got[c["area"]] = got.get(c["area"], 0) + c["points"]
-    for code, pts in areas.items():
-        if got.get(code, 0) != pts:
-            raise ValueError(f"area {code}: checks sum to {got.get(code, 0)}, "
-                             f"declared {pts}")
-    key["max"] = sum(areas.values())
+    key["areas"] = [(code, got.get(code, 0), name) for code, name in names]
+    key["max"] = sum(got.values())
     if not key["max"] or not key["source"]:
         raise ValueError("empty key")
     return key
+
+
+def penalty_max_index(key):
+    """Самый дальний блок, на который ссылается ключ, — для сверки с текстом."""
+    return max((int(b[1:]) for c in key["checks"] for b in c["blocks"]), default=0)
 
 
 # -------------------------------------------------------- проверки кодом
@@ -197,17 +214,32 @@ def code_checks(blocks, tr, source, to):
 
 # --------------------------------------------------------------- судья
 
+def penalty_lines(key):
+    """Штрафы, которые ищет судья, — правилами и строками формата, из ключа.
+    Градации одного штрафа (ADD-minor, ADD-major) собраны в один пункт."""
+    bases = {}
+    for code, p in key["penalties"].items():
+        if p["who"] != "judge":
+            continue
+        base, _, grade = code.partition("-")
+        bases.setdefault(base, []).append((grade, p))
+    rules, fmts = [], []
+    for base, items in bases.items():
+        if len(items) == 1 and not items[0][0]:
+            rules.append(f"- `{base}` — {items[0][1]['text']}.")
+            fmts.append(f"    [[[{base} s01.b0012]]] цитата и суть")
+        else:
+            rules.append(f"- `{base}`: " + "; ".join(f"`{g}` — {p['text']}" for g, p in items) + ".")
+            fmts += [f"    [[[{base} s01.b0012 {g}]]] цитата и суть" for g, _ in items]
+    return "\n".join(rules), "\n".join(fmts)
+
+
 def judge_system(key, to, ui):
-    """Системная часть судьи. Пропуски (OMIT) судья ищет, только если ключ
-    объявляет этот штраф: старые ключи судятся так же, как судились."""
-    def part(name, on):
-        rule, fmt = lang.prompt(name)[0].split("\n---\n", 1) if on else ("", "")
-        return (rule.strip() + "\n" if rule else "", fmt.strip() + "\n" if fmt else "")
-    omit = part("bench_judge_omit", "OMIT-minor" in key["penalties"] or "OMIT-major" in key["penalties"])
-    foot = part("bench_judge_foot", "FOOT" in key["penalties"] and key.get("notes"))
+    """Системная часть судьи: порядок работы из промпта, штрафы — из ключа."""
+    rules, fmts = penalty_lines(key)
     return lang.prompt("bench_judge")[0].format(
         to=lang.lang_name(to), ui=lang.lang_name(ui),
-        omit_rule=omit[0], omit_fmt=omit[1], foot_rule=foot[0], foot_fmt=foot[1])
+        penalty_rules=rules, penalty_fmt=fmts)
 
 
 def judge_prompt(key, blocks, tr, footnotes):
@@ -216,7 +248,7 @@ def judge_prompt(key, blocks, tr, footnotes):
     for c in key["checks"]:
         lines.append(f"{c['id']} [{c['area']} {c['points']}] "
                      f"{','.join(c['blocks'])} :: {c['text']}")
-    if "FOOT" in key["penalties"] and key.get("notes"):
+    if key.get("notes"):
         lines += ["", T("bench_p_notes")] + [f"- {n}" for n in key["notes"]]
     lines += ["", T("bench_p_text")]
     notes = {}
@@ -234,7 +266,7 @@ def judge_prompt(key, blocks, tr, footnotes):
 
 
 VERDICT = re.compile(r"\[\[\[CHECK\s+(\w+)\s+(ok|fail)\]\]\]\s*(.*)", re.I)
-PENALTY = re.compile(r"\[\[\[(ADD|OMIT|UNTR|FOOT)\s+(s\d+\.b\d+)(?:\s+(minor|major))?\]\]\]\s*(.*)")
+PENALTY = re.compile(r"\[\[\[(?!CHECK\b|NOTE\b)([A-Z]+)(?:-(minor|major))?\s+(s\d+\.b\d+)(?:\s+(minor|major))?\]\]\]\s*(.*)")
 REMARK = re.compile(r"\[\[\[NOTE\s+(s\d+\.b\d+)\]\]\]\s*(.*)")
 
 
@@ -249,15 +281,19 @@ def parse_verdict(out, key):
             verdicts[m.group(1).upper()] = (m.group(2).lower() == "ok",
                                             m.group(3).strip())
             continue
-        m = PENALTY.search(line)
-        if m:
-            kind, bid, grade, quote = m.groups()
-            code = kind if kind in ("UNTR", "FOOT") else f"{kind}-{grade or 'minor'}"
-            pens.append((code, bid, quote.strip()))
-            continue
         m = REMARK.search(line)
         if m:
             remarks.append((m.group(1), m.group(2).strip()))
+            continue
+        m = PENALTY.search(line)
+        if m:
+            kind, g1, bid, g2, quote = m.groups()
+            grade = g1 or g2
+            # Штраф без градаций пишется голым кодом; с градациями — по
+            # умолчанию младшая. Незнакомый ключу код остаётся в записи,
+            # в счёт его не берёт score().
+            code = kind if kind in key["penalties"] else f"{kind}-{grade or 'minor'}"
+            pens.append((code, bid, quote.strip()))
     ids = [c["id"] for c in key["checks"]]
     missing = [i for i in ids if i not in verdicts]
     if missing:
@@ -266,26 +302,28 @@ def parse_verdict(out, key):
 
 
 def score(key, verdicts, pens):
-    """Очки по областям, штрафы с потолками, сырой и нормированный итог.
-    Потолок общий для градаций одного штрафа (ADD-minor и ADD-major)."""
+    """Очки по областям, набранное нормируется к 100, штрафы вычитаются уже
+    из этих баллов: цена штрафа в ключе — в баллах итога и не зависит от
+    весов точек. Потолок общий для градаций одного штрафа (ADD-minor и
+    ADD-major); штраф, которого ключ не знает, не считается."""
     areas = {code: 0 for code, _, _ in key["areas"]}
     for c in key["checks"]:
         if verdicts.get(c["id"], (False,))[0]:
             areas[c["area"]] += c["points"]
     groups = {}
     for code, bid, note in pens:
-        if code not in key["penalties"]:            # штраф, которого ключ не знает
+        p = key["penalties"].get(code)
+        if not p:
             continue
-        per, cap = key["penalties"][code]
         g = groups.setdefault(code.split("-")[0], {"n": 0, "raw": 0, "cap": 0})
         g["n"] += 1
-        g["raw"] += per
-        g["cap"] = max(g["cap"], cap)
+        g["raw"] += p["per"]
+        g["cap"] = max(g["cap"], p["cap"])
     penalty = {g: min(v["raw"], v["cap"]) for g, v in groups.items()}
-    raw = sum(areas.values()) - sum(penalty.values())
+    raw = sum(areas.values())
     # Один знак после запятой: при максимуме ключа не в сто очков доля не
     # целая, а при ста — читается тем же числом.
-    norm = round(100 * max(0, raw) / key["max"], 1)
+    norm = round(max(0.0, 100 * raw / key["max"] - sum(penalty.values())), 1)
     return {"areas": areas, "penalty": penalty, "counts": {g: v["n"] for g, v in groups.items()},
             "raw": raw, "score": norm, "max": key["max"]}
 

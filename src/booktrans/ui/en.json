@@ -323,7 +323,7 @@
  "bench_key_blocks": "STOP: the key refers to blocks absent from the text: {0}",
  "bench_judging": "judging: {0}",
  "bench_missing": "no verdict for {0} key checks: {1}. Every check needs a line [[[CHECK ID ok]]] or [[[CHECK ID fail]]] reason",
- "bench_p_key": "## Key: checks (id [area points] blocks :: requirement)",
+ "bench_p_key": "## Key: checks (id [area weight] blocks :: requirement)",
  "bench_p_text": "## Text: source (SRC) and translation (TRG) by block",
  "bench_p_notes": "## Footnotes: subjects a translator's note may cover; any other note is FOOT",
  "bench_r_head": "BookTrans translation benchmark: set {0}, test version {1}, booktrans {2}",
@@ -331,7 +331,7 @@
  "bench_r_translator": "Translator (provider:model:effort): {0}",
  "bench_r_judge": "Judge: {0}",
  "bench_r_lang": "Translation: {0} → {1}",
- "bench_r_raw": "Raw score: {0} after penalties of {1}, maximum {2}",
+ "bench_r_raw": "Earned {0} of {2} points; penalties: {1} of the final 100",
  "bench_r_areas": "Areas",
  "bench_r_col_area": "Area",
  "bench_r_col_points": "Points",
@@ -379,5 +379,6 @@
  "bench_stats_easy": "◆ — passed on average by {1} of models or more, {0} such checks: they hardly separate anyone",
  "bench_stats_none": "No runs with key {0} in {1}",
  "bench_r_attempts": "Translation attempts before a well-formed reply: {0}",
- "bench_run_kept": "{0}: already judged, score {1} — kept"
+ "bench_run_kept": "{0}: already judged, score {1} — kept",
+ "bench_area_adap": "Adaptation"
 }

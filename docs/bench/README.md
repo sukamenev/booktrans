@@ -180,30 +180,34 @@ booktrans-bench-key 1.3
 source en
 title Название
 
-[areas]
-acc 15 Accuracy of meaning
+[areas]        # код и название; максимум области — сумма весов её точек
+acc Accuracy of meaning
 …
 
-[penalties]
-ADD-minor 1 12
-ADD-major 3 12
-UNTR 2 8
-STRUCT 3 15
-SCRIPT 2 8
-RETRY 3 50
-OMIT-minor 1 50
-OMIT-major 3 50
-FOOT       1  5
+[checks]       # id  область  вес  блоки :: требование и критерий провала
+A01 acc 1 b0033,b0034 :: что проверяется и что считается провалом
+…
 
-[notes]
+[penalties]    # код  кто считает  за случай  потолок :: что считается одним случаем
+ADD-minor  judge  1  12 :: a word or phrase with no counterpart in the source …
+ADD-major  judge  3  12 :: an addition that changes what happens or who says what
+UNTR       judge  2   8 :: a source-language fragment left untranslated …
+OMIT-major judge  3  50 :: a sentence or more lost …
+FOOT       judge  1   5 :: a translator's footnote on a subject outside [notes] …
+STRUCT     code   3  15 :: a block lost or added, or markup tags that do not match
+SCRIPT     code   2   8 :: a block with characters of a foreign script
+RETRY      code   3  50 :: an extra request the pipeline needed …
+
+[notes]        # темы, к которым сноска переводчика допустима
 Momus, the Greek god of mockery
-New York realia: Coney Island, Bellevue Hospital, Delancey Street
-…
-
-[checks]
-A01 acc 1 b0033,b0034 :: что проверяется и что считается верным
 …
 ```
+
+Вес точки — сколько очков она приносит; максимум ключа — сумма весов, и
+итог нормируется к 100. Штрафы заданы в баллах итога, то есть уже после
+нормировки: «отсебятина стоит 3 балла» не зависит от того, какие веса
+стоят у точек. Штрафы с пометкой `judge` уходят в промпт судьи прямо из
+этих строк, с пометкой `code` — считает программа, судья о них не знает.
 
 Идентификаторы блоков — как их даёт разбор fb2 (`b0008`, диапазон
 `b0008-b0072`); сумма очков точек области обязана равняться объявленному

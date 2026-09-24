@@ -25,15 +25,15 @@ for k in list(os.environ):
 MINI_KEY = """booktrans-bench-key 9.9
 source en
 [areas]
-a 3 Area A
-b 1 Area B
+a Area A
+b Area B
 [penalties]
-ADD-minor 3 20
-ADD-major 6 20
-UNTR 3 12
-STRUCT 5 25
-SCRIPT 3 12
-RETRY 3 50
+ADD-minor judge 3 20 :: a word added
+ADD-major judge 6 20 :: a fact added
+UNTR judge 3 12 :: left untranslated
+STRUCT code 5 25 :: a block lost
+SCRIPT code 3 12 :: foreign script
+RETRY code 3 50 :: an extra request
 [checks]
 X1 a 2 b0001 :: first
 X2 a 1 b0002-b0003 :: second
@@ -57,8 +57,9 @@ def main():
     key = s["key"]
     ok("набор en читается, ключ на 100 очков", key["max"] == 100 and key["source"] == "en",
        key["max"])
-    ok("в ключе штраф за лишние попытки", key["penalties"].get("RETRY") == (3, 50),
-       key["penalties"])
+    ok("в ключе штраф за лишние попытки, считает код",
+       key["penalties"]["RETRY"]["per"] == 3 and key["penalties"]["RETRY"]["cap"] == 50
+       and key["penalties"]["RETRY"]["who"] == "code", key["penalties"].get("RETRY"))
     ok("областей двенадцать, точек не меньше шестидесяти",
        len(key["areas"]) == 12 and len(key["checks"]) >= 60,
        (len(key["areas"]), len(key["checks"])))
@@ -82,8 +83,11 @@ def main():
     k = B.parse_key(MINI_KEY)
     ok("мини-ключ: суммы и диапазон блоков",
        k["max"] == 4 and k["checks"][1]["blocks"] == ["b0002", "b0003"], k["checks"][1])
-    ok("ключ с несходящейся суммой отвергается",
-       _raises(ValueError, B.parse_key, MINI_KEY.replace("a 3 Area A", "a 4 Area A")))
+    ok("максимум области выводится из весов", dict((a, m) for a, m, _ in k["areas"]) == {"a": 3, "b": 1})
+    ok("старый формат с числом у области отвергается",
+       _raises(ValueError, B.parse_key, MINI_KEY.replace("a Area A", "a 3 Area A")))
+    ok("штраф без описания отвергается",
+       _raises(ValueError, B.parse_key, MINI_KEY.replace("UNTR judge 3 12 :: left untranslated", "UNTR 3 12")))
     ok("ключ с двойным id отвергается",
        _raises(ValueError, B.parse_key, MINI_KEY.replace("Y1 b", "X1 b")))
 
@@ -100,9 +104,14 @@ def main():
     ok("точка без вердикта — ошибка с её именем",
        _raises(ValueError, B.parse_verdict, "[[[CHECK X1 ok]]]", k, contains="X2"))
     sc = B.score(k, v, pens)
-    ok("счёт: области, штрафы, сырой итог", sc["areas"] == {"a": 2, "b": 1}
-       and sc["penalty"] == {"ADD": 6, "UNTR": 3} and sc["raw"] == -6, sc)
-    ok("нормированный итог не ниже нуля", sc["score"] == 0.0, sc["score"])
+    ok("счёт: области, штрафы в баллах итога, набранное", sc["areas"] == {"a": 2, "b": 1}
+       and sc["penalty"] == {"ADD": 6, "UNTR": 3} and sc["raw"] == 3 and sc["score"] == 66.0, sc)
+    ok("нормированный итог не ниже нуля", B.score(k, {}, pens)["score"] == 0.0)
+    ok("штрафы не зависят от весов: удвоенные веса — тот же итог",
+       B.score(B.parse_key(MINI_KEY.replace("X1 a 2", "X1 a 4").replace("X2 a 1", "X2 a 2").replace("Y1 b 1", "Y1 b 2")), v, pens)["score"] == 66.0)
+    ok("штрафы судьи — в промпте из ключа, штрафы кода — нет",
+       "[[[ADD s01.b0012 minor]]]" in B.judge_system(k, "ru", "ru") and "a fact added" in B.judge_system(k, "ru", "ru")
+       and "STRUCT" not in B.judge_system(k, "ru", "ru") and "{penalty" not in B.judge_system(k, "ru", "ru"))
     many = [("ADD-minor", "s01.b0001", "x")] * 9
     ok("потолок штрафа общий для градаций",
        B.score(k, v, many + [("ADD-major", "s01.b0001", "y")])["penalty"]["ADD"] == 20)
@@ -201,11 +210,11 @@ def main():
          "cost": {"translate": None, "judge": 1.0}, "time": {"translate": 60, "judge": 60},
          "work": "w"}
     md = B.report_md(r, "en")
-    ok("отчёт начинается с нормированного балла", md.startswith("# 0.0 / 100\n"), md[:20])
+    ok("отчёт начинается с нормированного балла", md.startswith("# 66.0 / 100\n"), md[:20])
     ok("в отчёте провал с причиной и штраф",
        "**X2**" in md and "потеряно предложение" in md and "ADD-major s01.b0002" in md)
     ok("строка таблицы: дата, модели, итог, области, штраф",
-       B.table_row(r) == "| 2026-09-23 | agy:m:high | 0.0 | 1 | 1 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
+       B.table_row(r) == "| 2026-09-23 | agy:m:high | 66.0 | 1 | 1 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
        B.table_row(r))
     allok = {c["id"]: (True, "") for c in key["checks"]}
     full_r = dict(r, key=key, score=B.score(key, allok, []), verdicts=allok, penalties=[])
@@ -221,24 +230,24 @@ def main():
        md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Mean 100.0 (from 0.0 to 100.0)" in md3,
        md3[:40])
     # ---- пропуски: штраф есть, только если ключ его объявляет
-    ko = B.parse_key(MINI_KEY.replace("RETRY 3 50\n", "RETRY 3 50\nOMIT-minor 1 50\nOMIT-major 3 50\n"))
+    RETRY = "RETRY code 3 50 :: an extra request\n"
+    ko = B.parse_key(MINI_KEY.replace(RETRY, RETRY + "OMIT-minor judge 1 50 :: a word lost\nOMIT-major judge 3 50 :: a sentence lost\n"))
     _, po, _ = B.parse_verdict("[[[CHECK X1 ok]]]\n[[[CHECK X2 ok]]]\n[[[CHECK Y1 ok]]]\n"
                                "[[[OMIT s01.b0002 major]]] «She read.»\n[[[OMIT s01.b0003]]] «icy»\n", ko)
     ok("OMIT читается со степенью, без степени — minor",
        po == [("OMIT-major", "s01.b0002", "«She read.»"), ("OMIT-minor", "s01.b0003", "«icy»")], po)
     allv = {c["id"]: (True, "") for c in ko["checks"]}
     so = B.score(ko, allv, po)
-    ok("OMIT: minor 1 + major 3", so["penalty"] == {"OMIT": 4} and so["raw"] == 0, so)
+    ok("OMIT: minor 1 + major 3", so["penalty"] == {"OMIT": 4} and so["score"] == 96.0, so)
     ok("OMIT: потолок 50 на обе степени вместе",
        B.score(ko, allv, [("OMIT-major", "s01.b0001", "x")] * 30)["penalty"]["OMIT"] == 50)
     ok("ключ без OMIT: пропуски не штрафуются и в счёт не попадают",
        B.score(k, allv, po)["penalty"] == {} and B.score(k, allv, po)["counts"] == {})
     ok("правило о пропусках — в промпте судьи только при OMIT в ключе",
-       "[[[OMIT" in B.judge_system(ko, "ru", "ru") and "[[[OMIT" not in B.judge_system(k, "ru", "ru")
-       and "{omit" not in B.judge_system(k, "ru", "ru"))
+       "[[[OMIT s01.b0012 major]]]" in B.judge_system(ko, "ru", "ru") and "[[[OMIT" not in B.judge_system(k, "ru", "ru"))
 
     # ---- лишние сноски: белый список тем в ключе, штраф FOOT
-    kf = B.parse_key(MINI_KEY.replace("RETRY 3 50\n", "RETRY 3 50\nFOOT 1 5\n").replace("[checks]", "[notes]\nMomus\nHelen of Troy\n[checks]"))
+    kf = B.parse_key(MINI_KEY.replace(RETRY, RETRY + "FOOT judge 1 5 :: a note outside [notes]\n").replace("[checks]", "[notes]\nMomus\nHelen of Troy\n[checks]"))
     ok("раздел [notes] читается", kf["notes"] == ["Momus", "Helen of Troy"], kf["notes"])
     _, pf, _ = B.parse_verdict("[[[CHECK X1 ok]]]\n[[[CHECK X2 ok]]]\n[[[CHECK Y1 ok]]]\n[[[FOOT s01.b0002]]] Марс\n", kf)
     ok("FOOT читается без степени", pf == [("FOOT", "s01.b0002", "Марс")], pf)
@@ -247,7 +256,7 @@ def main():
     ok("ключ без FOOT: лишняя сноска не штрафуется", B.score(k, allv, pf)["penalty"] == {})
     ok("правило о сносках и перечень тем — только при FOOT в ключе",
        "[[[FOOT" in B.judge_system(kf, "ru", "ru") and "[[[FOOT" not in B.judge_system(k, "ru", "ru")
-       and "Helen of Troy" in B.judge_prompt(kf, [], {}, []) and "{foot" not in B.judge_system(k, "ru", "ru"))
+       and "Helen of Troy" in B.judge_prompt(kf, [], {}, []))
 
     # ---- статистика ловушек по готовым прогонам
     d = tempfile.mkdtemp()
