@@ -110,8 +110,9 @@ def parse_key(text):
 
     Максимум области — сумма весов её точек, максимум ключа — сумма по всем:
     ничего не объявляется дважды. Штраф описан в ключе целиком — кто его
-    считает (судья или код), цена случая и потолок в баллах итога из 100,
-    что считается одним случаем; из этих строк собирается промпт судьи."""
+    считает (судья или код), цена случая и потолок в тех же очках, что веса
+    точек, что считается одним случаем; из этих строк собирается промпт
+    судьи."""
     lines = text.splitlines()
     if not lines or not lines[0].startswith("booktrans-bench-key "):
         raise ValueError("not a booktrans bench key")
@@ -302,10 +303,10 @@ def parse_verdict(out, key):
 
 
 def score(key, verdicts, pens):
-    """Очки по областям, набранное нормируется к 100, штрафы вычитаются уже
-    из этих баллов: цена штрафа в ключе — в баллах итога и не зависит от
-    весов точек. Потолок общий для градаций одного штрафа (ADD-minor и
-    ADD-major); штраф, которого ключ не знает, не считается."""
+    """Очки по областям минус штрафы — в одних очках ключа, потом нормировка
+    к 100: цена штрафа читается рядом с весом точки («отсебятина-major — как
+    две проваленные точки веса 4»). Потолок общий для градаций одного штрафа
+    (ADD-minor и ADD-major); штраф, которого ключ не знает, не считается."""
     areas = {code: 0 for code, _, _ in key["areas"]}
     for c in key["checks"]:
         if verdicts.get(c["id"], (False,))[0]:
@@ -320,10 +321,10 @@ def score(key, verdicts, pens):
         g["raw"] += p["per"]
         g["cap"] = max(g["cap"], p["cap"])
     penalty = {g: min(v["raw"], v["cap"]) for g, v in groups.items()}
-    raw = sum(areas.values())
+    raw = sum(areas.values()) - sum(penalty.values())
     # Один знак после запятой: при максимуме ключа не в сто очков доля не
     # целая, а при ста — читается тем же числом.
-    norm = round(max(0.0, 100 * raw / key["max"] - sum(penalty.values())), 1)
+    norm = round(100 * max(0, raw) / key["max"], 1)
     return {"areas": areas, "penalty": penalty, "counts": {g: v["n"] for g, v in groups.items()},
             "raw": raw, "score": norm, "max": key["max"]}
 
@@ -369,7 +370,7 @@ def report_md(r, ui):
              T("bench_r_judge", _spec(r["judge"])),
              T("bench_r_lang", key["source"], r["to"]),
              T("bench_r_raw", r["score"]["raw"], sum(r["score"]["penalty"].values()),
-               r["score"]["max"])]
+               r["score"]["max"], f"{100 * sum(r['score']['penalty'].values()) / r['score']['max']:.1f}")]
     if len(runs) > 1:
         lines += ["", "## " + T("bench_r_runs", len(runs)), "",
                   "| # | " + T("bench_r_col_points") + " | raw | penalty | fail | attempts | $ | min |",

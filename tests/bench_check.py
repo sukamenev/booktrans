@@ -104,11 +104,12 @@ def main():
     ok("точка без вердикта — ошибка с её именем",
        _raises(ValueError, B.parse_verdict, "[[[CHECK X1 ok]]]", k, contains="X2"))
     sc = B.score(k, v, pens)
-    ok("счёт: области, штрафы в баллах итога, набранное", sc["areas"] == {"a": 2, "b": 1}
-       and sc["penalty"] == {"ADD": 6, "UNTR": 3} and sc["raw"] == 3 and sc["score"] == 66.0, sc)
-    ok("нормированный итог не ниже нуля", B.score(k, {}, pens)["score"] == 0.0)
-    ok("штрафы не зависят от весов: удвоенные веса — тот же итог",
-       B.score(B.parse_key(MINI_KEY.replace("X1 a 2", "X1 a 4").replace("X2 a 1", "X2 a 2").replace("Y1 b 1", "Y1 b 2")), v, pens)["score"] == 66.0)
+    ok("счёт: области, штрафы, сырой итог в очках ключа", sc["areas"] == {"a": 2, "b": 1}
+       and sc["penalty"] == {"ADD": 6, "UNTR": 3} and sc["raw"] == -6, sc)
+    ok("нормированный итог не ниже нуля", sc["score"] == 0.0, sc["score"])
+    ok("штраф — в очках ключа: при удвоенных весах точек он весит вдвое меньше",
+       B.score(k, v, pens[1:])["score"] == 0.0 and
+       B.score(B.parse_key(MINI_KEY.replace("X1 a 2", "X1 a 4").replace("X2 a 1", "X2 a 2").replace("Y1 b 1", "Y1 b 2")), v, pens[1:])["score"] == 37.5)
     ok("штрафы судьи — в промпте из ключа, штрафы кода — нет",
        "[[[ADD s01.b0012 minor]]]" in B.judge_system(k, "ru", "ru") and "a fact added" in B.judge_system(k, "ru", "ru")
        and "STRUCT" not in B.judge_system(k, "ru", "ru") and "{penalty" not in B.judge_system(k, "ru", "ru"))
@@ -210,11 +211,11 @@ def main():
          "cost": {"translate": None, "judge": 1.0}, "time": {"translate": 60, "judge": 60},
          "work": "w"}
     md = B.report_md(r, "en")
-    ok("отчёт начинается с нормированного балла", md.startswith("# 66.0 / 100\n"), md[:20])
+    ok("отчёт начинается с нормированного балла", md.startswith("# 0.0 / 100\n"), md[:20])
     ok("в отчёте провал с причиной и штраф",
        "**X2**" in md and "потеряно предложение" in md and "ADD-major s01.b0002" in md)
     ok("строка таблицы: дата, модели, итог, области, штраф",
-       B.table_row(r) == "| 2026-09-23 | agy:m:high | 66.0 | 1 | 1 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
+       B.table_row(r) == "| 2026-09-23 | agy:m:high | 0.0 | 1 | 1 | 2 | 1 | -9 | 1.0.0 | 9.9 | claude:j |",
        B.table_row(r))
     allok = {c["id"]: (True, "") for c in key["checks"]}
     full_r = dict(r, key=key, score=B.score(key, allok, []), verdicts=allok, penalties=[])
@@ -238,7 +239,7 @@ def main():
        po == [("OMIT-major", "s01.b0002", "«She read.»"), ("OMIT-minor", "s01.b0003", "«icy»")], po)
     allv = {c["id"]: (True, "") for c in ko["checks"]}
     so = B.score(ko, allv, po)
-    ok("OMIT: minor 1 + major 3", so["penalty"] == {"OMIT": 4} and so["score"] == 96.0, so)
+    ok("OMIT: minor 1 + major 3", so["penalty"] == {"OMIT": 4} and so["raw"] == 0, so)
     ok("OMIT: потолок 50 на обе степени вместе",
        B.score(ko, allv, [("OMIT-major", "s01.b0001", "x")] * 30)["penalty"]["OMIT"] == 50)
     ok("ключ без OMIT: пропуски не штрафуются и в счёт не попадают",
