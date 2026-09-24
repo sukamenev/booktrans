@@ -220,6 +220,23 @@ def main():
     ok("отчёт трёх прогонов: таблица прогонов и среднее",
        md3.startswith("# 100.0 / 100") and "## Runs: 3" in md3 and "Mean 100.0 (from 0.0 to 100.0)" in md3,
        md3[:40])
+    # ---- пропуски: штраф есть, только если ключ его объявляет
+    ko = B.parse_key(MINI_KEY.replace("RETRY 3 50\n", "RETRY 3 50\nOMIT-minor 1 50\nOMIT-major 3 50\n"))
+    _, po, _ = B.parse_verdict("[[[CHECK X1 ok]]]\n[[[CHECK X2 ok]]]\n[[[CHECK Y1 ok]]]\n"
+                               "[[[OMIT s01.b0002 major]]] «She read.»\n[[[OMIT s01.b0003]]] «icy»\n", ko)
+    ok("OMIT читается со степенью, без степени — minor",
+       po == [("OMIT-major", "s01.b0002", "«She read.»"), ("OMIT-minor", "s01.b0003", "«icy»")], po)
+    allv = {c["id"]: (True, "") for c in ko["checks"]}
+    so = B.score(ko, allv, po)
+    ok("OMIT: minor 1 + major 3", so["penalty"] == {"OMIT": 4} and so["raw"] == 0, so)
+    ok("OMIT: потолок 50 на обе степени вместе",
+       B.score(ko, allv, [("OMIT-major", "s01.b0001", "x")] * 30)["penalty"]["OMIT"] == 50)
+    ok("ключ без OMIT: пропуски не штрафуются и в счёт не попадают",
+       B.score(k, allv, po)["penalty"] == {} and B.score(k, allv, po)["counts"] == {})
+    ok("правило о пропусках — в промпте судьи только при OMIT в ключе",
+       "[[[OMIT" in B.judge_system(ko, "ru", "ru") and "[[[OMIT" not in B.judge_system(k, "ru", "ru")
+       and "{omit" not in B.judge_system(k, "ru", "ru"))
+
     # ---- статистика ловушек по готовым прогонам
     d = tempfile.mkdtemp()
     kk = {"version": "9.9.1", "checks": [{"id": "X1", "area": "a", "text": "first"},

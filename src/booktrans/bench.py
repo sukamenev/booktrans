@@ -190,6 +190,18 @@ def code_checks(blocks, tr, source, to):
 
 # --------------------------------------------------------------- судья
 
+def judge_system(key, to, ui):
+    """Системная часть судьи. Пропуски (OMIT) судья ищет, только если ключ
+    объявляет этот штраф: старые ключи судятся так же, как судились."""
+    omit = "OMIT-minor" in key["penalties"] or "OMIT-major" in key["penalties"]
+    rule, fmt = (lang.prompt("bench_judge_omit")[0].split("\n---\n", 1)
+                 if omit else ("", ""))
+    return lang.prompt("bench_judge")[0].format(
+        to=lang.lang_name(to), ui=lang.lang_name(ui),
+        omit_rule=rule.strip() + "\n" if rule else "",
+        omit_fmt=fmt.strip() + "\n" if fmt else "")
+
+
 def judge_prompt(key, blocks, tr, footnotes):
     """Пользовательская часть запроса судье: ключ, потом текст парами."""
     lines = [T("bench_p_key")]
@@ -212,7 +224,7 @@ def judge_prompt(key, blocks, tr, footnotes):
 
 
 VERDICT = re.compile(r"\[\[\[CHECK\s+(\w+)\s+(ok|fail)\]\]\]\s*(.*)", re.I)
-PENALTY = re.compile(r"\[\[\[(ADD|UNTR)\s+(s\d+\.b\d+)(?:\s+(minor|major))?\]\]\]\s*(.*)")
+PENALTY = re.compile(r"\[\[\[(ADD|OMIT|UNTR)\s+(s\d+\.b\d+)(?:\s+(minor|major))?\]\]\]\s*(.*)")
 REMARK = re.compile(r"\[\[\[NOTE\s+(s\d+\.b\d+)\]\]\]\s*(.*)")
 
 
@@ -230,7 +242,7 @@ def parse_verdict(out, key):
         m = PENALTY.search(line)
         if m:
             kind, bid, grade, quote = m.groups()
-            code = f"ADD-{grade or 'minor'}" if kind == "ADD" else "UNTR"
+            code = kind if kind == "UNTR" else f"{kind}-{grade or 'minor'}"
             pens.append((code, bid, quote.strip()))
             continue
         m = REMARK.search(line)
@@ -252,7 +264,9 @@ def score(key, verdicts, pens):
             areas[c["area"]] += c["points"]
     groups = {}
     for code, bid, note in pens:
-        per, cap = key["penalties"].get(code, (0, 0))
+        if code not in key["penalties"]:            # штраф, которого ключ не знает
+            continue
+        per, cap = key["penalties"][code]
         g = groups.setdefault(code.split("-")[0], {"n": 0, "raw": 0, "cap": 0})
         g["n"] += 1
         g["raw"] += per
@@ -495,8 +509,7 @@ def _one(args, models, bench, work, who, log, main):
     log("")
     log(f"=== {T('bench_judging', agent_mod.label(who[0]))} ===")
     system = "\n\n---\n\n".join(x for x in (
-        lang.prompt("bench_judge")[0].format(
-            to=lang.lang_name(args.to), ui=lang.lang_name(args.ui)),
+        judge_system(key, args.to, args.ui),
         lang.prompt("units")[0],
         (lang.prompt("sys_rules")[0] + "\n\n" + lang.rules(args.to))
         if lang.rules(args.to) else "") if x)
