@@ -980,7 +980,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --scout / --translator / --editor / --verifier ID   model for one pass
 --bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
 --bench-runs N        how many times to translate and judge the benchmark text; the mean is reported (default 3)
---bench-stats [VER]   pass rate of every benchmark check over finished runs here (or in -w); VER: key version(s), comma-separated
+--bench-stats [VER]   pass rate of every benchmark check over finished runs here (or in -w); VER: exact key version(s), comma-separated; "1.4." takes the whole branch
 --judge ID            judge model for the benchmark (default claude:claude-opus-5-5:medium, backup codex:gpt-5.6-sol:medium)
 --agent NAME          agent: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}

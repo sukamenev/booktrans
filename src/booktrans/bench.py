@@ -657,8 +657,10 @@ def run(args, log):
 # ------------------------------------------------------------- статистика
 
 def _ver_ok(v, want):
-    """`1.4` берёт и 1.4, и 1.4.x: у правок третьей цифры вердикты те же."""
-    return any(v == w or v.startswith(w + ".") for w in want)
+    """Версия — точно; точка на конце — вся ветка: `1.4.` берёт 1.4 и 1.4.x.
+    Звёздочки нет: zsh на `1.4.*` без совпавших файлов падает."""
+    return any(v == w.rstrip(".") or v.startswith(w) if w.endswith(".") else v == w
+               for w in want)
 
 
 def run_files(root="."):
@@ -712,11 +714,10 @@ def stats(versions, root="."):
 
 
 def run_stats(args, log):
-    """`--bench-stats [ВЕРСИИ]`: без версии — ветка X.Y встроенного ключа."""
+    """`--bench-stats [ВЕРСИИ]`: без версии — версия встроенного ключа."""
     spec = args.bench_stats
     if spec == "-":
-        v = load_set(None)["key"]["version"]
-        spec = ".".join(v.split(".")[:2])
+        spec = load_set(None)["key"]["version"]
     want = [w.strip() for w in spec.split(",") if w.strip()]
     res = stats(want, args.work or ".")
     if not res:

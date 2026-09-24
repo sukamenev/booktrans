@@ -239,16 +239,17 @@ def main():
     put("benchmark-en-ru-b.work/ru/bench.json", translator=tr_b, verdicts=ok_(False, True))
     put("benchmark-en-ru-c.work/ru/bench.json", translator=tr_b, verdicts=ok_(False, False),
         key=dict(kk, version="9.8"))
-    st = B.stats(["9.9"], d)
+    st = B.stats(["9.9."], d)
     rows = {r["id"]: r for r in st.get("ru", {}).get("rows", [])}
     ok("статистика: сводка серии и сломанный прогон не в счёте, чужая версия тоже",
        st.get("ru", {}).get("runs") == 4 and st["ru"]["series"] == 2, st.get("ru"))
     ok("статистика: модели с равным весом, прогоны — поровну",
        abs(rows["X2"]["models"] - (1 / 3 + 1) / 2) < 1e-9 and rows["X2"]["runs"] == 0.5
        and rows["X1"]["models"] == 0.5 and rows["X1"]["runs"] == 0.75, rows)
-    ok("статистика: «9.9» берёт 9.9.1, но не 9.8 и не 9.90",
-       B._ver_ok("9.9.1", ["9.9"]) and not B._ver_ok("9.8", ["9.9"])
-       and not B._ver_ok("9.90", ["9.9"]))
+    ok("статистика: версия точно, «9.9.» — вся ветка",
+       B._ver_ok("9.9.1", ["9.9."]) and B._ver_ok("9.9", ["9.9."])
+       and not B._ver_ok("9.90", ["9.9."]) and not B._ver_ok("9.9.1", ["9.9"])
+       and B._ver_ok("9.9", ["9.9"]) and not B._ver_ok("9.8", ["9.9."]))
     ok("статистика: сначала самые лёгкие", [r["id"] for r in st["ru"]["rows"]] == ["X2", "X1"])
 
     lang.set_ui("ru")

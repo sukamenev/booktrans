@@ -367,7 +367,7 @@
  "oa_cut": "the answer stream ended with no finish reason after {} characters — the endpoint dropped the connection",
  "oa_empty": "no answer: all {} output tokens went into reasoning",
  "h_bench_runs": "how many times to translate and judge the benchmark text; the report carries the mean (default 3)",
- "h_bench_stats": "pass rate of every check over finished benchmark runs in the current directory (or -w); VER is a key version or several, comma-separated, \"1.4\" also takes 1.4.x; without it, the version of the built-in key",
+ "h_bench_stats": "pass rate of every check over finished benchmark runs in the current directory (or -w); VER is an exact key version or several, comma-separated; a trailing dot takes the branch (1.4. is 1.4 and 1.4.x); without it, the version of the built-in key",
  "bench_run_translated": "{0}: translated in {1} min [{2}]",
  "bench_run_judged": "{0}: score {1}, failed {2}, penalty {3}",
  "bench_run_failed": "{0}: run not finished — {1}",
