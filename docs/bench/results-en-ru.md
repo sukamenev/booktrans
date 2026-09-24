@@ -20,10 +20,17 @@ Sol. Очки областей — с весами (максимум 250), ит�
 | 2026-09-24 | codex:gpt-6-astra:medium | 79.6 | 1 | 1 | 56 | 4 | 18 | 18 | 7 | 20 | 4 | 24 | 12 | 14 | 16 | 4 | 6 | -4 | 1.10.104 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | codex:gpt-5.6-sol:medium | 78.8 | 1 | 1 | 60 | 3 | 18 | 20 | 5 | 16 | 6 | 20 | 12 | 14 | 14 | 3 | 6 | 0 | 1.10.104 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | agy:gemini-3.8-flash:medium | 78.2 | 1 | 1 | 64 | 4 | 18 | 20 | 7 | 16 | 4 | 24 | 12 | 12 | 12 | 2 | 4 | -2 | 1.10.102 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | claude:claude-fable-5-1:medium | 76.0 | 1 | 1 | 52 | 4 | 24 | 18 | 5 | 20 | 6 | 16 | 12 | 12 | 14 | 3 | 6 | -2 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | agy:gemini-3.7-flash:medium | 73.6 | 1 | 1 | 52 | 3 | 24 | 18 | 4 | 16 | 3 | 20 | 10 | 14 | 14 | 2 | 4 | 0 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | claude:claude-opus-5-5:medium | 73.4 | 1 | 1 | 52 | 3 | 22 | 20 | 7 | 24 | 3 | 12 | 10 | 14 | 14 | 2 | 6 | -4 | 1.10.102 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | codex:gpt-6-sol:medium | 72.0 | 1 | 1 | 52 | 4 | 22 | 18 | 5 | 16 | 4 | 24 | 12 | 14 | 12 | 3 | 4 | -10 | 1.10.104 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | openai@opencode.ai:kimi-k2.7-code:medium | 70.4 | 1 | 1 | 60 | 4 | 12 | 18 | 6 | 8 | 6 | 24 | 10 | 12 | 10 | 2 | 6 | -2 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | openai@router.bynara.id:muse-spark-1.3:medium | 64.8 | 1 | 1 | 56 | 4 | 18 | 12 | 6 | 8 | 5 | 16 | 10 | 14 | 12 | 3 | 4 | -6 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | openai@router.bynara.id:deepseek-v4-flash:medium | 63.9 | 1 | 1 | 52 | 4 | 12 | 18 | 6 | 16 | 5 | 20 | 12 | 10 | 12 | 2 | 4 | -12 | 1.10.102 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | openai@router.bynara.id:glm-5.3:medium | 60.4 | 1 | 1 | 52 | 4 | 18 | 20 | 6 | 12 | 4 | 16 | 8 | 10 | 12 | 3 | 4 | -18 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | openai@router.bynara.id:deepseek-v4.1-flash:medium | 60.4 | 1 | 1 | 48 | 4 | 14 | 18 | 5 | 16 | 6 | 8 | 10 | 14 | 6 | 2 | 4 | -4 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | openai@opencode.ai:kimi-k3:medium | 58.4 | 1 | 2 | 52 | 3 | 12 | 16 | 6 | 16 | 6 | 16 | 8 | 12 | 6 | 3 | 4 | -14 | 1.10.103 | 1.4.0 | codex:gpt-6-sol:medium |
+| 2026-09-24 | openai@opencode.ai:hy4-preview:medium | 55.2 | 1 | 1 | 52 | 4 | 14 | 16 | 5 | 8 | 4 | 8 | 12 | 12 | 12 | 1 | 4 | -14 | 1.10.107 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | openai@router.bynara.id:qwen3.8-flash:medium | 38.1 | 1 | 1 | 52 | 2 | 10 | 18 | 7 | 8 | 5 | 8 | 2 | 10 | 0 | 4 | 6 | -36 | 1.10.102 | 1.4.0 | codex:gpt-6-sol:medium |
 | 2026-09-24 | claude:claude-haiku-4-5:medium | 36.5 | 1 | 1 | 44 | 2 | 12 | 6 | 5 | 4 | 5 | 8 | 6 | 8 | 4 | 0 | 2 | -14 | 1.10.102 | 1.4.0 | codex:gpt-6-sol:medium |
 
