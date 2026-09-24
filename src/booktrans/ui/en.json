@@ -314,7 +314,7 @@
  "bench_same_lang": "STOP: the benchmark text is in {0}; name another target language with --to",
  "bench_judge_family": "STOP: every judge is of the translator's family ({0}): {1}. Name a judge of another family with --judge",
  "bench_judge_dropped": "judge {0} struck out: same family as the translator",
- "bench_start": "benchmark: set {0} {1}, translator {2}, judge {3}, runs {4}",
+ "bench_start": "BENCHMARK: set {0} {1}, translator {2}, judge {3}, runs {4}",
  "bench_chunks": "STOP: the benchmark text was cut into {0} chunks, one expected — check --chunk-words and tuning",
  "bench_unfinished": "STOP: translation unfinished, nothing to judge",
  "bench_model_failed": "model failure: no translation",
