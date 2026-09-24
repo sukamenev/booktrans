@@ -712,13 +712,18 @@ booktrans --bench --to ru --translator claude:claude-sonnet-5:high
 ```
 
 No book needed. The pipeline translates a built-in short story (about 3,100
-words, one chunk) laden with 100 planted traps in twelve areas, one point each — accuracy,
-completeness, calques, rare vocabulary, imagery, verse and puns, consistency
-of names and repeated phrases, gender revealed late, sound-based
-transliteration of names like Cholmondeley and Siobhan, target-language norm,
-footnotes, register — and a judge model (GPT-6 Sol by default, `--judge` to change)
-answers ok/fail on every trap against an answer key. The text is translated
-and judged three times and the mean is reported. The score, 0 to 100, is
+words, one chunk) laden with 107 planted traps in thirteen areas, weighted 4, 2 or 1 by what the
+reader loses — accuracy, completeness, calques, rare vocabulary, imagery,
+verse and puns, consistency of names and repeated phrases, gender revealed
+late, sound-based transliteration of names like Cholmondeley and Siobhan,
+target-language norm and punctuation, adaptation of measures, money and
+realia, footnotes, register — and a judge model (GPT-6 Sol by default, `--judge` to change)
+answers ok/fail on every trap against an answer key. GPT-6 Sol is the default
+because it is the stricter judge and follows the key most closely; Opus 5.5
+scores the same translations about 8 points higher on average (3 to 15),
+passing calques and softened register that the key forbids. Scores from
+different judges are not comparable. The text is translated and judged three
+times and the mean is reported. The score, 0 to 100, is
 computed by code, not by the judge; additions, untranslated fragments,
 broken structure and foreign scripts are penalised. Only the translator is
 measured: no scouting (its reference would be a cheat sheet) and no editor.

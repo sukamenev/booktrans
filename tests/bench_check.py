@@ -55,13 +55,13 @@ def main():
     # ---- встроенный набор
     s = B.load_set("en")
     key = s["key"]
-    ok("набор en читается, ключ на 100 очков", key["max"] == 100 and key["source"] == "en",
-       key["max"])
+    ok("набор en читается, ключ 1.4.0 на 250 очков", key["max"] == 250 and key["source"] == "en"
+       and key["version"] == "1.4.0", (key["max"], key["version"]))
     ok("в ключе штраф за лишние попытки, считает код",
-       key["penalties"]["RETRY"]["per"] == 3 and key["penalties"]["RETRY"]["cap"] == 50
+       key["penalties"]["RETRY"]["per"] == 8 and key["penalties"]["RETRY"]["cap"] == 126
        and key["penalties"]["RETRY"]["who"] == "code", key["penalties"].get("RETRY"))
-    ok("областей двенадцать, точек не меньше шестидесяти",
-       len(key["areas"]) == 12 and len(key["checks"]) >= 60,
+    ok("областей тринадцать, точек не меньше ста",
+       len(key["areas"]) == 13 and len(key["checks"]) >= 100,
        (len(key["areas"]), len(key["checks"])))
     d = tempfile.mkdtemp()
     fb2 = os.path.join(d, "t.fb2")
@@ -155,9 +155,14 @@ def main():
         def _agent(self, n, m, e=None):
             return Fake(n, m, e)
     who, dropped = B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))
-    ok("судья семьи переводчика вычеркнут, запасной остаётся",
-       [w.model for w in who] == ["gpt-6-sol"] and [x.model for x in dropped] == ["claude-opus-5-5"],
+    ok("судья семьи переводчика по умолчанию допущен",
+       [w.model for w in who] == ["gpt-6-sol", "claude-opus-5-5"] and dropped == [],
        ([w.model for w in who], [x.model for x in dropped]))
+    Args.self_edit = "never"
+    who_n, dropped_n = B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))
+    ok("--self-edit never вычёркивает судью семьи переводчика",
+       [w.model for w in who_n] == ["gpt-6-sol"] and [x.model for x in dropped_n] == ["claude-opus-5-5"])
+    Args.self_edit = None
     ok("усилие судьи из умолчания — medium", who[0].effort == "medium", who[0].effort)
     Args.judge = "agy:claude-opus-4-6-thinking"
     who, _ = B.judges(Args(), Ms(), Fake("openai", "glm-5.3", "medium"))
@@ -200,8 +205,12 @@ def main():
     ok("--judge none — судей нет, перевод без суда",
        B.judges(Args(), Ms(), Fake("openai", "glm-5.3", "medium")) == ([], []))
     Args.judge = "claude:claude-opus-5"
-    ok("все судьи одной семьи — остановка",
+    ok("судья одной семьи по умолчанию судит",
+       [w.model for w in B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))[0]] == ["claude-opus-5"])
+    Args.self_edit = "never"
+    ok("--self-edit never: все судьи одной семьи — остановка",
        _raises(SystemExit, B.judges, Args(), Ms(), Fake("claude", "claude-sonnet-5", "high")))
+    Args.self_edit = None
 
     # ---- отчёт
     r = {"score": sc, "key": k, "set": "en", "to": "ru", "date": "2026-09-23 12:00",
@@ -220,7 +229,7 @@ def main():
     allok = {c["id"]: (True, "") for c in key["checks"]}
     full_r = dict(r, key=key, score=B.score(key, allok, []), verdicts=allok, penalties=[])
     ok("отчёт по-русски называет области по-русски",
-       "Точность смысла" in B.report_md(full_r, "ru") and "| 100.0 | 1 | 1 | 15 | 9 | 11 | 9 | 11 | 8 | 8 | 8 | 7 | 6 | 4 | 4 | 0 |" in B.table_row(full_r),
+       "Точность смысла" in B.report_md(full_r, "ru") and "| 100.0 | 1 | 1 | 68 | 4 | 30 | 20 | 10 | 28 | 6 | 24 | 14 | 14 | 20 | 4 | 8 | 0 |" in B.table_row(full_r),
        B.table_row(full_r))
     multi = dict(full_r, runs=[full_r, dict(r, attempts=2), full_r], scores=[100.0, 0.0, 100.0],
                  mean=100.0, work="w")
