@@ -325,6 +325,7 @@
  "bench_missing": "no verdict for {0} key checks: {1}. Every check needs a line [[[CHECK ID ok]]] or [[[CHECK ID fail]]] reason",
  "bench_p_key": "## Key: checks (id [area points] blocks :: requirement)",
  "bench_p_text": "## Text: source (SRC) and translation (TRG) by block",
+ "bench_p_notes": "## Footnotes: subjects a translator's note may cover; any other note is FOOT",
  "bench_r_head": "BookTrans translation benchmark: set {0}, test version {1}, booktrans {2}",
  "bench_r_date": "Date: {0}",
  "bench_r_translator": "Translator (provider:model:effort): {0}",

@@ -237,6 +237,18 @@ def main():
        "[[[OMIT" in B.judge_system(ko, "ru", "ru") and "[[[OMIT" not in B.judge_system(k, "ru", "ru")
        and "{omit" not in B.judge_system(k, "ru", "ru"))
 
+    # ---- лишние сноски: белый список тем в ключе, штраф FOOT
+    kf = B.parse_key(MINI_KEY.replace("RETRY 3 50\n", "RETRY 3 50\nFOOT 1 5\n").replace("[checks]", "[notes]\nMomus\nHelen of Troy\n[checks]"))
+    ok("раздел [notes] читается", kf["notes"] == ["Momus", "Helen of Troy"], kf["notes"])
+    _, pf, _ = B.parse_verdict("[[[CHECK X1 ok]]]\n[[[CHECK X2 ok]]]\n[[[CHECK Y1 ok]]]\n[[[FOOT s01.b0002]]] Марс\n", kf)
+    ok("FOOT читается без степени", pf == [("FOOT", "s01.b0002", "Марс")], pf)
+    ok("FOOT: по очку, потолок 5", B.score(kf, allv, pf)["penalty"] == {"FOOT": 1}
+       and B.score(kf, allv, pf * 9)["penalty"]["FOOT"] == 5)
+    ok("ключ без FOOT: лишняя сноска не штрафуется", B.score(k, allv, pf)["penalty"] == {})
+    ok("правило о сносках и перечень тем — только при FOOT в ключе",
+       "[[[FOOT" in B.judge_system(kf, "ru", "ru") and "[[[FOOT" not in B.judge_system(k, "ru", "ru")
+       and "Helen of Troy" in B.judge_prompt(kf, [], {}, []) and "{foot" not in B.judge_system(k, "ru", "ru"))
+
     # ---- статистика ловушек по готовым прогонам
     d = tempfile.mkdtemp()
     kk = {"version": "9.9.1", "checks": [{"id": "X1", "area": "a", "text": "first"},

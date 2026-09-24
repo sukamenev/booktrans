@@ -107,7 +107,7 @@ def parse_key(text):
     if not lines or not lines[0].startswith("booktrans-bench-key "):
         raise ValueError("not a booktrans bench key")
     key = {"version": lines[0].split()[1], "source": "", "title": "",
-           "areas": [], "penalties": {}, "checks": []}
+           "areas": [], "penalties": {}, "checks": [], "notes": []}
     sec = None
     for raw in lines[1:]:
         line = raw.strip()
@@ -127,6 +127,8 @@ def parse_key(text):
         elif sec == "penalties":
             code, per, cap = line.split()
             key["penalties"][code] = (int(per), int(cap))
+        elif sec == "notes":                     # темы, к которым сноска допустима
+            key["notes"].append(line)
         elif sec == "checks":
             m = CHECK_LINE.match(line)
             if not m:
@@ -198,13 +200,14 @@ def code_checks(blocks, tr, source, to):
 def judge_system(key, to, ui):
     """Системная часть судьи. Пропуски (OMIT) судья ищет, только если ключ
     объявляет этот штраф: старые ключи судятся так же, как судились."""
-    omit = "OMIT-minor" in key["penalties"] or "OMIT-major" in key["penalties"]
-    rule, fmt = (lang.prompt("bench_judge_omit")[0].split("\n---\n", 1)
-                 if omit else ("", ""))
+    def part(name, on):
+        rule, fmt = lang.prompt(name)[0].split("\n---\n", 1) if on else ("", "")
+        return (rule.strip() + "\n" if rule else "", fmt.strip() + "\n" if fmt else "")
+    omit = part("bench_judge_omit", "OMIT-minor" in key["penalties"] or "OMIT-major" in key["penalties"])
+    foot = part("bench_judge_foot", "FOOT" in key["penalties"] and key.get("notes"))
     return lang.prompt("bench_judge")[0].format(
         to=lang.lang_name(to), ui=lang.lang_name(ui),
-        omit_rule=rule.strip() + "\n" if rule else "",
-        omit_fmt=fmt.strip() + "\n" if fmt else "")
+        omit_rule=omit[0], omit_fmt=omit[1], foot_rule=foot[0], foot_fmt=foot[1])
 
 
 def judge_prompt(key, blocks, tr, footnotes):
@@ -213,6 +216,8 @@ def judge_prompt(key, blocks, tr, footnotes):
     for c in key["checks"]:
         lines.append(f"{c['id']} [{c['area']} {c['points']}] "
                      f"{','.join(c['blocks'])} :: {c['text']}")
+    if "FOOT" in key["penalties"] and key.get("notes"):
+        lines += ["", T("bench_p_notes")] + [f"- {n}" for n in key["notes"]]
     lines += ["", T("bench_p_text")]
     notes = {}
     for n in footnotes or []:
@@ -229,7 +234,7 @@ def judge_prompt(key, blocks, tr, footnotes):
 
 
 VERDICT = re.compile(r"\[\[\[CHECK\s+(\w+)\s+(ok|fail)\]\]\]\s*(.*)", re.I)
-PENALTY = re.compile(r"\[\[\[(ADD|OMIT|UNTR)\s+(s\d+\.b\d+)(?:\s+(minor|major))?\]\]\]\s*(.*)")
+PENALTY = re.compile(r"\[\[\[(ADD|OMIT|UNTR|FOOT)\s+(s\d+\.b\d+)(?:\s+(minor|major))?\]\]\]\s*(.*)")
 REMARK = re.compile(r"\[\[\[NOTE\s+(s\d+\.b\d+)\]\]\]\s*(.*)")
 
 
@@ -247,7 +252,7 @@ def parse_verdict(out, key):
         m = PENALTY.search(line)
         if m:
             kind, bid, grade, quote = m.groups()
-            code = kind if kind == "UNTR" else f"{kind}-{grade or 'minor'}"
+            code = kind if kind in ("UNTR", "FOOT") else f"{kind}-{grade or 'minor'}"
             pens.append((code, bid, quote.strip()))
             continue
         m = REMARK.search(line)
