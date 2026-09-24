@@ -716,7 +716,7 @@ words, one chunk) laden with 100 planted traps in twelve areas, one point each �
 completeness, calques, rare vocabulary, imagery, verse and puns, consistency
 of names and repeated phrases, gender revealed late, sound-based
 transliteration of names like Cholmondeley and Siobhan, target-language norm,
-footnotes, register — and a judge model (Opus by default, `--judge` to change)
+footnotes, register — and a judge model (GPT-6 Sol by default, `--judge` to change)
 answers ok/fail on every trap against an answer key. The text is translated
 and judged three times and the mean is reported. The score, 0 to 100, is
 computed by code, not by the judge; additions, untranslated fragments,
@@ -987,7 +987,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
 --bench-runs N        how many times to translate and judge the benchmark text; the mean is reported (default 3)
 --bench-stats [VER]   pass rate of every benchmark check over finished runs here (or in -w); VER: exact key version(s), comma-separated; "1.4." takes the whole 1.4.N branch
---judge ID            judge model for the benchmark (default claude:claude-opus-5-5:medium, backup codex:gpt-5.6-sol:medium)
+--judge ID            judge model for the benchmark (default codex:gpt-6-sol:medium, backup claude:claude-opus-5-5:medium)
 --agent NAME          agent: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes

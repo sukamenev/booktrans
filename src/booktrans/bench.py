@@ -37,7 +37,7 @@ from .run import Run, locked
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETS = os.path.join(HERE, "bench")
 TEXT, KEY = "text.fb2", "key.txt"
-JUDGE_DEFAULT = "claude:claude-opus-5-5:medium,codex:gpt-5.6-sol:medium"
+JUDGE_DEFAULT = "codex:gpt-6-sol:medium,claude:claude-opus-5-5:medium"
 # Греческие буквы законны в любом переводе: «γ Кассиопеи» — не чужой язык.
 ALWAYS_SCRIPT = r"Ͱ-Ͽ"
 

@@ -156,7 +156,7 @@ def main():
             return Fake(n, m, e)
     who, dropped = B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))
     ok("судья семьи переводчика вычеркнут, запасной остаётся",
-       [w.model for w in who] == ["gpt-5.6-sol"] and [x.model for x in dropped] == ["claude-opus-5-5"],
+       [w.model for w in who] == ["gpt-6-sol"] and [x.model for x in dropped] == ["claude-opus-5-5"],
        ([w.model for w in who], [x.model for x in dropped]))
     ok("усилие судьи из умолчания — medium", who[0].effort == "medium", who[0].effort)
     Args.judge = "agy:claude-opus-4-6-thinking"
