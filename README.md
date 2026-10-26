@@ -541,7 +541,7 @@ Bundled profiles live in `profiles/`:
 | `agy` | Antigravity alone: Gemini Flash in front, its Opus rescues refusals |
 | `agy-claude` | the same, with Claude Code's own Opus as the last link |
 | `agy-probe` | Flash — a probe run of the machinery, not for reading |
-| `best-agy-claude` | Gemini translates, Opus edits |
+| `best-agy-claude` | Gemini translates, Opus edits and takes the chunks nobody else would |
 | `best-claude-codex` | Opus translates, Sol edits: a foreign editor catches the calques one's own lets through |
 | `best-codex-claude` | Sol translates, Opus edits |
 | `ultra-claude-codex` | Fable translates, Astra edits: the two flagships, each editing the other's family |
