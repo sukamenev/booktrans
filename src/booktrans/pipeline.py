@@ -354,7 +354,13 @@ def _run(agent, system, prompt, retries, parse_fn, log):
             # Подряд они идти не обязаны: на живой книге модель вставала на
             # b0038, b0034, b0002, b0034, b0038 — пять раз об одно и то же,
             # и ни разу дважды кряду.
-            if e.first in stops:
+            # Ни одного маркера, но слова есть — модель не переводила, а
+            # объясняла, почему не будет. Это отказ с первого раза: второй
+            # заход на живой книге не взял ни одного из 21 такого куска,
+            # стоив минуту и полный запрос каждый. Пустой ответ — другое,
+            # возможный сбой транспорта: его переспрашиваем.
+            spoke = e.n == e.total and out.strip() and "[[[" not in out
+            if spoke or e.first in stops:
                 FAULT.kind = "net" if net else "model"
                 raise Refused(e.first, e.n, e.total) from None
             stops.append(e.first)

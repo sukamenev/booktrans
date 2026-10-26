@@ -223,6 +223,33 @@ def main():
     _, meta, _ = P._chain_run([first, second], "", "п", 1, plain, log)
     ok("после сбоя пометки нет", not meta.get("after_refusal"), meta)
 
+    # Отказ словами — проза без единого маркера — отказ с первого раза:
+    # второй заход такого куска не берёт. Пустой ответ и обрыв посередине
+    # переспрашиваются, как прежде.
+    def by_markers(o):
+        if "[[[" not in o:
+            raise P.Truncated("s01.b0001", 3, 3)
+        if "[[[P s01.b0003]]]" not in o:
+            raise P.Truncated("s01.b0003", 1, 3)
+        return o, ""
+    whole = "[[[P s01.b0001]]]\nа\n[[[P s01.b0002]]]\nб\n[[[P s01.b0003]]]\nв"
+    first = Says("первая", answer="Я не могу перевести этот фрагмент.")
+    second = Says("вторая", answer=whole)
+    _, meta, _ = P._chain_run([first, second], "", "п", 3, by_markers, log)
+    ok("отказ словами: без второго захода, с именем",
+       first.calls == 1 and meta.get("refused_by") == ["первая"]
+       and meta["model"] == "вторая", (first.calls, meta))
+    first = Says("первая", answer="")
+    second = Says("вторая", answer=whole)
+    _, meta, _ = P._chain_run([first, second], "", "п", 3, by_markers, log)
+    ok("пустой ответ переспрашивают", first.calls == 2 and meta["model"] == "вторая",
+       (first.calls, meta))
+    first = Says("первая", answer="[[[P s01.b0001]]]\nа\n[[[P s01.b0002]]]\nб")
+    second = Says("вторая", answer=whole)
+    _, meta, _ = P._chain_run([first, second], "", "п", 3, by_markers, log)
+    ok("обрыв посередине переспрашивают", first.calls == 2 and meta["model"] == "вторая",
+       (first.calls, meta))
+
     # Фильтр шлюза: повторы бесполезны — одна попытка, имя записано,
     # кусок уходит следующей модели.
     first = Says("первая", boom=A.Blocked("prompt could not be submitted"))
@@ -485,7 +512,7 @@ def main():
     shutil.rmtree(d, ignore_errors=True)
     ok("отказ при запасной под лимитом: ждут её срок, а не пропускают",
        done == 1 and len(slept) == 1 and 599 <= slept[0] <= 601
-       and first.calls == 2 and second.calls == 1,
+       and first.calls == 1 and second.calls == 1,
        (done, slept, first.calls, second.calls))
 
     A.LIMITS.forget()
