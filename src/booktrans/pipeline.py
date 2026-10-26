@@ -2185,12 +2185,20 @@ def name_gaps(rows, srcs, cur, to=""):
             continue
         decl = cells[2] if len(cells) > 3 else ""
         stems = name_stems(cells[1], decl, to)
+        # Прозвище короче трёх букв («Би», «Эл») основой не бывает: как
+        # подстрока оно нашлось бы в любом слове. Такое ищется целым словом.
+        # Без этого героиня, которую всю книгу зовут Би, давала тревогу на
+        # каждый абзац: проверка искала только полное имя.
+        short = [w.casefold().replace("ё", "е")
+                 for w in re.findall(r"[^\W\d_]+", cells[1]) if len(w) < 3]
         # Несколько строк на одно имя (псевдоним, гражданское имя, строка
         # обращений) — основы складываются: любая из них закрывает блок.
         for o in origs:
-            if stems:
+            if stems or short:
                 old = names.get(o)
-                names[o] = (old[0] + stems if old else stems, old[1] if old else trans[0])
+                names[o] = (old[0] + stems if old else list(stems),
+                            old[1] if old else trans[0],
+                            old[2] + short if old else short)
     if not names:
         return {}
     # Ключ, который в книге чаще пишется строчными, чем с прописной, — не
@@ -2215,9 +2223,13 @@ def name_gaps(rows, srcs, cur, to=""):
         # «ё» и «е» в тексте гуляют («Кутёж — Кутежа»): сравниваем без точек.
         low = cur[i].casefold().replace("ё", "е")
         for o in found:
-            stems, t = names[o]
-            if not any(st.replace("ё", "е") in low for st in stems):
-                gaps.setdefault(i, []).append((o, t))
+            stems, t, short = names[o]
+            if any(st.replace("ё", "е") in low for st in stems):
+                continue
+            if any(re.search(rf"(?<![^\W\d_]){re.escape(w)}(?![^\W\d_])", low)
+                   for w in short):
+                continue
+            gaps.setdefault(i, []).append((o, t))
     return gaps
 
 
