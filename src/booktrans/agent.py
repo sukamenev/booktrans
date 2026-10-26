@@ -23,7 +23,7 @@ import urllib.request
 
 from . import winproc
 from .lang import T
-from .tune import AGY_CAP, config_dir
+from .tune import AGY_CAP, MAX_WAIT, config_dir
 
 
 class AgentError(RuntimeError):
@@ -336,7 +336,7 @@ class WaitingAgent:
     сколько ждать и ждать ли вообще, решает тот, кто держит всю цепочку.
     """
 
-    def __init__(self, inner, interval=900, max_wait=86400, log=print):
+    def __init__(self, inner, interval=900, max_wait=MAX_WAIT, log=print):
         self.inner = inner
         self.interval = interval
         self.max_wait = max_wait
@@ -1124,7 +1124,7 @@ class OpenAIAgent(OpenRouterAgent):
 
 
 def make_agent(kind="claude", model=None, command=None, timeout=1800,
-               wait=900, max_wait=86400, log=print, tools="", effort=None):
+               wait=900, max_wait=MAX_WAIT, log=print, tools="", effort=None):
     if kind == "claude":
         inner = ClaudeAgent(model, timeout, tools, effort)
     elif kind == "agy":

@@ -223,7 +223,7 @@ def parser(ui):
                     help=T("h_ocrfixer"))
     ap.add_argument("--retries", type=int, default=5)
     ap.add_argument("--wait", type=int, default=900, help=T("h_wait"))
-    ap.add_argument("--max-wait", type=int, default=86400, help=T("h_maxwait"))
+    ap.add_argument("--max-wait", type=int, default=tune.MAX_WAIT, help=T("h_maxwait"))
     ap.add_argument("--chunk-words", type=int, default=pipeline.TARGET_WORDS)
     ap.add_argument("--jobs", type=int, default=1, help=T("h_jobs"))
     ap.add_argument("--scout-jobs", type=int, default=1,

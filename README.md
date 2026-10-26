@@ -420,7 +420,7 @@ chunk number.
 At a subscription limit, the chunk goes to **the next model in the chain**.
 The exhausted model is skipped until the provider's reset time. When all are
 unavailable, the pipeline waits for the earliest recovery, including limits
-hit mid-request. The maximum wait defaults to a day; `--wait 0` disables it.
+hit mid-request. The maximum wait defaults to 12 hours; `--wait 0` disables it.
 
 If repeated failures have no recognisable limit message, a short probe
 distinguishes a chunk-specific problem from unavailable model access.
@@ -965,7 +965,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --no-headings         the book really has no chapters, do not stop
 --chunk-words N       chunk size
 --retries N           attempts per chunk on a parsing failure (default 5)
---max-wait SEC        cap on waiting for rate limits (default one day)
+--max-wait SEC        cap on waiting for rate limits (default 12 hours)
 --partial             assemble even with parts untranslated
 --check               check the environment and say what is missing
 ```

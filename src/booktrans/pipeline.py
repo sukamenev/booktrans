@@ -25,7 +25,7 @@ from . import lang
 from .tune import (AGY_CAP, CODE_LINES, DIGEST_BUDGET, DIGEST_EVERY, DIGEST_MIN,
                    FAIL_PAUSE, FIX_CHARS, FIX_MAX, FIX_NEAR, LOOKAHEAD_WORDS,
                    HUSH_MAX, HUSH_PAUSE,
-                   MAX_BLOCKS, MAX_VERSE, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
+                   MAX_BLOCKS, MAX_VERSE, MAX_WAIT, MAX_WORDS, MERGE_INPUT, OCR_SAMPLE,
                    REF_ROWS_BUDGET, REFUSE_ROW,
                    RETRY_PAUSE, SCOUT_BUDGET, SCOUT_CANON_BUDGET, SCOUT_HEADS,
                    SCOUT_ROUNDS,
@@ -1269,7 +1269,7 @@ def _hold(who, waited, log):
     pause = min((agent_mod.limit_left(a) for a in who), default=0)
     if not pause:
         return 0
-    top = getattr(who[0], "max_wait", 86400)
+    top = getattr(who[0], "max_wait", MAX_WAIT)
     if waited >= top:
         return 0
     pause = int(min(pause, top - waited)) + 1
@@ -1310,7 +1310,7 @@ def _run_patient(agent, backups, system, prompt, retries, parse, log, lock=None)
         except agent_mod.RateLimited as e:
             free = any(not agent_mod.limit_left(fb)
                        for fb in backups if fb is not agent)
-            if free or held >= getattr(agent, "max_wait", 86400) or STOP.is_set():
+            if free or held >= getattr(agent, "max_wait", MAX_WAIT) or STOP.is_set():
                 raise
             say("", "    " + T("chunk_failed", e))
         except agent_mod.Hushed as e:
@@ -1328,7 +1328,7 @@ def _retry_row(row, since):
     свойство цепочки, а не первой модели: прежде запасная, упёршись в лимит,
     объявляла кусок несделанным, и поток уходил ждать уже на следующем."""
     return (all(agent_mod.limit_left(a) for a in row) and not STOP.is_set()
-            and time.time() - since < getattr(row[0], "max_wait", 86400))
+            and time.time() - since < getattr(row[0], "max_wait", MAX_WAIT))
 
 
 def _wait_spares(backups, since, log):
@@ -1341,7 +1341,7 @@ def _wait_spares(backups, since, log):
     if not backups or not all(agent_mod.limit_left(a) for a in backups):
         return False
     held = time.time() - since
-    top = getattr(backups[0], "max_wait", 86400)
+    top = getattr(backups[0], "max_wait", MAX_WAIT)
     if held + min(agent_mod.limit_left(a) for a in backups) > top:
         return False
     while not STOP.is_set():
