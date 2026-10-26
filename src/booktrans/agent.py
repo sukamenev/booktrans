@@ -631,13 +631,16 @@ class CommandAgent(Agent):
 
 
 def agy_done(out):
-    """Удачный конверт напечатан целиком. Неудачный дожидается выхода:
-    сбой объясняют код возврата и stderr."""
+    """Конверт напечатан целиком — удачный или нет. После конверта ERROR agy
+    тоже не выходит (так приходит фильтр вывода Google), и ждать выхода
+    значило сжечь полчаса срока и выбросить напечатанное объяснение.
+    Здоровому выйти самому даются три секунды — код возврата и stderr
+    успевают."""
     try:
         env = json.loads(out)
     except ValueError:
         return False
-    return isinstance(env, dict) and env.get("status") == "SUCCESS"
+    return isinstance(env, dict) and "status" in env
 
 
 # Свой агент agy — без инструментов. У agy нет флага «без инструментов»,
@@ -715,7 +718,19 @@ class AgyAgent(Agent):
                              done=agy_done)
         except Exception as e:
             raise AgentError(f"ошибка запуска agy: {e}")
-        if r.returncode != 0:
+        env = None
+        try:
+            env = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            pass
+        if not isinstance(env, dict):
+            env = None
+        # Неудачу agy сообщает кодом возврата или конвертом со status ERROR.
+        # Второе — фильтр вывода Google: модель начала переводить, фильтр
+        # оборвал ответ, agy сам повторил и принёс отказ, а потом повис, не
+        # выйдя; код возврата тогда наш, нулевой. Повтор бьётся о тот же
+        # фильтр, поэтому его слова — Blocked, как у фильтра на входе.
+        if r.returncode != 0 or (env is not None and env.get("status") != "SUCCESS"):
             msg = said(r)
             if limited(msg):
                 plain = bare_words(msg, payload)
@@ -724,13 +739,18 @@ class AgyAgent(Agent):
                 raise Fatal(msg[:300])
             if BLOCKED_PAT.search(msg):
                 raise Blocked(CLI_NOISE.sub("", msg).strip()[:300])
-            plain = bare_words(msg, payload)
-            if not plain:
-                raise Hushed(f"agy вернул {r.returncode} без объяснения")
-            raise AgentError(f"agy вернул {r.returncode}: {plain[:400]}")
+            # Конверт ERROR без знакомых слов, но с ответом модели — её
+            # собственный отказ: его разбирает перевод, как любой ответ не по
+            # форме, и два подряд честно станут отказом с именем модели.
+            if r.returncode != 0 or not str((env or {}).get("response") or "").strip():
+                plain = bare_words(msg, payload)
+                if not plain:
+                    raise Hushed(f"agy вернул {r.returncode} без объяснения")
+                raise AgentError(f"agy вернул {r.returncode}: {plain[:400]}")
         tok = None
-        try:
-            env = json.loads(r.stdout)
+        if env is None:
+            text = r.stdout
+        else:
             # SUCCESS с пустым текстом — пустой ответ, а не сбой: перевод
             # разберёт его как «оборван на первом блоке», и два таких подряд
             # честно станут отказом с именем модели. Ошибкой это считалось
@@ -755,8 +775,6 @@ class AgyAgent(Agent):
                 if (u.get("total_tokens") or 0) >= inp + out + think:
                     out += think
                 tok = tokens(inp, u.get("cache_read_tokens"), out, think)
-        except json.JSONDecodeError:
-            text = r.stdout
         # Фильтр шлюза приходит и с кодом 0 — сообщением вместо ответа.
         if BLOCKED_PAT.search(text[:400]):
             raise Blocked(text.strip()[:300])

@@ -460,6 +460,52 @@ def main():
     A.LIMITS.forget()
     ok("под лимитом лишней выдержки нет", slept == [], slept)
 
+    # Первая отказалась по содержанию, запасная под лимитом с известным
+    # сроком: прежде кусок пропускался, хотя через полчаса запасная взялась
+    # бы, а без него книга не собирается. Теперь запасную ждут до её срока —
+    # с терпением цепочки (max_wait); лимит дольше терпения не ждут вовсе.
+    answer_ok = ("[[[P s01.b0002]]]\nПробный абзац с дефектом.\n"
+                 "[[[META]]]\nSUMMARY: было дело\nTERMS:")
+    A.LIMITS.forget()
+    first = Says("первая", answer="Я не могу перевести этот фрагмент.")
+    second = Says("вторая", answer=answer_ok)
+    first.kind = second.kind = "стенд"
+    second.max_wait = 3600
+    A.LIMITS.note(A.key_of(second), 600)
+    slept.clear()
+
+    def sleep_frees(s):
+        slept.append(s)
+        A.LIMITS.forget()               # срок вышел — запасная свободна
+    P.time.sleep = sleep_frees
+    d = tempfile.mkdtemp()
+    done, _, _ = P.translate(d, [dict(CHUNKS[0])], first, "", "", 2, hush,
+                             fallback=[second])
+    P.time.sleep = real_sleep
+    shutil.rmtree(d, ignore_errors=True)
+    ok("отказ при запасной под лимитом: ждут её срок, а не пропускают",
+       done == 1 and len(slept) == 1 and 599 <= slept[0] <= 601
+       and first.calls == 2 and second.calls == 1,
+       (done, slept, first.calls, second.calls))
+
+    A.LIMITS.forget()
+    first = Says("первая", answer="Я не могу перевести этот фрагмент.")
+    second = Says("вторая", answer=answer_ok)
+    first.kind = second.kind = "стенд"
+    second.max_wait = 3600
+    A.LIMITS.note(A.key_of(second), 7 * 86400)
+    slept.clear()
+    P.time.sleep = slept.append
+    d = tempfile.mkdtemp()
+    done, _, _ = P.translate(d, [dict(CHUNKS[0])], first, "", "", 2, hush,
+                             fallback=[second])
+    P.time.sleep = real_sleep
+    shutil.rmtree(d, ignore_errors=True)
+    A.LIMITS.forget()
+    ok("лимит дольше терпения не ждут: кусок пропущен сразу",
+       done == 0 and second.calls == 0 and slept == [60],
+       (done, second.calls, slept))
+
     for name in PASSES:
         fn = getattr(P, name, None)
         ok(f"проход {name} принимает цепочку",

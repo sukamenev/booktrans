@@ -159,6 +159,39 @@ def main():
         restore()
     ok("agy: фильтр шлюза — Blocked, а не ответ", not got, got)
 
+    # Фильтр на выходе: модель начала переводить, фильтр Google оборвал
+    # ответ, agy сам повторил и принёс конверт ERROR с отказом. Код нулевой:
+    # после такого конверта agy виснет и убит по готовности. Слова фильтра —
+    # Blocked; лимит — лимит; незнакомые слова при ответе модели — ответ.
+    def error_env(error, response=""):
+        spy = Ran(json.dumps({"status": "ERROR", "error": error,
+                              "response": response}))
+        spied("agy", spy)
+        A.LIMITS.forget()       # лимит прошлого случая не должен решать за этот
+        try:
+            a = A.make_agent("agy", model="проба-модель", timeout=60)
+            try:
+                return a.run("система", "запрос")[0]
+            except A.AgentError as e:
+                return type(e).__name__
+        finally:
+            restore()
+    got = error_env("Your previous response was blocked by content safety "
+                    "filters: The model output could not be generated. This "
+                    "output contains sensitive words that violate Google's "
+                    "[Generative AI Prohibited Use policy](https://x)",
+                    "Я не могу предоставить перевод этого фрагмента.")
+    ok("agy: фильтр вывода в конверте ERROR — Blocked", got == "Blocked", got)
+    got = error_env("RESOURCE_EXHAUSTED (code 429): Individual quota reached. "
+                    "Resets in 36m52s.")
+    ok("agy: лимит в конверте ERROR — RateLimited", got == "RateLimited", got)
+    got = error_env("что-то невнятное", "Я не могу перевести этот отрывок.")
+    ok("agy: конверт ERROR с ответом модели — ответ, разберёт перевод",
+       got == "Я не могу перевести этот отрывок.", got)
+    got = error_env("что-то невнятное")
+    ok("agy: конверт ERROR без ответа и без слов — сбой, не ответ",
+       got in ("AgentError", "Hushed"), got)
+
     # Наш срок в 1234 секунды должен дойти до agy: свой у него короче, и
     # обрыв по нему приходит как отказ модели, а не как исчерпанное время.
     spy = Ran(ANSWERS["agy"])

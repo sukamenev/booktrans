@@ -550,7 +550,7 @@ Bundled profiles live in `profiles/`:
 | `claude-agy` | the same, with Antigravity's models as the last link |
 | `claude-codex` | Claude with Codex models as the last link |
 | `claude-probe` | Sonnet — a probe run of the machinery, not for reading |
-| `good-agy-codex` | the fallback pair: Gemini translates, Sol edits — for when Claude is unavailable |
+| `good-agy-codex` | the fallback pair: Gemini translates, Sol edits and takes the chunks nobody else would — for when Claude is unavailable |
 | `good-claude-agy` | the fallback pair: Opus translates, Gemini edits — for when Sol is unavailable |
 | `good-codex-agy` | the fallback pair: Sol translates, Gemini edits — for when Claude is unavailable |
 | `codex` | Codex alone: Sol translates and edits |

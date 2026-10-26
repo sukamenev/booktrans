@@ -1331,6 +1331,27 @@ def _retry_row(row, since):
             and time.time() - since < getattr(row[0], "max_wait", 86400))
 
 
+def _wait_spares(backups, since, log):
+    """Дождаться запасной, когда первая модель отказалась по содержанию, а
+    все запасные под лимитом. Отказ повторится слово в слово, лимит пройдёт
+    сам, а пропущенный кусок всё равно не даст собрать книгу — на живой книге
+    так пропал кусок при сбросе лимита через 37 минут. Ждём до срока из
+    сообщения поставщика, с терпением цепочки (--max-wait); лимит, который
+    не снимут в этот срок, не ждём вовсе. False — ждать нечего."""
+    if not backups or not all(agent_mod.limit_left(a) for a in backups):
+        return False
+    held = time.time() - since
+    top = getattr(backups[0], "max_wait", 86400)
+    if held + min(agent_mod.limit_left(a) for a in backups) > top:
+        return False
+    while not STOP.is_set():
+        step = _hold(backups, held, log)
+        if not step:
+            break
+        held += step
+    return not STOP.is_set() and not all(agent_mod.limit_left(a) for a in backups)
+
+
 def _chain_run(who, system, prompt, retries, parse, log):
     """`_run` по цепочке: следующая модель подхватывает и отказ, и сбой.
 
@@ -1522,11 +1543,40 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
         # Вся цепочка под лимитом — переждать; иначе кусок объявили бы
         # непереведённым, а через три таких прогон бы встал. Лимит, ударивший
         # в момент самого вызова, пережидается на месте — см. _run_patient.
+        parse = lambda o: _parse_translate(o, expected, srcs)      # noqa: E731
+        deniers = []
+
+        def spares(last):
+            """То же задание следующей модели цепочки. Отказ — свойство модели,
+            а не текста, и у следующей такого запрета может не быть. Идём по
+            цепочке до первой, которая возьмётся; занятых минуем."""
+            got = None
+            for fb in _backups(fallback):
+                if agent_mod.limit_left(fb):
+                    continue
+                log("    " + T("refused_retry", agent_mod.label(fb)))
+                try:
+                    got = _run(fb, system, prompt, retries, parse, log)
+                    # У перевода свой обход цепочки, мимо _chain_run, и
+                    # пометка «после отказа» здесь терялась — вместе с
+                    # именами отказавшихся, без которых редактура умеет
+                    # только отдать кусок переведшей модели: самоправка.
+                    if deniers:
+                        got = (got[0], dict(got[1], after_refusal=True,
+                                            refused_by=list(deniers)), got[2])
+                    break
+                except (Refused, RuntimeError, Fatal) as e2:
+                    m2 = getattr(fb, "model", None)
+                    if isinstance(e2, (Refused, Blocked)) and m2 and m2 not in deniers:
+                        deniers.append(m2)
+                    last = getattr(e2, "first", last)
+            return got, last
+
         def attempt():
+            deniers.clear()
             try:
-                return _run_patient(
-                    agent, _backups(fallback), system, prompt, retries,
-                    lambda o: _parse_translate(o, expected, srcs), log), "?"
+                return _run_patient(agent, _backups(fallback), system, prompt,
+                                    retries, parse, log), "?", False
             except (Refused, RuntimeError, Fatal) as e:
                 # Отказ и сбой поставщика тут равны: кусок не переведён, а
                 # следующая модель цепочки может и взяться. Прежде ловился один
@@ -1542,39 +1592,24 @@ def translate(work, chunks, agent, system, task, retries, log, only=None,
                 else:
                     log("    " + (T("lim_switch", e) if isinstance(e, RateLimited)
                                   else T("chunk_failed", e)))
-                # Подстраховка: то же задание следующей модели цепочки. Отказ —
-                # свойство модели, а не текста, и у следующей такого запрета может
-                # не быть. Идём по цепочке до первой, которая возьмётся.
-                backups = _backups(fallback)
-                got, last = None, getattr(e, "first", "?")
-                deniers = ([getattr(agent, "model", None)]
-                           if isinstance(e, (Refused, Blocked)) else [])
-                for fb in backups:
-                    if agent_mod.limit_left(fb):
-                        continue
-                    log("    " + T("refused_retry", agent_mod.label(fb)))
-                    try:
-                        got = _run(fb, system, prompt, retries,
-                                   lambda o: _parse_translate(o, expected, srcs), log)
-                        # У перевода свой обход цепочки, мимо _chain_run, и
-                        # пометка «после отказа» здесь терялась — вместе с
-                        # именами отказавшихся, без которых редактура умеет
-                        # только отдать кусок переведшей модели: самоправка.
-                        if deniers:
-                            got = (got[0], dict(got[1], after_refusal=True,
-                                                refused_by=deniers), got[2])
-                        break
-                    except (Refused, RuntimeError, Fatal) as e2:
-                        m2 = getattr(fb, "model", None)
-                        if isinstance(e2, (Refused, Blocked)) and m2 and m2 not in deniers:
-                            deniers.append(m2)
-                        last = getattr(e2, "first", last)
-                return got, last
+                denied = isinstance(e, (Refused, Blocked))
+                if denied and getattr(agent, "model", None):
+                    deniers.append(agent.model)
+                got, last = spares(getattr(e, "first", "?"))
+                return got, last, denied
 
         since = time.time()
-        got, last = attempt()
-        while got is None and _retry_row([agent] + _backups(fallback), since):
-            got, last = attempt()
+        got, last, denied = attempt()
+        while got is None:
+            if _retry_row([agent] + _backups(fallback), since):
+                got, last, denied = attempt()
+            elif denied and _wait_spares(_backups(fallback), since, log):
+                # Первая отказалась по содержанию, запасные под лимитом: отказ
+                # повторится слово в слово, а лимит пройдёт. Дождались — снова
+                # к запасным, минуя отказавшую.
+                got, last = spares(last)
+            else:
+                break
         backups = _backups(fallback)
         if got is None:
             log("    " + (T("refused_both", last) if backups
