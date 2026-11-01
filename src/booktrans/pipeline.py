@@ -3100,7 +3100,7 @@ def apply_fixes(work, blocks, log=None):
 
 
 
-def ocr_check(work, path, agent, log):
+def ocr_check(work, path, agent, log, text=None):
     """Распознан ли текстовый слой pdf. Возвращает, чем именно, или пустое.
 
     Сперва метаданные: программ распознавания много, но подписываются они
@@ -3109,9 +3109,13 @@ def ocr_check(work, path, agent, log):
     узнаёт с одного взгляда, а нам гадать по числам не вышло.
 
     Спрашиваем один раз на книгу: ответ ложится в `work/source.json`.
+
+    `text` — текст книги, если он взят не из текстового слоя: у pdf,
+    прочитанного распознаванием страниц, слой и его подпись в метаданных о
+    тексте книги ничего не говорят, а слоя может и не быть.
     """
     from . import extract
-    made = extract.ocr_made(path)
+    made = "" if text is not None else extract.ocr_made(path)
     if made:
         return made
     if not path.lower().endswith(".pdf"):
@@ -3122,7 +3126,9 @@ def ocr_check(work, path, agent, log):
         # «нет» вместо пустой строки: note_source пустых значений не хранит,
         # а различать «спрашивали, не распознан» и «не спрашивали» надо.
         return "" if was["ocr"] == "нет" else was["ocr"]
-    txt = extract._pdf_text(path)
+    txt = extract._pdf_text(path) if text is None else text
+    if not txt.strip():
+        return ""
     lo = len(txt) // 3
     sample = txt[lo:lo + OCR_SAMPLE]
     ask = ("Перед тобой кусок текста из книги. Скажи, распознан ли он машиной "

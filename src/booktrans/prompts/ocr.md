@@ -17,3 +17,4 @@ CRITICAL RULES:
 12. HEADERS & FOOTERS: DO NOT extract running headers, running footers, or page numbers. Stitch sentences across pages seamlessly if necessary.
 13. NO CODE BLOCKS: Do NOT wrap your output in ```markdown code blocks. Return the raw Markdown directly.
 14. HEADINGS: Preserve document hierarchy by using Markdown headings (`#`, `##`, `###`) for section titles and chapters based on their visual prominence (font size, weight).
+15. TABLE OF CONTENTS: If the page is the book's table of contents (chapter titles with page numbers), make `[[[TOC]]]` the very first line of your output, then transcribe the page as usual. A list of other books by the author is not a table of contents.

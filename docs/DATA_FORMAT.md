@@ -44,7 +44,7 @@
 | | о чём |
 |---|---|
 | [Общие правила](common.md) | номера блоков, отпечатки, файлы кусков, порядок записи |
-| [Чтение книги](reading.md) | `book.json`, `structure.json`, `marks.json`, `toc.json`, картинки |
+| [Чтение книги](reading.md) | `book.json`, `structure.json`, `marks.json`, `toc.json`, картинки, `pdf_pages/` и формат страницы |
 | [Разведка](scout.md) | `scout.md`, `scout.json`, `state.json` |
 | [Перевод](translate.md) | `tr/`, `headings.json`, `code.json`, `ocrfix.json` |
 | [Редактура, сверка и сноски](edit.md) | `ed/`, `vf/`, `nt/`, `review.md` |

@@ -1105,8 +1105,7 @@ because paragraph breaks — an indent or a blank line — are worked out over t
 whole text at once. To check without calling a model:
 `python3 tests/columns_check.py`.
 
-A pdf with no text layer is refused outright, with a hint to run OCR
-(`ocrmypdf in.pdf out.pdf`) — silently translating an empty book is worse.
+A scan, that is a pdf with no text layer, is read by the `--ocrmodel` model.
 
 A picture goes on the page it came from, and the caption under it stays a
 caption instead of being dropped with the boilerplate.

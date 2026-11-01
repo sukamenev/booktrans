@@ -1933,7 +1933,170 @@ def _verse_lines(p):
 IMG_MD = re.compile(r"!\[(.*?)\]\(images/([^)]+)\)")
 
 
-def _pdf_visual(path, agent, marks=None):
+# Знак переноса в конце строки. О переносе его код ничего не говорит: на
+# бумаге все они — один штрих, и какой из них окажется в тексте, решает
+# программа, а не книга. Мягкий перенос — разрыв слова по определению,
+# прочие бывают и дефисом составного слова.
+DASHES = "-\u2010\u2011"         # дефисы, которые бывают и настоящими
+HYPHENS = DASHES + "\u00ad"
+# На стыке страниц к ним прибавляются короткое тире вплотную к букве — им
+# модель порой читает штрих переноса — и «¬», которым перенос метят
+# программы распознавания. В текстовом слое короткое тире настоящее
+# («1990–2000»), там его не трогаем.
+PAGE_HYPHENS = HYPHENS + "\u2013\u00ac"
+
+
+def _word_forms(txt):
+    """Как книга пишет слова: сколько раз слитно, сколько через дефис, и
+    чего больше среди её разрывов в конце строки.
+
+    Из цепочки «SARS-CoV-2» берутся соседние пары: «sars-cov», «cov-2».
+    Последнее — ответ на разрыв, которого книга нигде больше не пишет: в
+    свёрстанной книге строки рвутся по слогам, а в собранной из epub — только
+    на настоящих дефисах.
+    """
+    solid = collections.Counter(w.lower() for w in re.findall(r"\w+", txt))
+    hyph = collections.Counter()
+    for w in re.findall(r"\w+(?:[-\u2010\u2011\u2013]\w+)+", txt):
+        parts = re.split(r"[-\u2010\u2011\u2013]", w.lower())
+        hyph.update(f"{a}-{b}" for a, b in zip(parts, parts[1:]))
+    seen = [_known(m[1], m[3], solid, hyph)
+            for m in re.finditer(rf"(\w+)([{DASHES}])\n(\w+)", txt)]
+    return solid, hyph, seen.count(True) > seen.count(False)
+
+
+def _known(left, right, solid, hyph):
+    """Пишет ли книга это слово через дефис (True), слитно (False) или
+    не пишет нигде (None)."""
+    n, k = hyph[f"{left}-{right}".lower()], solid[f"{left}{right}".lower()]
+    return n >= k if n or k else None
+
+
+def _seam(left, h, right, forms, chain=False):
+    """Что встаёт между половинками разорванного слова: дефис или ничего.
+
+    Мягкий перенос — всегда ничего. Дефис остаётся рядом с цифрой и в
+    звене цепочки через дефис («easy-to-», «-CoV-2»). Иначе — как книга
+    пишет это слово, а не пишет нигде — как она рвёт строки вообще.
+    """
+    if h == "\u00ad":
+        return ""
+    solid, hyph, usual = forms
+    keep = _known(left, right, solid, hyph)
+    if chain or left[-1:].isdigit() or right[:1].isdigit() or (
+            usual if keep is None else keep):
+        return h if h in DASHES else "-"
+    return ""
+
+
+def dehyphen(txt, forms=None):
+    """Слова, разорванные переносом в конце строки, — целиком."""
+    forms = forms or _word_forms(txt)
+
+    def glue(m):
+        chain = bool(m[4]) or (m.start() > 0 and txt[m.start() - 1] in DASHES)
+        return m[1] + _seam(m[1], m[2], m[3], forms, chain) + m[3]
+    return re.sub(rf"(\w+)([{HYPHENS}])\n(\w+)(?=([{DASHES}]\w)?)", glue, txt)
+
+
+def join_pages(a, b, forms):
+    """Абзац, разорванный стыком страниц, одним куском, или None.
+
+    Страницу модель распознаёт отдельно и не знает, чем начнётся
+    следующая, — фраза на стыке приходит двумя абзацами. Признак разрыва
+    тот же, что у разметки: следующая страница начинается со строчной
+    буквы, а эта не кончается точкой.
+    """
+    if not b[:1].islower():
+        return None
+    m = re.search(rf"([{DASHES}]?)(\w+)([{PAGE_HYPHENS}])$", a)
+    if m:
+        r = re.match(rf"(\w+)([{DASHES}]\w)?", b)
+        chain = bool(m[1] or r[2])
+        return a[:m.start(3)] + _seam(m[2], m[3], r[1], forms, chain) + b
+    end = re.sub(r"(?:\[\^\w+\]|[\"'”’»)\]*_])+$", "", a)
+    if end[-1:] in ".!?…":
+        return None
+    return a + ("" if a.endswith("—") else " ") + b
+
+
+def _plain(p):
+    """Абзац прозы: не заголовок, не таблица, не формула, не стихи."""
+    t = p.lstrip()
+    return bool(t) and not t.startswith(("#", "|", "![", "$$", "[^", ">", "```")) \
+        and not _verse_lines(t)
+
+
+def _is_pic(p):
+    return bool(IMG_MD.search(p)) and not IMG_MD.sub("", p).strip()
+
+
+def _is_caption(p):
+    return bool(re.fullmatch(r"([*_]).+\1", p.strip(), re.S))
+
+
+def _stitch_pages(pages, forms, skip=()):
+    """Фразы, разорванные стыком страниц, — в один абзац.
+
+    `pages` — [(номер, [абзацы])], правится на месте: продолжение уходит в
+    абзац предыдущей страницы. Между половинами фразы стоят сноски внизу
+    страницы и картинка с подписью вверху следующей — их обходим. Страница,
+    целиком ушедшая в предыдущую или занятая одной картинкой, фразу не
+    кончает: её продолжение ищется на следующей.
+    """
+    last = None                 # (список абзацев, номер) — где кончился текст
+    for n, paras in pages:
+        if n in skip:
+            last = None
+            continue
+        j, pic = 0, False
+        while j < len(paras):
+            t = paras[j].strip()
+            if not t or _is_pic(t) or (pic and _is_caption(t)):
+                pic = pic or _is_pic(t)
+                j += 1
+                continue
+            break
+        if last and j < len(paras) and _plain(paras[j]):
+            lst, i = last
+            joined = join_pages(lst[i].rstrip(), paras[j].lstrip(), forms)
+            if joined:
+                lst[i] = joined
+                del paras[j]
+        body = [k for k, t in enumerate(paras) if t.strip()
+                and not re.match(r"\s*\[\^\w+\]:", t) and not _is_pic(t)
+                and not (_is_caption(t) and k and _is_pic(paras[k - 1]))]
+        if body:
+            k = body[-1]
+            last = (paras, k) if _plain(paras[k]) else None
+
+
+TOC_MARK = "[[[TOC]]]"
+
+
+def _toc_titles(text):
+    """Названия глав со страницы оглавления: без номеров страниц,
+    отточий и номеров глав."""
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or re.fullmatch(r"[|:\-\s]+", line):
+            continue
+        if line.startswith("|"):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            cells = [c for c in cells if c and not re.fullmatch(r"\d+|[ivxlcdm]+", c)]
+            if not cells:
+                continue
+            line = max(cells, key=len)
+        line = re.sub(r"^(?:[-*+>]\s+)+", "", line).replace("**", "").strip("*_ ")
+        line = re.sub(r"(?:\s*[.·…_]{2,}\s*|\s+)(?:\d+|[ivxlcdm]+)$", "", line)
+        line = re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", line).strip(" .·…_")
+        if line:
+            out.append(line)
+    return out
+
+
+def _pdf_visual(path, agent):
     try:
         import pypdfium2 as pdfium
     except ImportError:
@@ -1950,27 +2113,19 @@ def _pdf_visual(path, agent, marks=None):
     total_pages = len(pdf)
     all_text = []
     
+    # Оглавление книги в перевод не идёт: номера страниц в нём чужие, а
+    # своё строится из заголовков. Страницу оглавления метит модель
+    # распознавания — она её видит; по ней же сверяются уровни заголовков.
     pure_toc_pages = set()
-    if marks:
-        txt = _pdf_text(path)
-        indent = INDENT_PDF
-        by_page = _by_page(txt, indent)
-        
-        from collections import defaultdict
-        page_marks = defaultdict(list)
-        for i, (p, n) in enumerate(by_page):
-            m = marks.get(i, "p")
-            if m != "skip":  # Ignore headers/footers when evaluating page content
-                page_marks[n].append(m)
-                
-        for n, m_list in page_marks.items():
-            if m_list and all(m == "toc" for m in m_list):
-                pure_toc_pages.add(n)
-
+    toc_titles = []
     for page_num in range(1, total_pages + 1):
         page_md_file = work_dir / f"page_{page_num:04d}.md"
         if page_md_file.exists():
             text = page_md_file.read_text(encoding="utf-8")
+            if text.lstrip().startswith(TOC_MARK):
+                text = text.lstrip()[len(TOC_MARK):].lstrip("\n")
+                pure_toc_pages.add(page_num)
+                toc_titles += _toc_titles(text)
         else:
             raise BadBook(f"Страница {page_num} не найдена. Похоже, стадия OCR не была завершена или не запускалась. Пожалуйста, запустите распознавание (убедитесь, что шаг ocr включён).")
         all_text.append((page_num, text))
@@ -1999,11 +2154,10 @@ def _pdf_visual(path, agent, marks=None):
         if caption and caption != "image":
             blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}c", "kind": "p", "text": f"_{caption}_", "_page": page_num})
     
-    for page_num, text in all_text:
-        page_img_path = work_dir / f"page_{page_num:04d}.png"
-        page_img = None
-        
-        paras = text.split("\n\n")
+    pages = [(n, t.split("\n\n")) for n, t in all_text]
+    _stitch_pages(pages, _word_forms("\n\n".join(t for _, t in all_text)),
+                  pure_toc_pages)
+    for page_num, paras in pages:
         for p in paras + [None]:        # None — только сбросить картинки абзаца
             for m_ in after:
                 emit(m_)
@@ -2117,10 +2271,10 @@ def _pdf_visual(path, agent, marks=None):
     meta["page_size"] = list(collections.Counter(sizes).most_common(1)[0][0])
     
     toc_json_path = work_dir.parent / "toc.json"
-    toc_set = set()
+    toc_set = set(toc_titles)
     if toc_json_path.exists():
         import json
-        toc_set = set(json.loads(toc_json_path.read_text(encoding="utf-8")))
+        toc_set |= set(json.loads(toc_json_path.read_text(encoding="utf-8")))
         
     for b in blocks:
         if b["kind"] == "title":
@@ -2520,7 +2674,11 @@ def is_markdown(path):
     текстом — тогда читать его надо как текст и заголовки спрашивать у
     модели. Признак — заголовок с решёткой: он в markdown обязателен и ни в
     одном простом тексте случайно не встречается по разу на десяток абзацев.
+
+    Только `.md`: в двоичном pdf строка с решёткой находится случайно.
     """
+    if not path.lower().endswith(".md"):
+        return False
     try:
         with open(path, "rb") as f:
             head = f.read(200000).decode("utf-8", "ignore")
@@ -2618,8 +2776,7 @@ def plain_paragraphs(path, encoding=None, ask=None):
     else:
         with open(path, "rb") as f:
             txt, indent = _decode(f.read(), encoding, ask), INDENT_TEXT
-    txt = txt.replace("\f", "\n\n")
-    txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)
+    txt = dehyphen(txt.replace("\f", "\n\n"))
     return [p for p in _split_paragraphs(txt, indent) if p]
 
 
@@ -2636,17 +2793,37 @@ def _by_page(txt, indent):
     Разбивка обязана совпасть с обычной, иначе пометки разметки съедут; не
     совпала — работаем без номеров страниц, как раньше.
     """
-    out, mode = [], mode_of(txt.replace("\f", "\n\n"), indent)
-    for n, page in enumerate(txt.split("\f"), 1):
-        page = re.sub(r"(\w)-\n(\w)", r"\1\2", page)
-        out += [(p, n) for p in _split_paragraphs(page, indent, mode) if p]
-    return out
+    return [(p, n) for n, paras in enumerate(_layer_pages(txt, indent), 1)
+            for p in paras]
+
+
+def _layer_pages(txt, indent):
+    """Абзацы текста по страницам: [[абзацы страницы 1], ...]."""
+    mode, forms = mode_of(txt.replace("\f", "\n\n"), indent), _word_forms(txt)
+    return [[p for p in _split_paragraphs(dehyphen(page, forms), indent, mode) if p]
+            for page in txt.split("\f")]
+
+
+def layer_page(path, n):
+    """Страница из текстового слоя в том виде, в каком её отдаёт модель
+    распознавания: абзацы через пустую строку, без колонтитулов и переносов.
+    Слоя нет — пусто."""
+    pages = _layer_of(path)
+    return "\n\n".join(pages[n - 1]) if n <= len(pages) else ""
+
+
+@functools.lru_cache(maxsize=4)
+def _layer_of(path):
+    """Разбор слоя на всю книгу — один раз, а не на каждую страницу."""
+    try:
+        return _layer_pages(_pdf_text(path), INDENT_PDF)
+    except BadBook:
+        return []
 
 
 def _from_text(txt, title, marks=None, indent=INDENT_TEXT, imgs=()):
     raw = txt
-    txt = txt.replace("\f", "\n\n")
-    txt = re.sub(r"(\w)-\n(\w)", r"\1\2", txt)      # перенос по слогам
+    txt = dehyphen(txt.replace("\f", "\n\n"))
     paras = [p for p in _split_paragraphs(txt, indent) if p]
     by_page = _by_page(raw, indent)
     pages = [n for _, n in by_page] if [p for p, _ in by_page] == paras else []
@@ -3190,17 +3367,27 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None
                       f"Проверьте: file {path!r}") from None
 
 
+def visual_pdf(path, agent=None):
+    """Читается ли pdf распознаванием страниц, а не текстовым слоем.
+
+    Да, если распознавать есть чем — моделью, видящей картинку, — или
+    страницы уже распознаны. Тогда текстовый слой не нужен ни книге, ни
+    разметке: его может не быть вовсе (скан), а бывает он хуже распознанного.
+    """
+    if not path.lower().endswith(".pdf"):
+        return False
+    page1 = os.path.join(os.path.splitext(path)[0] + ".work", "pdf_pages", "page_0001.md")
+    return getattr(agent, "kind", "") in ("claude", "codex", "agy") or os.path.exists(page1)
+
+
 def _read_book(path, ext, styles=None, encoding=None, ask=None, marks=None, agent=None):
     if ext == ".epub":
         return _epub(path, styles, encoding, ask)
     if ext == ".fb2":
         return _fb2(path, encoding, ask)
     if ext == ".pdf":
-        import pathlib
-        page1_md = pathlib.Path(path).with_suffix('.work') / 'pdf_pages' / 'page_0001.md'
-        # Если есть агент и это современная модель (claude, codex, agy), пробуем визуальное извлечение
-        if (agent and getattr(agent, "kind", "") in ("claude", "codex", "agy")) or page1_md.exists():
-            return _pdf_visual(path, agent, marks)
+        if visual_pdf(path, agent):
+            return _pdf_visual(path, agent)
         return _pdf(path, marks)
     if ext in (".html", ".htm"):
         return _html(path, styles, encoding, ask)
@@ -3488,9 +3675,7 @@ def ocr(path, agents, pages_str=None, jobs=1, log=print, T=None, prompt=""):
             if use_pdftotext:
                 try:
                     # pdftotext fallback
-                    r = subprocess.run(["pdftotext", "-f", str(page_num), "-l", str(page_num), "-layout", "-nopgbrk", str(pdf_path), "-"], 
-                                       capture_output=True, text=True, check=True)
-                    fallback_text = r.stdout.strip()
+                    fallback_text = layer_page(str(pdf_path), page_num)
                     
                     # pdfimages fallback
                     subprocess.run(["pdfimages", "-f", str(page_num), "-l", str(page_num), "-png", str(pdf_path), str(images_dir / f"fallback_p{page_num:04d}")], 

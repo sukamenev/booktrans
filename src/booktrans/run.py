@@ -200,10 +200,15 @@ class Run:
                 self.log("OCR stage is only applicable for PDFs.")
                 return False
             return True
+        chain = self.models.chain("ocrmodel")
+        # Без модели читать страницы нечем: pdftotext — это текстовый слой, и
+        # книга читается им целиком, с разметкой, как без распознавания.
+        if all(getattr(x, "kind", "") == "pdftotext" for x in chain):
+            return a.only != "ocr"
         self.log("")
         self.log(head("step_ocr"))
         self.log("")
-        extract.ocr(a.book, self.models.chain("ocrmodel"), a.pages, jobs=a.jobs,
+        extract.ocr(a.book, chain, a.pages, jobs=a.jobs,
                     log=self.log, T=self.T, prompt=self.task("ocr"))
         return a.only != "ocr"
 
@@ -326,6 +331,11 @@ class Run:
         a = self.args
         if self.ext not in (".pdf", ".txt", ".md") or extract.is_markdown(a.book):
             return None
+        # Pdf, прочитанный распознаванием, приходит от модели уже размеченным:
+        # абзацы целы, колонтитулов нет, заголовки помечены, оглавление
+        # отмечено. Текстового слоя при этом может не быть вовсе.
+        if extract.visual_pdf(a.book, self.ocr_agent):
+            return None
         # Разметка идёт и без этапа structure — книгу всё равно надо
         # прочесть, — так что заголовок печатает она сама.
         if "structure" not in self.steps:
@@ -341,11 +351,7 @@ class Run:
         if self.ext != ".pdf":
             return ""
         oa = self.ocr_agent
-        # Страницы распознавания лежат рядом с книгой, а не в `--work`:
-        # так их кладёт и ищет само распознавание.
-        page1 = os.path.join(os.path.splitext(self.args.book)[0] + ".work",
-                             "pdf_pages", "page_0001.md")
-        if getattr(oa, "kind", "") in ("claude", "codex", "agy") or os.path.exists(page1):
+        if extract.visual_pdf(self.args.book, oa):
             return self.T("doc_pdf_visual",
                           getattr(oa, "model", getattr(oa, "kind", "unknown")))
         return self.T("doc_pdftotext")
@@ -450,8 +456,13 @@ class Run:
         остального — иначе разведка соберёт справочник по испорченному, а
         переводчик будет разбирать порчу молча и всякий раз по-своему."""
         a = self.args
+        # Книга, прочитанная распознаванием страниц, — это блоки, а не
+        # текстовый слой: о порче судим по ним.
+        text = ("\n\n".join(b["text"] for b in self.blocks if b["kind"] == "p")
+                if extract.visual_pdf(a.book, self.ocr_agent) else None)
         self.made_by_ocr = pipeline.ocr_check(self.work, a.book,
-                                              self.models.first("formatter"), self.log)
+                                              self.models.first("formatter"), self.log,
+                                              text=text)
         if not self.made_by_ocr:
             return
         self.log("  " + self.T("ocr_made", self.made_by_ocr))
