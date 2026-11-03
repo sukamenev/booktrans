@@ -469,10 +469,14 @@ chunk goes to the next model of the chain. One more habit of Gemini in
 Antigravity: instead of translating it sometimes reaches for a tool — a shell
 command, a file, a web search — and the non-interactive `agy` denies it, ending
 the turn with an empty reply. So the pipeline runs `agy` with its own agent
-`booktrans` (a file it writes once to `~/.gemini/config/agents/`), which has
-no tools at all; that also drops about 12k tokens of agy's tool instructions
-from every request. Should a tool still be denied, the reply is recognised by
-`denied_actions` and retried at once, without counting as a refusal.
+`booktrans`, which has no tools at all; that also drops about 12k tokens of
+agy's tool instructions from every request. Should a tool still be denied, the
+reply is recognised by `denied_actions` and retried at once, without counting
+as a refusal.
+
+The pipeline's requests stay out of the `agy` history (`/resume`): it runs
+`agy` with its own HOME in the temporary folder. If you call `agy` through a
+wrapper with `sudo`, the wrapper must pass HOME on: `sudo … env HOME="$HOME" agy "$@"`.
 
 **Three refusals in a row stop the run.** One refusal is a contentious scene;
 three in a row mean it is no longer about the book — the model's policy

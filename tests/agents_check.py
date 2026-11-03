@@ -86,6 +86,8 @@ def main():
 
     agy_dir = tempfile.mkdtemp()
     A.AGY_AGENT_DIR = agy_dir
+    # Свой HOME для agy проверяет agyhome_check; здесь входа в файле нет.
+    A.AGY_REAL = os.path.join(agy_dir, "нет")
     for kind in ("claude", "agy", "codex"):
         spy = Ran(ANSWERS[kind])
         spied(kind, spy)

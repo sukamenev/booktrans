@@ -6,6 +6,7 @@
     --agent-cmd 'my-agent --sys-file {system_file}'
 """
 import base64
+import glob
 import http.client
 import json
 import mimetypes
@@ -13,7 +14,9 @@ import os
 import re
 import select
 import shlex
+import shutil
 import signal
+import stat
 import subprocess
 import tempfile
 import threading
@@ -415,7 +418,7 @@ def _unix_chunks(p, cmd, deadline, timeout):
         yield chunk
 
 
-def run_envelope(cmd, input, timeout, done):
+def run_envelope(cmd, input, timeout, done, env=None):
     """Запуск агента, отвечающего json-конвертом: ждём конверт, а не выход.
 
     agy 1.1.26 после ответа на большой запрос не выходит — сбрасывает свою
@@ -426,7 +429,7 @@ def run_envelope(cmd, input, timeout, done):
     """
     spawn = winproc.spawn_flags() if os.name == "nt" else {"start_new_session": True}
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE, **spawn)
+                         stderr=subprocess.PIPE, env=env, **spawn)
     if os.name == "nt":
         winproc.attach_job(p)
     LIVE.add(p)
@@ -654,11 +657,79 @@ AGY_AGENT = "booktrans"
 AGY_AGENT_DIR = os.path.join(os.path.expanduser("~"), ".gemini", "config", "agents")
 AGY_AGENT_SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", AGY_AGENT, "agent.md")
 
+# Каждый вызов agy ложится в его историю, и `/resume` человека заполнялся
+# сотнями запросов перевода. Ключа «не сохранять» у agy нет, поэтому конвейер
+# запускает его со своим HOME во временной папке: история там своя, а вход и
+# настройки — ссылками на настоящие. Обёртка вокруг agy, если она есть,
+# обязана передать HOME дальше: sudo его сбрасывает.
+AGY_REAL = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity-cli")
+AGY_SHARED = ("antigravity-oauth-token", "settings.json", "installation_id")
+_agy_lock = threading.Lock()
+_agy_said = []
 
-def agy_agent():
+
+def agy_home(log=None):
+    """Свой HOME для agy или None — тогда общий.
+
+    Папка во временной, с номером пользователя в имени и правами 700: в ней
+    ссылка на токен входа, а временная папка общая. Чужую не трогаем.
+    """
+    if os.name == "nt" or not os.path.exists(os.path.join(AGY_REAL, AGY_SHARED[0])):
+        return None
+    home = os.path.join(tempfile.gettempdir(), f"booktrans-agy-{os.getuid()}")
+    with _agy_lock:
+        try:
+            os.makedirs(home, mode=0o700, exist_ok=True)
+            st = os.lstat(home)
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+                if not _agy_said:
+                    _agy_said.append(home)
+                    (log or print)("  " + T("agy_home_foreign", home))
+                return None
+            if st.st_mode & 0o077:
+                os.chmod(home, 0o700)
+            cli = os.path.join(home, ".gemini", "antigravity-cli")
+            os.makedirs(cli, exist_ok=True)
+            # Проверяем каждый раз: временную папку чистят, а agy, обновляя
+            # токен, может заменить ссылку обычным файлом.
+            for n in AGY_SHARED:
+                src, dst = os.path.join(AGY_REAL, n), os.path.join(cli, n)
+                if not os.path.exists(src) or (os.path.islink(dst) and os.readlink(dst) == src):
+                    continue
+                if os.path.lexists(dst):
+                    os.unlink(dst)
+                os.symlink(src, dst)
+            return home
+        except OSError:
+            return None
+
+
+def agy_forget(home, conv):
+    """Убрать разговор из своей истории agy: копить его незачем."""
+    if not home or not conv or not re.fullmatch(r"[\w-]+", conv):
+        return
+    cli = os.path.join(home, ".gemini", "antigravity-cli")
+    for sub in ("conversations", "brain", "annotations", "presence"):
+        for p in glob.glob(os.path.join(cli, sub, conv + "*")):
+            if os.path.isdir(p) and not os.path.islink(p):
+                shutil.rmtree(p, ignore_errors=True)
+            else:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+
+def agy_env(home):
+    """Окружение вызова agy: свой HOME, если он есть."""
+    return dict(os.environ, HOME=home) if home else None
+
+
+def agy_agent(home=None):
     """Имя агента без инструментов; копия в ~/.gemini создаётся или обновляется
     по файлу из пакета. Не удалось записать — работаем без агента."""
-    path = os.path.join(AGY_AGENT_DIR, AGY_AGENT, "agent.md")
+    base = os.path.join(home, ".gemini", "config", "agents") if home else AGY_AGENT_DIR
+    path = os.path.join(base, AGY_AGENT, "agent.md")
     try:
         want = open(AGY_AGENT_SRC, encoding="utf-8").read()
         if not os.path.exists(path) or open(path, encoding="utf-8").read() != want:
@@ -678,8 +749,11 @@ class AgyAgent(Agent):
     def default_model(self):
         if "agy" not in Agent._default_cache:
             try:
-                r = subprocess.run(["agy", "--sandbox", "--output-format", "json"], input="hi", capture_output=True, text=True, timeout=15)
+                home = agy_home()
+                r = subprocess.run(["agy", "--sandbox", "--output-format", "json"], input="hi",
+                                   capture_output=True, text=True, timeout=15, env=agy_env(home))
                 env = json.loads(r.stdout)
+                agy_forget(home, env.get("conversation_id"))
                 Agent._default_cache["agy"] = env.get("model", "gemini-3.8-flash-medium")
             except Exception:
                 Agent._default_cache["agy"] = "gemini-3.8-flash-medium"
@@ -702,8 +776,9 @@ class AgyAgent(Agent):
         # отказ. Срок должен быть один, наш.
         cmd = ["agy", "--sandbox", "--output-format", "json",
                "--print-timeout", f"{self.timeout}s"]
+        home = agy_home()
         # Чтению картинки инструмент как раз нужен — оно идёт штатным агентом.
-        agent = None if image else agy_agent()
+        agent = None if image else agy_agent(home)
         if agent:
             cmd += ["--agent", agent]
         if self.model:
@@ -715,7 +790,7 @@ class AgyAgent(Agent):
                 path=os.path.abspath(image))
         try:
             r = run_envelope(cmd, input=payload, timeout=self.timeout,
-                             done=agy_done)
+                             done=agy_done, env=agy_env(home))
         except Exception as e:
             raise AgentError(f"ошибка запуска agy: {e}")
         env = None
@@ -725,6 +800,7 @@ class AgyAgent(Agent):
             pass
         if not isinstance(env, dict):
             env = None
+        agy_forget(home, (env or {}).get("conversation_id"))
         # Неудачу agy сообщает кодом возврата или конвертом со status ERROR.
         # Второе — фильтр вывода Google: модель начала переводить, фильтр
         # оборвал ответ, agy сам повторил и принёс отказ, а потом повис, не
