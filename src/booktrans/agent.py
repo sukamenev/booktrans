@@ -489,7 +489,7 @@ class ClaudeAgent(Agent):
     def default_model(self):
         if "claude" not in Agent._default_cache:
             try:
-                r = subprocess.run(["claude", "-p", "hi", "--output-format", "json", "--no-session-persistence"], capture_output=True, text=True, timeout=15)
+                r = subprocess.run(["claude", "-p", "hi", "--output-format", "json", "--no-session-persistence"], capture_output=True, text=True, encoding="utf-8", timeout=15)
                 env = json.loads(r.stdout)
                 usage = env.get("modelUsage") or {}
                 main = {k: v for k, v in usage.items() if not k.startswith("claude-haiku")}
@@ -550,7 +550,7 @@ class ClaudeAgent(Agent):
             
         try:
             r = subprocess.run(cmd, input=user, capture_output=True,
-                               text=True, timeout=self.timeout)
+                               text=True, encoding="utf-8", timeout=self.timeout)
         finally:
             os.unlink(tmp.name)
         if r.returncode != 0:
@@ -621,7 +621,7 @@ class CommandAgent(Agent):
             payload = system + "\n\n" + user
         try:
             r = subprocess.run(tpl, shell=True, input=payload,
-                               capture_output=True, text=True, timeout=self.timeout)
+                               capture_output=True, text=True, encoding="utf-8", timeout=self.timeout)
             if r.returncode != 0:
                 msg = said(r)
                 if limited(msg):
@@ -751,7 +751,7 @@ class AgyAgent(Agent):
             try:
                 home = agy_home()
                 r = subprocess.run(["agy", "--sandbox", "--output-format", "json"], input="hi",
-                                   capture_output=True, text=True, timeout=15, env=agy_env(home))
+                                   capture_output=True, text=True, encoding="utf-8", timeout=15, env=agy_env(home))
                 env = json.loads(r.stdout)
                 agy_forget(home, env.get("conversation_id"))
                 Agent._default_cache["agy"] = env.get("model", "gemini-3.8-flash-medium")
@@ -865,7 +865,7 @@ class CodexAgent(Agent):
     def default_model(self):
         if "codex" not in Agent._default_cache:
             try:
-                r = subprocess.run(["codex", "exec", "--skip-git-repo-check", "-c", 'web_search="disabled"', "--sandbox", "read-only"], input="hi", capture_output=True, text=True, timeout=15)
+                r = subprocess.run(["codex", "exec", "--skip-git-repo-check", "-c", 'web_search="disabled"', "--sandbox", "read-only"], input="hi", capture_output=True, text=True, encoding="utf-8", timeout=15)
                 m = re.search(r"^model:\s+(\S+)", r.stderr, re.MULTILINE)
                 Agent._default_cache["codex"] = m.group(1) if m else "gpt-5.6-sol"
             except Exception:
@@ -891,7 +891,7 @@ class CodexAgent(Agent):
             cmd += ["-i", image]
         try:
             r = subprocess.run(cmd, input=payload, capture_output=True,
-                               text=True, timeout=self.timeout)
+                               text=True, encoding="utf-8", timeout=self.timeout)
         except Exception as e:
             raise AgentError(f"ошибка запуска codex: {e}")
         text, usage, errors = codex_events(r.stdout)

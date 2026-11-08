@@ -28,6 +28,7 @@ jobs:
       - run: python tests/index_check.py
       - run: python tests/cli_check.py
       - run: python tests/envelope_check.py
+      - run: python tests/encoding_check.py
 
   publish:
     needs: windows-smoke
