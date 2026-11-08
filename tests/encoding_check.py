@@ -16,9 +16,9 @@ from booktrans import agent as A
 
 
 TEXT = "Русский × → 日本語 😀"
-CHILD = """
+CHILD = r"""
 import sys
-got = sys.stdin.buffer.read().decode('utf-8')
+got = sys.stdin.buffer.read().decode('utf-8').replace('\r\n', '\n')
 assert got == sys.argv[1], repr(got)
 sys.stdout.buffer.write(sys.argv[2].encode('utf-8'))
 sys.stderr.buffer.write(sys.argv[3].encode('utf-8'))
