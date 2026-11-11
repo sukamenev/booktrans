@@ -50,6 +50,12 @@ def main():
     got = cli.steps_of(args("--skip", "edit,verify"))
     ok("--skip выбрасывает названные",
        got == [s for s in cli.STEPS if s not in ("edit", "verify")], got)
+    got = cli.steps_of(args("--skip", "edit, verify"))
+    ok("--skip терпит пробел после запятой",
+       got == [s for s in cli.STEPS if s not in ("edit", "verify")], got)
+    got = cli.steps_of(args("--skip", " edit , verify "))
+    ok("--skip терпит пробелы по краям",
+       got == [s for s in cli.STEPS if s not in ("edit", "verify")], got)
     ok("notes — только через --only", "notes" not in cli.STEPS
        and cli.steps_of(args("--only", "notes")) == ["notes"])
 
