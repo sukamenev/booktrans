@@ -251,7 +251,11 @@ def steps_of(args):
     """Какие этапы делать: один названный или все, кроме пропущенных."""
     if args.only:
         return [args.only]
-    return [s for s in STEPS if s not in args.skip.split(",")]
+    # Пробелы вокруг запятых — как в chunk_numbers: "--skip edit, verify"
+    # обязано значить то же, что "--skip edit,verify", а не молча оставлять
+    # второй этап в прогоне.
+    skipped = [s.strip() for s in args.skip.split(",")]
+    return [s for s in STEPS if s not in skipped]
 
 
 def check_args(args, models):
