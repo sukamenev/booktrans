@@ -969,6 +969,19 @@ def openrouter_post(body, key, timeout, url=OPENROUTER_URL, extra=None):
     events, deadline = [], time.time() + timeout
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
+            if body.get("stream") is False or r.headers.get_content_type() == "application/json":
+                try:
+                    response = json.load(r)
+                except ValueError as exc:
+                    raise AgentError("chat/completions: invalid JSON response") from exc
+                if not isinstance(response, dict):
+                    raise AgentError("chat/completions: expected a response object")
+                # Some gateways return a complete response even to an SSE request.
+                # Normalize it so usage, refusal and truncation checks stay shared.
+                for choice in response.get("choices") or []:
+                    if "message" in choice:
+                        choice["delta"] = choice.pop("message")
+                return r.status, [response]
             for raw in r:
                 if time.time() > deadline:
                     raise AgentError(T("or_silent", timeout))
@@ -1193,6 +1206,9 @@ class OpenAIAgent(OpenRouterAgent):
         body = self.body(system, user, image)
         if json_object and not getattr(self, "_no_json_mode", False):
             body["response_format"] = {"type": "json_object"}
+        if json_object and getattr(self, "_prefer_nonstream", False):
+            body.update(stream=False)
+            body.pop("stream_options", None)
         # OpenCode Go отвергает запрос без своего заголовка сеанса; значение
         # любое устойчивое, ему оно нужно для маршрутизации и кэша.
         extra = {"x-opencode-session": self.session} if "opencode.ai" in url else None
@@ -1214,6 +1230,17 @@ class OpenAIAgent(OpenRouterAgent):
             err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)
+        if json_object and body["stream"] and not any(
+                ev.get("error") or ev.get("choices") for ev in events):
+            # A nominally successful stream containing only [DONE]. No model
+            # verdict was received. Resubmit *unchanged* via regular HTTP.
+            body.update(stream=False)
+            body.pop("stream_options", None)
+            status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
+            if status != 200:
+                env = events[0] if events else {}
+                raise openrouter_error(status, env.get("error") or env)
+            self._prefer_nonstream = True
         return collect_stream(events, self.model)
 
 

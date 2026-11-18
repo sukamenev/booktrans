@@ -119,6 +119,39 @@ print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':
                                  for model in ("shared", "editor-model", "shared", "one-off")] +
                          [("/v1/chat/completions", "one-off", "Bearer fixture", None)])
 
+    def test_done_only_stream_falls_back_to_full_response(self):
+        calls = []
+
+        class Gateway(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                stream = body["stream"]
+                calls.append((stream, body["messages"]))
+                scout = isinstance(json.loads(body["messages"][-1]["content"]), list)
+                content = {"facts": []} if scout else {"edits": [], "queries": []}
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream" if stream else "application/json")
+                self.end_headers()
+                self.wfile.write(b"data: [DONE]\n\n" if stream else json.dumps({"choices": [{
+                    "message": {"content": json.dumps(content)}, "finish_reason": "stop"}]}).encode())
+
+            def log_message(self, *args):
+                pass
+
+        with HTTPServer(("127.0.0.1", 0), Gateway) as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                self.env.update(OPENAI_BASE_URL=f"http://127.0.0.1:{server.server_port}/v1",
+                                OPENAI_API_KEY="fixture", NO_PROXY="127.0.0.1")
+                result = self.cli("--provider", "api", "--model", "fixture", "--retries", "1")
+            finally:
+                server.shutdown()
+                thread.join()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([s for s, _ in calls], [True, False, True, False])
+        self.assertEqual(calls[0][1], calls[1][1])
+
 
 if __name__ == "__main__":
     unittest.main()
