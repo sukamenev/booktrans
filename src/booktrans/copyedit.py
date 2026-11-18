@@ -79,12 +79,19 @@ def facts(data, source):
 
 def changes(data, source, book):
     spans, queries = {}, []
+    deletions = {}
     for e in rows(data, "edits"):
-        strings(e, "id", "before", "after")
+        strings(e, "id", "before")
+        if not isinstance(e.get("after"), str):
+            raise ValueError("Edit must contain an after string")
         key, before, after = e["id"], e["before"], e["after"]
         text = source.get(key, "")
         if text.count(before) != 1:
             raise ValueError(f"Edit {key}: anchor not unique in the supplied fragment")
+        if not after.strip():
+            queries.append({"id": key, "note": "Предложено удаление; не применено. Проверьте: " + before})
+            deletions.setdefault(key, []).append(before)
+            continue
         if re.search(r"[\x00-\x09\x0b-\x1f]", after) or (
                 "\n" in after and (not book.records[key]["split"] or
                                     "\n" in after.replace("\n\n", ""))):
@@ -98,6 +105,14 @@ def changes(data, source, book):
             if b > end:
                 raise ValueError(f"Edit {key}: overlapping changes")
             text, end = text[:a] + s + text[b:], a
+        # The model can express moving dialogue between blocks as insert+delete.
+        # Holding only the deletion would quietly duplicate the dialogue.
+        if key in deletions or any(text.count(phrase) > source[key].count(phrase)
+                                   for phrases in deletions.values() for phrase in phrases
+                                   if any(c.isalnum() for c in phrase)):
+            queries.append({"id": key, "note": "Возможный перенос текста между блоками; "
+                            "правка не применена. Предложенный вариант: " + text})
+            continue
         if text != source[key]:
             result[key] = text
     for q in rows(data, "queries"):

@@ -51,6 +51,17 @@ def fake_agent():
 
 
 class Workflow(unittest.TestCase):
+    def test_related_move_is_held_but_unrelated_typo_applies(self):
+        src = {"1": '"', "2": "Come in.", "3": "She walk."}
+        from types import SimpleNamespace
+        book = SimpleNamespace(records={k: {"split": True} for k in src})
+        d = {"edits": [{"id": "1", "before": '"', "after": '"Come in."'},
+                       {"id": "2", "before": "Come in.", "after": ""},
+                       {"id": "3", "before": "walk", "after": "walks"}], "queries": []}
+        edited, questions = copyedit.changes(d, src, book)
+        self.assertEqual(edited, {"3": "She walks."})
+        self.assertEqual({q["id"] for q in questions}, {"1", "2"})
+
     def test_timed_out_chunk_retries_then_resumes_from_cache(self):
         class Gateway:
             def run(self, system, user):
