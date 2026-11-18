@@ -207,6 +207,7 @@ def parser(ui):
                     help=T("h_bilingual_style"))
     ap.add_argument("--translator", help=T("h_translator"))
     ap.add_argument("--editor", help=T("h_editor"))
+    ap.add_argument("--copyedit", action="store_true", help=T("h_copyedit"))
     ap.add_argument("--verifier", help=T("h_verifier"))
     # Бенчмарк: без книги, с встроенным текстом; «-» — набор по умолчанию.
     ap.add_argument("--bench", nargs="?", const="-", metavar="DIR", help=T("h_bench"))
@@ -295,6 +296,11 @@ def main():
         ap.error(T("h_book"))
     models = Models(args, log)
     check_args(args, models)
+    if args.copyedit:
+        if args.only or args.skip or args.chunks or args.bilingual or args.refresh:
+            ap.error("--copyedit is a separate workflow; omit translation stage options")
+        from . import copyedit
+        return copyedit.run(args, models, log)
 
     work = args.work or os.path.splitext(args.book)[0] + ".work"
     if args.refresh:

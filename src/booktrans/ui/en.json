@@ -1,4 +1,5 @@
 {
+  "h_copyedit": "Copyedit TXT, EPUB or FB2 in its own language (--to). Write a separate copy and a change report.",
  "_comment": "Interface messages. To add a language, copy this file under a new code and translate the values. Do not change the keys. {} is a placeholder.",
  "tagline": "whole book translation",
  "read_html": "reading the file...",
