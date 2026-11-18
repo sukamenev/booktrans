@@ -1,4 +1,7 @@
 {
+  "h_configure": "Set the default provider and role models for all books.",
+  "h_provider": "Model provider for the run: chatgpt (Codex CLI), api (OpenAI-compatible endpoint), openrouter, claude, agy or cmd. Overrides the saved provider.",
+  "copyedit_missing_cli": "Copyedit ({0}): '{1}' was not found on PATH. Run booktrans configure to set global defaults, or choose --provider chatgpt (Codex CLI + codex login) or --provider api --model MODEL (OPENAI_BASE_URL and OPENAI_API_KEY).",
   "h_copyedit": "Copyedit TXT, EPUB or FB2 in its own language. Write a separate copy and a change report.",
  "_comment": "Interface messages. To add a language, copy this file under a new code and translate the values. Do not change the keys. {} is a placeholder.",
  "tagline": "whole book translation",

@@ -21,8 +21,8 @@ import signal
 import sys
 import time
 
-from . import agent, build, doctor, lang, pipeline, refconvert, tune
-from .models import AGENTS, EFFORTS, Models
+from . import agent, build, doctor, lang, pipeline, provider_settings, refconvert, tune
+from .models import AGENTS, EFFORTS, PROVIDER_ALIASES, Models
 from .run import Run, locked
 from .tune import config_dir
 
@@ -170,16 +170,17 @@ def expand(argv):
     return argv, _ui_of(argv, ui)
 
 
-def parser(ui):
+def parser(ui, defaults=None):
     """Все ключи. Умолчания берутся из окружения — тем же путём, что и язык:
     так обёртки вроде bt_claude сводятся к одной строке, а вшитое
     предпочтение одного поставщика не навязывается тому, кто пользуется
     другим."""
+    defaults = defaults or {}
     T = lang.set_ui(ui)
     ap = argparse.ArgumentParser(
         description=T("h_desc"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=T("h_epilog"))
+        epilog=T("h_epilog") + "\n\nbooktrans configure — " + T("h_configure"))
     ap.add_argument("book", nargs="?", help=T("h_book"))
     ap.add_argument("--check", action="store_true", help=T("h_check"))
     ap.add_argument("--profile", help=T("h_profile"))
@@ -191,13 +192,15 @@ def parser(ui):
     ap.add_argument("--skip", default="", help=T("h_skip"))
     ap.add_argument("--chunks", help=T("h_chunks"))
     ap.add_argument("--pages", help="Comma-separated list of page numbers to run OCR on (for PDF)")
-    ap.add_argument("--agent", default=os.environ.get("BT_AGENT", "claude"),
-                    choices=AGENTS)
-    ap.add_argument("--agent-cmd", help=T("h_agentcmd"))
-    ap.add_argument("--model", default=os.environ.get("BT_MODEL"), help=T("h_model"))
+    ap.add_argument("--agent", "--provider",
+                    default=os.environ.get("BT_PROVIDER") or os.environ.get("BT_AGENT")
+                    or defaults.get("provider", "claude"),
+                    choices=(*AGENTS, *PROVIDER_ALIASES), help=T("h_provider"))
+    ap.add_argument("--agent-cmd", default=defaults.get("agent_cmd"), help=T("h_agentcmd"))
+    ap.add_argument("--model", default=os.environ.get("BT_MODEL") or defaults.get("model"), help=T("h_model"))
     ap.add_argument("--effort", choices=EFFORTS,
                     help="Effort level (low, medium, high; xhigh/max where supported)")
-    ap.add_argument("--scout", help=T("h_scout"))
+    ap.add_argument("--scout", default=defaults.get("scout"), help=T("h_scout"))
     ap.add_argument("--like", action="append", help=T("h_like"))
     ap.add_argument("--name-series", action="store_true", help=T("h_name_series"))
     ap.add_argument("--bilingual", action="store_true", help=T("h_bilingual"))
@@ -205,8 +208,8 @@ def parser(ui):
                     default="auto", help=T("h_index"))
     ap.add_argument("--bilingual-style", choices=["light", "italic", "cite"], default="light",
                     help=T("h_bilingual_style"))
-    ap.add_argument("--translator", help=T("h_translator"))
-    ap.add_argument("--editor", help=T("h_editor"))
+    ap.add_argument("--translator", default=defaults.get("translator"), help=T("h_translator"))
+    ap.add_argument("--editor", default=defaults.get("editor"), help=T("h_editor"))
     ap.add_argument("--copyedit", action="store_true", help=T("h_copyedit"))
     ap.add_argument("--verifier", help=T("h_verifier"))
     # Бенчмарк: без книги, с встроенным текстом; «-» — набор по умолчанию.
@@ -268,9 +271,24 @@ def check_args(args, models):
 
 
 def main():
+    if sys.argv[1:2] == ["configure"]:
+        return provider_settings.configure(sys.argv[2:])
     argv, ui = expand(sys.argv[1:])
-    ap = parser(ui)
+    defaults = provider_settings.load()
+    ap = parser(ui, defaults)
     args = ap.parse_args(argv)
+    if (not defaults and args.book and not (args.check or args.refresh or args.only or args.bench)
+            and sys.stdin.isatty() and sys.stdout.isatty()
+            and not any(a.split("=", 1)[0] in ("--provider", "--agent", "--profile", "--agent-cmd",
+                                                "--model", "--editor", "--scout", "--translator")
+                        for a in [*sys.argv[1:], *argv])
+            and not any(os.environ.get(k) for k in ("BT_PROVIDER", "BT_AGENT", "BT_MODEL"))):
+        provider_settings.configure()
+        ap = parser(ui, provider_settings.load())
+        args = ap.parse_args(argv)
+    args.agent = PROVIDER_ALIASES.get(args.agent, args.agent)
+    if args.agent not in AGENTS:
+        ap.error(f"Unknown provider: {args.agent}")
     T = lang.set_ui(args.ui)
     log = Log()
     log("")
@@ -299,6 +317,7 @@ def main():
     if args.copyedit:
         if args.only or args.skip or args.chunks or args.bilingual or args.refresh:
             ap.error("--copyedit is a separate workflow; omit translation stage options")
+        models.check_copyedit()
         from . import copyedit
         return copyedit.run(args, models, log)
 

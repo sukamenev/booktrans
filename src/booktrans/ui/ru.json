@@ -1,4 +1,7 @@
 {
+  "h_configure": "Выбрать подключение и модели для всех книг.",
+  "h_provider": "Провайдер модели: chatgpt (Codex CLI), api (OpenAI-совместимый сервер), openrouter, claude, agy или cmd. Переопределяет сохранённого провайдера.",
+  "copyedit_missing_cli": "Редактура ({0}): команда '{1}' не найдена в PATH. Настройте провайдера для всех книг через booktrans configure или укажите --provider chatgpt (Codex CLI + codex login) либо --provider api --model МОДЕЛЬ (OPENAI_BASE_URL и OPENAI_API_KEY).",
   "h_copyedit": "Вычитать книгу на её языке: TXT, EPUB или FB2. Записать отдельную копию и отчёт о правках.",
  "_comment": "Сообщения интерфейса. Чтобы добавить язык — скопируйте файл под новым кодом и переведите значения. Ключи не менять. {} — подстановка.",
  "tagline": "перевод книги целиком",

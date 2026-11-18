@@ -8,6 +8,7 @@ from pathlib import Path
 from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile
 
+from .agent import openai_url
 from .copyedit_book import Book
 from .run import locked, read_prompt
 
@@ -183,8 +184,12 @@ def run(args, models, log):
                 system += "\nEditorial preferences:\n" + instructions
             for role in ("scout", "editor"):
                 agent = models.first(role)
-                identity = [role, args.agent, getattr(agent, "model", ""), getattr(args, role),
-                            args.model, args.effort, args.agent_cmd]
+                name, model = agent.kind, getattr(agent, "model", None)
+                log(f"  copyedit: {role} → {name}" + (f" / {model}" if model else ""))
+                identity = [role, args.agent, model or "", getattr(args, role),
+                             args.model, args.effort, args.agent_cmd]
+                if name == "openai":
+                    identity.append(openai_url())
                 for i, chunk in enumerate(chunks, 1):
                     log(f"  copyedit: {role} {i}/{len(chunks)}")
                     source = {b["id"]: b["text"] for b in chunk}

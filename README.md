@@ -2,6 +2,10 @@
 
 *[Русская версия](README.ru.md)*
 
+Run `./booktrans configure` once to save the provider, default model and optional
+translator, editor and scout overrides for **all books and both workflows**.
+Use `./booktrans configure --show` to inspect the saved routing.
+
 **Translate a whole book in one run.** Takes epub, fb2, html, pdf, md or txt;
 produces a finished book as epub, fb2, html, md, txt, LaTeX or pdf.
 
@@ -12,6 +16,12 @@ TXT, EPUB and FB2 are written in the input format to a separate `.edited` file;
 the adjacent `.changes.json` records before/after text, evidence and unresolved
 questions. Use `-p style.md` for a house style or approved spellings. No source
 translation is required. See the [usage notes](README.ru.md#редактура-без-перевода-функция-форка).
+
+Choose a backend with `--provider chatgpt` (Codex CLI, `codex login`),
+`--provider api --model MODEL` (set `OPENAI_BASE_URL` and `OPENAI_API_KEY`
+for an OpenAI-compatible streaming Chat Completions endpoint), or
+`--provider cmd --agent-cmd 'my-wrapper --system-file {system_file}'` for a
+custom adapter. Export `BT_PROVIDER` to keep the selection across runs.
 
 ## Why use BookTrans?
 
