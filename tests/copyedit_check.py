@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -51,6 +52,23 @@ def fake_agent():
 
 
 class Workflow(unittest.TestCase):
+    def test_parallel_editor_keeps_window_full_and_returns_book_order(self):
+        first_may_finish = threading.Event()
+        def edit(i, chunk):
+            if i == 1:
+                if not first_may_finish.wait(3):
+                    raise AssertionError("blocked behind first chunk")
+            if i == 3:
+                first_may_finish.set()
+            return chunk
+
+        with tempfile.TemporaryDirectory() as d:
+            progress = copyedit.Progress(Path(d), Path("draft.txt"))
+            chunks = ["first", "second", "third"]
+            self.assertEqual(copyedit.edit_chunks(chunks, 2, edit, progress), chunks)
+            self.assertEqual(progress.status["completed"]["editor"], 3)
+            self.assertEqual(progress.status["active"], [])
+
     def test_related_move_is_held_but_unrelated_typo_applies(self):
         src = {"1": '"', "2": "Come in.", "3": "She walk."}
         from types import SimpleNamespace
@@ -101,7 +119,7 @@ class Workflow(unittest.TestCase):
             self.assertEqual(json.loads((work / "last-invalid-response.json").read_text())["response"].strip(),
                              "No JSON this time")
             (directory / "resume").touch()
-            ok = self.cli(path, *args, env=env)
+            ok = self.cli(path, *args, "--jobs", "2", env=env)
             self.assertEqual(ok.returncode, 0, ok.stderr)
             self.assertEqual((directory / "calls").read_text().splitlines(),
                              ["scout 1", "scout 2", "editor 1", "editor 2", "editor 2"])

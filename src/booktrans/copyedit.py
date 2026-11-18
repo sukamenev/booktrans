@@ -5,6 +5,8 @@ import os
 import re
 import tempfile
 import time
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile
@@ -238,6 +240,46 @@ def request(agent, system, payload, parse, work, identity, retries, *, label="",
                      f"Последний ответ: {diagnostic}. Для продолжения повторите ту же команду.")
 
 
+def edit_chunks(chunks, jobs, edit_one, progress):
+    """Keep at most jobs requests in flight; workers cache before returning."""
+    iterator = iter(enumerate(chunks, 1))
+    results, pending = [None] * len(chunks), {}
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        def fill():
+            while len(pending) < jobs:
+                item = next(iterator, None)
+                if item is None:
+                    break
+                i, chunk = item
+                pending[pool.submit(edit_one, i, chunk)] = i
+            active = sorted(pending.values())
+            progress.write(stage="editor", chunk=active[0] if active else len(chunks),
+                           active=active, jobs=jobs, state="processing" if active else "saved")
+
+        fill()
+        failure = None
+        while pending:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                i = pending.pop(future)
+                try:
+                    results[i - 1] = future.result()
+                except Exception as exc:
+                    if failure is None:
+                        failure = (i, exc)
+                else:
+                    progress.status["completed"]["editor"] += 1
+            if failure:
+                # Drain only requests already sent: their independently validated
+                # answers can still be reused when resuming the failed chunk.
+                progress.write(stage="editor", chunk=failure[0], active=sorted(pending.values()))
+            else:
+                fill()
+        if failure:
+            raise failure[1]
+    return results
+
+
 def run(args, models, log):
     src = Path(args.book)
     dest = Path(args.out) if args.out else src.with_name(src.stem + ".edited" + src.suffix)
@@ -247,6 +289,8 @@ def run(args, models, log):
         raise SystemExit("Choose a separate output with the same extension as the manuscript")
     if args.chunk_words <= 0:
         raise SystemExit("--chunk-words must be positive")
+    if args.jobs < 1:
+        raise SystemExit("--jobs must be positive")
     work = Path(args.work or (str(src) + ".copyedit.work"))
     work.mkdir(parents=True, exist_ok=True)
     _, instructions = read_prompt(args.prompt, log, args.prompt_text)
@@ -269,24 +313,34 @@ def run(args, models, log):
                              args.model, args.effort, args.agent_cmd]
                 if name == "openai":
                     identity.append(openai_url())
-                for i, chunk in enumerate(chunks, 1):
-                    label = f"{role} {i}/{len(chunks)}"
-                    progress.write(stage=role, chunk=i, state="processing")
-                    source = {b["id"]: b["text"] for b in chunk}
-                    if role == "scout":
+                if role == "scout":
+                    for i, chunk in enumerate(chunks, 1):
+                        label = f"{role} {i}/{len(chunks)}"
+                        progress.write(stage=role, chunk=i, state="processing")
+                        source = {b["id"]: b["text"] for b in chunk}
                         memory.extend(request(agent, SCOUT, chunk, lambda d: facts(d, source),
                                               work, identity, args.retries, label=label, log=log))
-                    else:
-                        refs = references(memory, "\n".join(source.values()))
-                        result, doubts = request(agent, system, {"fragments": chunk, "evidence": refs},
-                                                 lambda d: changes(d, source, book), work,
-                                                 identity, args.retries, label=label, log=log)
-                        queries.extend(doubts)
-                        for key, text in result.items():
-                            book.apply(key, text)
-                            edits.append({"id": key, "before": source[key], "after": text})
-                    progress.status["completed"][role] = i
-                    progress.write(state="saved")
+                        progress.status["completed"][role] = i
+                        progress.write(state="saved")
+                    continue
+
+                local = threading.local()
+
+                def edit_one(i, chunk):
+                    if not hasattr(local, "agent"):
+                        local.agent = agent if args.jobs == 1 else models.first("editor")
+                    source = {b["id"]: b["text"] for b in chunk}
+                    refs = references(memory, "\n".join(source.values()))
+                    return request(local.agent, system, {"fragments": chunk, "evidence": refs},
+                                   lambda d: changes(d, source, book), work, identity,
+                                   args.retries, label=f"editor {i}/{len(chunks)}", log=log)
+
+                log(f"  copyedit: editor --jobs {args.jobs}")
+                for result, doubts in edit_chunks(chunks, args.jobs, edit_one, progress):
+                    queries.extend(doubts)
+                    for key, text in result.items():
+                        book.apply(key, text)
+                        edits.append({"id": key, "before": book.records[key]["text"], "after": text})
             summary = {"mode": "copyedit", "source": src.name, "edits": edits,
                        "queries": queries, "evidence": memory}
             atomic(report, lambda tmp: tmp.write_text(json.dumps(summary, ensure_ascii=False,
