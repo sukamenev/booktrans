@@ -1,5 +1,6 @@
 """Offline integration check: exercise the actual CLI with a deterministic agent."""
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -34,17 +35,18 @@ def fake_agent():
 
 
 class Workflow(unittest.TestCase):
-    def cli(self, path, language, *extra):
+    def cli(self, path, *extra):
         return subprocess.run([sys.executable, str(ROOT / "booktrans"), str(path),
-                               "--copyedit", "--to", language, "--agent", "cmd", "--agent-cmd",
+                               "--copyedit", "--agent", "cmd", "--agent-cmd",
                                f'"{sys.executable}" "{Path(__file__).resolve()}" fake {{system_file}}',
-                               "--chunk-words", "4", *extra], capture_output=True, text=True)
+                               "--chunk-words", "4", *extra], capture_output=True, text=True,
+                              env={**os.environ, "BT_TO": "unused-translation-target"})
 
     def test_invalid_edit_never_publishes_partial_book(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d, "draft.txt")
             path.write_text("Он ушол.\n\nbad anchor test")
-            ret = self.cli(path, "ru", "--chunk-words", "1", "--retries", "1")
+            ret = self.cli(path, "--chunk-words", "1", "--retries", "1")
             self.assertNotEqual(ret.returncode, 0)
             self.assertIn("anchor", ret.stderr)
             self.assertFalse(Path(d, "draft.edited.txt").exists())
@@ -58,7 +60,7 @@ class Workflow(unittest.TestCase):
                                ("title", "Two", "c2", None), ("p", "Sam is her name.", "p2", None)],
                               {}, {}, "")
             before = path.read_bytes()
-            ret = self.cli(path, "en")
+            ret = self.cli(path)
             self.assertEqual(ret.returncode, 0, ret.stderr)
             self.assertEqual(path.read_bytes(), before)
             with ZipFile(path) as a, ZipFile(Path(d, "story.edited.epub")) as b:
@@ -73,7 +75,7 @@ class Workflow(unittest.TestCase):
             path.write_text('<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">'
                             '<body><section><p id="line">Hallo - Привет</p><p><emphasis>ушол'
                             '</emphasis></p></section></body></FictionBook>', encoding="utf-8")
-            ret = self.cli(path, "ru")
+            ret = self.cli(path)
             self.assertEqual(ret.returncode, 0, ret.stderr)
             doc = minidom.parse(str(Path(d, "story.edited.fb2")))
             ps = doc.getElementsByTagName("p")
@@ -87,13 +89,13 @@ class Workflow(unittest.TestCase):
             path = Path(d, "story.txt")
             before = "Он ушол.\r\n\r\nГлава 2\r\n".encode("cp1251")
             path.write_bytes(before)
-            ret = self.cli(path, "ru", "--encoding", "cp1251")
+            ret = self.cli(path, "--encoding", "cp1251")
             self.assertEqual(ret.returncode, 0, ret.stderr)
             self.assertEqual(Path(d, "story.edited.txt").read_bytes(),
                              before.replace("ушол".encode("cp1251"), "ушёл".encode("cp1251")))
             report = json.loads(Path(d, "story.edited.txt.changes.json").read_text())
             self.assertEqual(report["edits"][0]["before"], "Он ушол.")
-            self.assertNotEqual(self.cli(path, "ru", "-o", str(path)).returncode, 0)
+            self.assertNotEqual(self.cli(path, "-o", str(path)).returncode, 0)
             self.assertEqual(path.read_bytes(), before)
 
 

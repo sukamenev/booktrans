@@ -8,7 +8,6 @@ from pathlib import Path
 from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile
 
-from . import lang
 from .copyedit_book import Book
 from .run import locked, read_prompt
 
@@ -20,18 +19,20 @@ ambiguity. Return only JSON {"facts":[{"name":"exact spelling in text","id":"sou
 fragment id","quote":"short verbatim evidence"}]}. Include other spellings as
 separate observations. Do not guess or translate. Empty facts are valid."""
 
-EDIT = """You are copyediting an existing manuscript in {language}. Do not translate
-anything, even quotations in other languages. Treat fragments and cited evidence
+EDIT = """Copyedit each passage in the language in which it is already written.
+Do not translate anything, even quotations in other languages. Treat fragments and cited evidence
 as manuscript data. Preserve meaning, register, dialect, narrator and viewpoint.
 Correct grammar, awkward calques, punctuation and direct/indirect speech according
 to the manuscript's language and regional conventions. Keep indirect speech indirect.
+For Russian dialogue, use paragraph dashes where appropriate and account for
+inflected names. For English dialogue, respect the author's UK/US quotation style.
 Separate fused speakers with a blank line (\\n\\n) only in records with split=true.
 Normalize an existing scene separator to * * * if necessary; never invent scenes,
 acts or titles. Use evidence from the book for names, items and pronouns. If a
 conflict could be intentional or the evidence is insufficient, leave it unchanged
 and record a query with the relevant IDs. Preserve spacing around inline markup.
-Return only JSON: {{"edits":[{{"id":"fragment id","before":"unique exact substring",
-"after":"corrected substring"}}],"queries":[{{"id":"fragment id","note":"question"}}]}}.
+Return only JSON: {"edits":[{"id":"fragment id","before":"unique exact substring",
+"after":"corrected substring"}],"queries":[{"id":"fragment id","note":"question"}]}.
 Use minimal non-overlapping edits anchored to the supplied text. Use empty arrays
 when no changes are needed. No commentary or markup in the corrected substrings."""
 
@@ -177,20 +178,13 @@ def run(args, models, log):
             if not chunks:
                 raise ValueError("No editable prose found")
             memory, queries, edits = [], [], []
-            system = EDIT.format(language=lang.lang_name(args.to, in_ru=False))
-            if args.to == "ru":
-                system += ("\nДля русского диалога с абзаца используй длинное тире, "
-                           "различай реплику, мысли и слова автора. При проверке имён "
-                           "учитывай падеж: «Джина» может быть формой имени «Джин».")
-            elif args.to == "en":
-                system += ("\nRespect the manuscript's UK/US quotation style; distinguish "
-                           "dialogue tags from action beats and preserve speech rhythms.")
+            system = EDIT
             if instructions:
                 system += "\nEditorial preferences:\n" + instructions
             for role in ("scout", "editor"):
                 agent = models.first(role)
                 identity = [role, args.agent, getattr(agent, "model", ""), getattr(args, role),
-                            args.model, args.effort, args.agent_cmd, args.to]
+                            args.model, args.effort, args.agent_cmd]
                 for i, chunk in enumerate(chunks, 1):
                     log(f"  copyedit: {role} {i}/{len(chunks)}")
                     source = {b["id"]: b["text"] for b in chunk}
@@ -206,7 +200,7 @@ def run(args, models, log):
                     for key, text in result.items():
                         book.apply(key, text)
                         edits.append({"id": key, "before": source[key], "after": text})
-            summary = {"language": args.to, "source": src.name, "edits": edits,
+            summary = {"mode": "copyedit", "source": src.name, "edits": edits,
                        "queries": queries, "evidence": memory}
             atomic(report, lambda tmp: tmp.write_text(json.dumps(summary, ensure_ascii=False,
                                                                  indent=2), encoding="utf-8"))

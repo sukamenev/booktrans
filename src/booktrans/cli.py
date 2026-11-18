@@ -262,7 +262,7 @@ def check_args(args, models):
     if not os.path.exists(args.book):
         sys.exit(T("h_nofile", args.book))
     models.check()
-    if args.to not in lang.available_langs():
+    if not args.copyedit and args.to not in lang.available_langs():
         sys.exit(f"нет правил для языка {args.to!r}; есть: "
                  f"{', '.join(lang.available_langs())}. Добавьте langs/{args.to}.md")
 

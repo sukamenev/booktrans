@@ -9,11 +9,12 @@ pdf, md или txt, на выходе готовая книга в epub, fb2, ht
 ### Редактура без перевода (функция форка)
 
 ```bash
-./booktrans роман.fb2 --copyedit --to ru
-./booktrans draft.epub --copyedit --to en -o revised.epub
+./booktrans роман.fb2 --copyedit
+./booktrans draft.epub --copyedit -o revised.epub
 ```
 
-`--to` здесь означает язык рукописи. Подойдут TXT, EPUB и FB2; выход — в том же
+Язык указывать не нужно: каждый фрагмент редактируется на языке рукописи.
+`--to` и `BT_TO` относятся только к переводу. Подойдут TXT, EPUB и FB2; выход — в том же
 формате. Для TXT по умолчанию используется UTF-8; для других кодировок укажите
 `--encoding`, например `cp1251`. Настройте модель как для обычного BookTrans.
 `--scout` и `--editor` выбирают модели двух проходов; `-p` задаёт ваши правила

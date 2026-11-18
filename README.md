@@ -5,8 +5,8 @@
 **Translate a whole book in one run.** Takes epub, fb2, html, pdf, md or txt;
 produces a finished book as epub, fb2, html, md, txt, LaTeX or pdf.
 
-**Fork feature: same-language copyediting.** Run `./booktrans draft.epub --copyedit --to en`
-or `./booktrans novel.fb2 --copyedit --to ru`. The two passes gather cited names
+**Fork feature: same-language copyediting.** Run `./booktrans draft.epub --copyedit`.
+The editor keeps each passage in its existing language. The two passes gather cited names
 and terms across the manuscript, then edit prose in its existing language.
 TXT, EPUB and FB2 are written in the input format to a separate `.edited` file;
 the adjacent `.changes.json` records before/after text, evidence and unresolved
