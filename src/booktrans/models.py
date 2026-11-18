@@ -5,6 +5,7 @@
 отказ. Что не названо, берётся из `--model`, а затем из набора агента.
 """
 import re
+import shutil
 import sys
 
 from . import lang
@@ -34,7 +35,8 @@ def family(model):
     return name
 
 
-AGENTS = ("claude", "agy", "codex", "openrouter", "openai", "cmd")
+AGENTS = ("claude", "agy", "codex", "opencode", "openrouter", "openai", "cmd")
+PROVIDER_ALIASES = {"chatgpt": "codex", "api": "openai"}
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Проходы опознавательные, а не сочинительные: разобрать вёрстку, увидеть
 # порчу распознавания и прочитать страницу умеет и самая дешёвая модель
@@ -109,7 +111,7 @@ def parse_chain(s, agent=None):
         if len(parts) > 1 and "/" not in parts[0]:
             name = parts[0] or agent
             parts = parts[1:]
-        out.append((name, ":".join(parts) if parts else None, effort))
+        out.append((PROVIDER_ALIASES.get(name, name), ":".join(parts) if parts else None, effort))
     return out
 
 
@@ -135,8 +137,9 @@ class Models:
         иначе о нём сказал бы только 401 первого запроса.
         """
         a = self.args
-        used = {a.agent}
-        for key in CHAIN_KEYS:
+        copyedit = getattr(a, "copyedit", False)
+        used = {self.specs(role)[0][0] for role in ("scout", "editor")} if copyedit else {a.agent}
+        for key in (("scout", "editor", "model") if copyedit else CHAIN_KEYS):
             # Цепочку чтения страниц замыкает `local:pdftotext` — текстовый
             # слой без модели, когда все модели отказали.
             allowed = AGENTS + ("local",) if key == "ocrmodel" else AGENTS
@@ -146,7 +149,8 @@ class Models:
                 if name == "agy" and a.effort \
                         and m and re.search(r"-(low|medium|high|xhigh|max)$", m):
                     sys.exit(lang.T("effort_clash", m, a.effort))
-                used.add(name)
+                if not copyedit:
+                    used.add(name)
         if "openrouter" in used and not openrouter_key():
             sys.exit(lang.T("openrouter_key", OPENROUTER_ENV, openrouter_key_file()))
         if "openai" in used and not (openai_key() and openai_url()):
@@ -159,7 +163,7 @@ class Models:
                          max_wait=a.max_wait, log=self.log,
                          effort=a.effort if effort is None else effort)
 
-    def chain(self, role=None):
+    def specs(self, role=None):
         """Все модели прохода: первая работает, следующие подхватывают отказ.
 
         Отказ — свойство модели, а не текста, и у следующей такого запрета
@@ -178,13 +182,25 @@ class Models:
         cheap = role in CHEAP_ROLES and not named
         s = named or (preset.get(role) if cheap else None) \
             or a.model or preset.get("model")
-        return [self._agent(n, m, eff or (CHEAP_EFFORT.get(n) if cheap else None))
-                for n, m, eff in parse_chain(s, a.agent)] \
-            or [self._agent(a.agent, None)]
+        return [(n, m, eff or (CHEAP_EFFORT.get(n) if cheap else None))
+                for n, m, eff in parse_chain(s, a.agent)] or [(a.agent, None, None)]
+
+    def check_copyedit(self):
+        for role in ("scout", "editor"):
+            name, model, _ = self.specs(role)[0]
+            if name in ("claude", "codex", "agy", "opencode") and not shutil.which(name):
+                sys.exit(lang.T("copyedit_missing_cli", role, name))
+            if name == "openai" and not model:
+                sys.exit(lang.T("openai_model"))
+            if name == "cmd" and not self.args.agent_cmd:
+                sys.exit("--provider cmd requires --agent-cmd")
+
+    def chain(self, role=None):
+        return [self._agent(n, m, eff) for n, m, eff in self.specs(role)]
 
     def first(self, role=None):
         """Основная модель прохода — первая в цепочке."""
-        return self.chain(role)[0]
+        return self._agent(*self.specs(role)[0])
 
     def rest(self, role=None):
         """Кому отдавать кусок, от которого основная модель отказалась."""

@@ -80,7 +80,7 @@ def check(log=print, agent="claude"):
     line(sys.version_info >= (3, 9), f"python {sys.version_info.major}."
          f"{sys.version_info.minor}", T("doc_python"),
          "https://www.python.org/downloads/")
-    who = {"claude": "claude", "agy": "agy", "codex": "codex"}.get(agent)
+    who = agent if agent in ("claude", "agy", "codex", "opencode") else None
     if who:
         line(bool(shutil.which(who)), who, T("doc_agent", agent),
              T("doc_agent_how", agent))

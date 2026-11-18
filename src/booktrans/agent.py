@@ -33,6 +33,10 @@ class AgentError(RuntimeError):
     pass
 
 
+class TransientAPIError(AgentError):
+    """A transport failure or temporary upstream outage; the same request can be retried."""
+
+
 class OutputLimit(AgentError):
     """Ответ упёрся в предел вывода: модель зациклилась или разлилась. Это
     изъян самой модели, а не связи — повторять можно, винить роутер нельзя."""
@@ -360,11 +364,17 @@ class WaitingAgent:
         return getattr(self.inner, "effort", None)
 
     def run(self, system, user, image=None):
+        return self._run(self.inner.run, system, user, image=image)
+
+    def run_json(self, system, user):
+        return self._run(getattr(self.inner, "run_json", self.inner.run), system, user)
+
+    def _run(self, call, system, user, **kwargs):
         left = LIMITS.left(key_of(self))
         if left:
             raise RateLimited(T("lim_known", self.model, max(int(left) // 60, 1)))
         try:
-            text, meta = self.inner.run(system, user, image=image)
+            text, meta = call(system, user, **kwargs)
         except RateLimited as e:
             # Названо точное время снятия — берём его, а не четверть часа
             # вслепую. Полминуты сверху: часы у нас и у поставщика расходятся,
@@ -963,6 +973,19 @@ def openrouter_post(body, key, timeout, url=OPENROUTER_URL, extra=None):
     events, deadline = [], time.time() + timeout
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
+            if body.get("stream") is False or r.headers.get_content_type() == "application/json":
+                try:
+                    response = json.load(r)
+                except ValueError as exc:
+                    raise AgentError("chat/completions: invalid JSON response") from exc
+                if not isinstance(response, dict):
+                    raise AgentError("chat/completions: expected a response object")
+                # Some gateways return a complete response even to an SSE request.
+                # Normalize it so usage, refusal and truncation checks stay shared.
+                for choice in response.get("choices") or []:
+                    if "message" in choice:
+                        choice["delta"] = choice.pop("message")
+                return r.status, [response]
             for raw in r:
                 if time.time() > deadline:
                     raise AgentError(T("or_silent", timeout))
@@ -989,7 +1012,7 @@ def openrouter_post(body, key, timeout, url=OPENROUTER_URL, extra=None):
             env = {"error": {"message": raw[:300]}}
         return e.code, [env]
     except (OSError, http.client.HTTPException) as e:
-        raise AgentError(f"openrouter: {e}")
+        raise TransientAPIError(f"chat/completions: {e}") from e
 
 
 def openrouter_error(code, err):
@@ -1003,6 +1026,8 @@ def openrouter_error(code, err):
     meta = err.get("metadata") or {}
     if code == 429:
         return RateLimited(msg)
+    if code in (408, 500, 502, 503, 504):
+        return TransientAPIError(msg)
     # 403 — это и модерация, и закрытый доступ; модерацию выдают причины.
     if code == 403 and (meta.get("reasons") or re.search(r"moderat|flagged", msg, re.I)):
         return Blocked(msg)
@@ -1173,7 +1198,10 @@ class OpenAIAgent(OpenRouterAgent):
             out["reasoning_effort"] = self.effort
         return out
 
-    def run(self, system, user, image=None):
+    def run_json(self, system, user):
+        return self.run(system, user, json_object=True)
+
+    def run(self, system, user, image=None, *, json_object=False):
         key, url = openai_key(), openai_url()
         if not key or not url:
             raise Fatal(T("openai_key", OPENAI_URL_ENV, OPENAI_ENV,
@@ -1182,6 +1210,11 @@ class OpenAIAgent(OpenRouterAgent):
             raise Fatal(T("openai_model"))
         endpoint = url.rstrip("/") + "/chat/completions"
         body = self.body(system, user, image)
+        if json_object and not getattr(self, "_no_json_mode", False):
+            body["response_format"] = {"type": "json_object"}
+        if json_object and getattr(self, "_prefer_nonstream", False):
+            body.update(stream=False)
+            body.pop("stream_options", None)
         # OpenCode Go отвергает запрос без своего заголовка сеанса; значение
         # любое устойчивое, ему оно нужно для маршрутизации и кэша.
         extra = {"x-opencode-session": self.session} if "opencode.ai" in url else None
@@ -1189,14 +1222,85 @@ class OpenAIAgent(OpenRouterAgent):
         err = (events[0].get("error") or events[0]) if events else {}
         # Точка отвергла необязательное поле — повторяем без него: модель не
         # думает вовсе, или предел вывода у неё ниже названного.
-        for field, word in (("reasoning_effort", "reasoning"), ("max_tokens", "max_tokens")):
-            if status == 400 and field in body and word in str(err.get("message")).lower():
-                del body[field]
-                status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
-                err = (events[0].get("error") or events[0]) if events else {}
+        optional = {"reasoning_effort": "reasoning", "max_tokens": "max_tokens",
+                    "response_format": "response_format"}
+        while status in (400, 422):
+            detail = str(err).lower()
+            field = next((k for k, word in optional.items() if k in body and word in detail), None)
+            if not field:
+                break
+            del body[field]
+            if field == "response_format":
+                self._no_json_mode = True
+            status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
+            err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)
+        if json_object and body["stream"] and not any(
+                ev.get("error") or ev.get("choices") for ev in events):
+            # A nominally successful stream containing only [DONE]. No model
+            # verdict was received. Resubmit *unchanged* via regular HTTP.
+            body.update(stream=False)
+            body.pop("stream_options", None)
+            status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
+            if status != 200:
+                env = events[0] if events else {}
+                raise openrouter_error(status, env.get("error") or env)
+            self._prefer_nonstream = True
         return collect_stream(events, self.model)
+
+
+class OpenCodeAgent(Agent):
+    """One archived OpenCode V2 text session per BookTrans request."""
+    kind = "opencode"
+
+    def __init__(self, model=None, timeout=1800, effort=None):
+        self.model, self.timeout, self.effort = model, timeout, effort
+
+    def run(self, system, user, image=None):
+        cwd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "opencode")
+        cmd = ["opencode", "run", "--standalone", "--archived", "--title", "BookTrans",
+               "--agent", "booktrans-text", "--format", "json"]
+        if self.effort and (not self.model or "#" in self.model):
+            raise Fatal("OpenCode: set effort with provider/model#variant or with --effort on a named model, not both")
+        if self.model:
+            cmd.extend(["--model", self.model + ("#" + self.effort if self.effort else "")])
+        if image:
+            cmd.extend(["--file", os.path.abspath(image)])
+        try:
+            proc = subprocess.run(cmd, cwd=cwd, env={**os.environ, "PWD": cwd},
+                                  input=system + "\n\n---\n\n" + user, text=True, encoding="utf-8",
+                                  capture_output=True, timeout=self.timeout)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise AgentError(f"opencode run: {e}") from e
+        parts, finish = [], {}
+        for line in proc.stdout.splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError as exc:
+                raise AgentError("opencode run: invalid JSON event") from exc
+            kind, part = event.get("type"), event.get("part") or {}
+            if kind == "text":
+                parts.append(part.get("text", ""))
+            elif kind == "step_finish":
+                finish = part
+            elif kind == "error":
+                err = event.get("error") or {}
+                msg = err.get("message") or (err.get("data") or {}).get("message") or str(err)
+                raise (RateLimited if limited(msg) else AgentError)(msg[:450])
+        if proc.returncode:
+            raise AgentError(f"opencode run ({proc.returncode}): {proc.stderr.strip()[:450]}")
+        if finish.get("reason") == "length":
+            raise OutputLimit("opencode run: output limit")
+        if finish.get("reason") != "stop" or not "".join(parts).strip():
+            raise AgentError("opencode run: incomplete or empty reply")
+        t = finish.get("tokens") or {}
+        cached = (t.get("cache") or {}).get("read", 0)
+        return "".join(parts), {"model": self.model or self.kind, "cost_usd": finish.get("cost"),
+                                "tokens": tokens(t.get("input", 0) + cached, cached,
+                                                 t.get("output", 0), t.get("reasoning", 0)) if t else None}
 
 
 def make_agent(kind="claude", model=None, command=None, timeout=1800,
@@ -1207,6 +1311,8 @@ def make_agent(kind="claude", model=None, command=None, timeout=1800,
         inner = AgyAgent(model, timeout, effort)
     elif kind == "codex":
         inner = CodexAgent(model, timeout, effort)
+    elif kind == "opencode":
+        inner = OpenCodeAgent(model, timeout, effort)
     elif kind == "openrouter":
         inner = OpenRouterAgent(model, timeout, effort)
     elif kind == "openai":
