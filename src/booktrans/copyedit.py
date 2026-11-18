@@ -4,11 +4,12 @@ import json
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 from xml.parsers.expat import ExpatError
 from zipfile import BadZipFile
 
-from .agent import openai_url
+from .agent import TransientAPIError, openai_url
 from .copyedit_book import Book
 from .run import locked, read_prompt
 
@@ -193,7 +194,16 @@ def request(agent, system, payload, parse, work, identity, retries, *, label="",
     feedback = ""
     attempts = max(1, retries)
     for n in range(1, attempts + 1):
-        raw, _usage = getattr(agent, "run_json", agent.run)(system + feedback, user)
+        try:
+            raw, _usage = getattr(agent, "run_json", agent.run)(system + feedback, user)
+        except TransientAPIError as exc:
+            if n == attempts:
+                raise TransientAPIError(f"{label}: {exc} ({attempts} attempts; progress saved)") from exc
+            delay = min(60, 2 ** min(n, 6))
+            if log:
+                log(f"    {n}/{attempts}: {exc}; повтор через {delay} с")
+            time.sleep(delay)
+            continue
         try:
             data = decode_reply(raw)
             result = parse(data)

@@ -33,6 +33,10 @@ class AgentError(RuntimeError):
     pass
 
 
+class TransientAPIError(AgentError):
+    """A transport failure or temporary upstream outage; the same request can be retried."""
+
+
 class OutputLimit(AgentError):
     """Ответ упёрся в предел вывода: модель зациклилась или разлилась. Это
     изъян самой модели, а не связи — повторять можно, винить роутер нельзя."""
@@ -1008,7 +1012,7 @@ def openrouter_post(body, key, timeout, url=OPENROUTER_URL, extra=None):
             env = {"error": {"message": raw[:300]}}
         return e.code, [env]
     except (OSError, http.client.HTTPException) as e:
-        raise AgentError(f"openrouter: {e}")
+        raise TransientAPIError(f"chat/completions: {e}") from e
 
 
 def openrouter_error(code, err):
@@ -1022,6 +1026,8 @@ def openrouter_error(code, err):
     meta = err.get("metadata") or {}
     if code == 429:
         return RateLimited(msg)
+    if code in (408, 500, 502, 503, 504):
+        return TransientAPIError(msg)
     # 403 — это и модерация, и закрытый доступ; модерацию выдают причины.
     if code == 403 and (meta.get("reasons") or re.search(r"moderat|flagged", msg, re.I)):
         return Blocked(msg)

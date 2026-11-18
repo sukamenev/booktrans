@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from xml.dom import minidom
 from zipfile import ZipFile
@@ -12,6 +13,7 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from booktrans import copyedit, output
+from booktrans import agent as transport
 
 
 def fake_agent():
@@ -49,6 +51,22 @@ def fake_agent():
 
 
 class Workflow(unittest.TestCase):
+    def test_timed_out_chunk_retries_then_resumes_from_cache(self):
+        class Gateway:
+            def run(self, system, user):
+                transport.openrouter_post({}, "test", 1, "http://localhost/v1/chat/completions")
+
+        with tempfile.TemporaryDirectory() as d, \
+                patch.object(transport.urllib.request, "urlopen", side_effect=TimeoutError("read timed out")), \
+                patch.object(copyedit.time, "sleep") as pause:
+            client = Gateway()
+            replies = iter((client.run, lambda *_: ('{"facts":[]}', {})))
+            client.run_json = lambda *args: next(replies)(*args)
+            args = (client, "task", [], lambda obj: obj["facts"], Path(d), ["scout"], 2)
+            self.assertEqual(copyedit.request(*args), [])
+            self.assertEqual(copyedit.request(*args), [])  # exhausted transport, must hit cache
+            pause.assert_called_once_with(2)
+
     def cli(self, path, *extra, env=None):
         return subprocess.run([sys.executable, str(ROOT / "booktrans"), str(path),
                                "--copyedit", "--agent", "cmd", "--agent-cmd",
