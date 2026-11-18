@@ -59,7 +59,7 @@ def configure(argv=()):
         return "" if value == "-" else value or default
 
     print("BookTrans · настройки для всех книг. Enter — оставить значение; «-» — очистить.")
-    print("Подключение: chatgpt (Codex CLI), claude, api (OpenAI-совместимый HTTP), "
+    print("Подключение: opencode (OpenCode V2 CLI), chatgpt (Codex CLI), claude, api (OpenAI-совместимый HTTP), "
           "openrouter, agy или cmd (своя команда).")
     provider = ask("Провайдер по умолчанию", old.get("provider", "chatgpt"))
     backend = PROVIDER_ALIASES.get(provider, provider)
@@ -70,6 +70,8 @@ def configure(argv=()):
     print("Для CLI можно оставить модель пустой. Для другой службы в роли укажите "
           "провайдер:модель, например api:gpt-4o-mini или chatgpt: (модель Codex по умолчанию).")
     used = {backend}
+    if backend == "opencode":
+        print("OpenCode: введите ID из `opencode models` (provider/model) или оставьте общую модель пустой.")
     for role, label in (("model", "Общая модель"), ("translator", "Переводчик"),
                         ("editor", "Редактор"), ("scout", "Справочник имён и терминов")):
         value = ask(label, old.get(role, "") if same else "")
@@ -112,3 +114,5 @@ def configure(argv=()):
     print(f"Сохранено: {path()}")
     if "codex" in used:
         print("Для входа через ChatGPT: установите Codex CLI и один раз выполните codex login.")
+    if "opencode" in used:
+        print("OpenCode использует собственные подключения. При необходимости выполните /connect в OpenCode.")

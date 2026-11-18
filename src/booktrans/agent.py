@@ -1199,6 +1199,59 @@ class OpenAIAgent(OpenRouterAgent):
         return collect_stream(events, self.model)
 
 
+class OpenCodeAgent(Agent):
+    """One archived OpenCode V2 text session per BookTrans request."""
+    kind = "opencode"
+
+    def __init__(self, model=None, timeout=1800, effort=None):
+        self.model, self.timeout, self.effort = model, timeout, effort
+
+    def run(self, system, user, image=None):
+        cwd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "opencode")
+        cmd = ["opencode", "run", "--standalone", "--archived", "--title", "BookTrans",
+               "--agent", "booktrans-text", "--format", "json"]
+        if self.effort and (not self.model or "#" in self.model):
+            raise Fatal("OpenCode: set effort with provider/model#variant or with --effort on a named model, not both")
+        if self.model:
+            cmd.extend(["--model", self.model + ("#" + self.effort if self.effort else "")])
+        if image:
+            cmd.extend(["--file", os.path.abspath(image)])
+        try:
+            proc = subprocess.run(cmd, cwd=cwd, env={**os.environ, "PWD": cwd},
+                                  input=system + "\n\n---\n\n" + user, text=True, encoding="utf-8",
+                                  capture_output=True, timeout=self.timeout)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise AgentError(f"opencode run: {e}") from e
+        parts, finish = [], {}
+        for line in proc.stdout.splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError as exc:
+                raise AgentError("opencode run: invalid JSON event") from exc
+            kind, part = event.get("type"), event.get("part") or {}
+            if kind == "text":
+                parts.append(part.get("text", ""))
+            elif kind == "step_finish":
+                finish = part
+            elif kind == "error":
+                err = event.get("error") or {}
+                msg = err.get("message") or (err.get("data") or {}).get("message") or str(err)
+                raise (RateLimited if limited(msg) else AgentError)(msg[:450])
+        if proc.returncode:
+            raise AgentError(f"opencode run ({proc.returncode}): {proc.stderr.strip()[:450]}")
+        if finish.get("reason") == "length":
+            raise OutputLimit("opencode run: output limit")
+        if finish.get("reason") != "stop" or not "".join(parts).strip():
+            raise AgentError("opencode run: incomplete or empty reply")
+        t = finish.get("tokens") or {}
+        cached = (t.get("cache") or {}).get("read", 0)
+        return "".join(parts), {"model": self.model or self.kind, "cost_usd": finish.get("cost"),
+                                "tokens": tokens(t.get("input", 0) + cached, cached,
+                                                 t.get("output", 0), t.get("reasoning", 0)) if t else None}
+
+
 def make_agent(kind="claude", model=None, command=None, timeout=1800,
                wait=900, max_wait=MAX_WAIT, log=print, tools="", effort=None):
     if kind == "claude":
@@ -1207,6 +1260,8 @@ def make_agent(kind="claude", model=None, command=None, timeout=1800,
         inner = AgyAgent(model, timeout, effort)
     elif kind == "codex":
         inner = CodexAgent(model, timeout, effort)
+    elif kind == "opencode":
+        inner = OpenCodeAgent(model, timeout, effort)
     elif kind == "openrouter":
         inner = OpenRouterAgent(model, timeout, effort)
     elif kind == "openai":

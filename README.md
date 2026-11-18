@@ -17,7 +17,8 @@ the adjacent `.changes.json` records before/after text, evidence and unresolved
 questions. Use `-p style.md` for a house style or approved spellings. No source
 translation is required. See the [usage notes](README.ru.md#редактура-без-перевода-функция-форка).
 
-Choose a backend with `--provider chatgpt` (Codex CLI, `codex login`),
+Choose a backend with `--provider opencode` (OpenCode V2 CLI; reuses connected accounts
+and accepts `provider/model` IDs from `opencode models`), `--provider chatgpt` (Codex CLI, `codex login`),
 `--provider api --model MODEL` (set `OPENAI_BASE_URL` and `OPENAI_API_KEY`
 for an OpenAI-compatible streaming Chat Completions endpoint), or
 `--provider cmd --agent-cmd 'my-wrapper --system-file {system_file}'` for a

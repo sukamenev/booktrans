@@ -35,7 +35,7 @@ def family(model):
     return name
 
 
-AGENTS = ("claude", "agy", "codex", "openrouter", "openai", "cmd")
+AGENTS = ("claude", "agy", "codex", "opencode", "openrouter", "openai", "cmd")
 PROVIDER_ALIASES = {"chatgpt": "codex", "api": "openai"}
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Проходы опознавательные, а не сочинительные: разобрать вёрстку, увидеть
@@ -188,7 +188,7 @@ class Models:
     def check_copyedit(self):
         for role in ("scout", "editor"):
             name, model, _ = self.specs(role)[0]
-            if name in ("claude", "codex", "agy") and not shutil.which(name):
+            if name in ("claude", "codex", "agy", "opencode") and not shutil.which(name):
                 sys.exit(lang.T("copyedit_missing_cli", role, name))
             if name == "openai" and not model:
                 sys.exit(lang.T("openai_model"))
