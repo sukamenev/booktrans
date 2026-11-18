@@ -11,14 +11,26 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from booktrans import output
+from booktrans import copyedit, output
 
 
 def fake_agent():
     task = json.load(sys.stdin)
+    if os.environ.get("BT_FIXTURE_DIR"):
+        directory = Path(os.environ["BT_FIXTURE_DIR"])
+        stage = "scout" if isinstance(task, list) else "editor"
+        key = (task if isinstance(task, list) else task["fragments"])[0]["id"]
+        with (directory / "calls").open("a") as f:
+            print(stage, key, file=f)
+        if stage == "editor" and key == "2" and not (directory / "resume").exists():
+            print("No JSON this time")
+            return
+        print("Here is the result:\n```JSON")
     if isinstance(task, list):
         print(json.dumps({"facts": [{"name": "Sam", "quote": b["text"], "id": b["id"]}
                                     for b in task if "Sam is her name." in b["text"]]}))
+        if os.environ.get("BT_FIXTURE_DIR"):
+            print("```")
         return
     edits = []
     for b in task["fragments"]:
@@ -32,15 +44,45 @@ def fake_agent():
         if "Hallo - Привет" in b["text"]:
             edits.append({"id": b["id"], "before": "Hallo - Привет", "after": "Hallo\n\n— Привет"})
     print(json.dumps({"edits": edits, "queries": []}))
+    if os.environ.get("BT_FIXTURE_DIR"):
+        print("```")
 
 
 class Workflow(unittest.TestCase):
-    def cli(self, path, *extra):
+    def cli(self, path, *extra, env=None):
         return subprocess.run([sys.executable, str(ROOT / "booktrans"), str(path),
                                "--copyedit", "--agent", "cmd", "--agent-cmd",
                                f'"{sys.executable}" "{Path(__file__).resolve()}" fake {{system_file}}',
                                "--chunk-words", "4", *extra], capture_output=True, text=True,
-                              env={**os.environ, "BT_TO": "unused-translation-target"})
+                               env={**os.environ, "BT_TO": "unused-translation-target", **(env or {})})
+
+    def test_resume_after_non_json_during_edit(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            path = directory / "draft.txt"
+            path.write_text("Он ушол.\n\nОн ушол.")
+            work = directory / "draft.txt.copyedit.work"
+            args = ("--chunk-words", "1", "--retries", "1")
+            env = {"BT_FIXTURE_DIR": d}
+            fail = self.cli(path, *args, env=env)
+            self.assertNotEqual(fail.returncode, 0)
+            state = json.loads((work / "progress.json").read_text())
+            self.assertEqual(state["completed"], {"scout": 2, "editor": 1})
+            self.assertEqual((state["state"], state["stage"], state["chunk"]), ("failed", "editor", 2))
+            self.assertEqual(json.loads((work / "last-invalid-response.json").read_text())["response"].strip(),
+                             "No JSON this time")
+            (directory / "resume").touch()
+            ok = self.cli(path, *args, env=env)
+            self.assertEqual(ok.returncode, 0, ok.stderr)
+            self.assertEqual((directory / "calls").read_text().splitlines(),
+                             ["scout 1", "scout 2", "editor 1", "editor 2", "editor 2"])
+            self.assertEqual(json.loads((work / "progress.json").read_text())["state"], "finished")
+            self.assertEqual((directory / "draft.edited.txt").read_text(), "Он ушёл.\n\nОн ушёл.")
+
+    def test_truncated_and_ambiguous_objects_are_not_recovered(self):
+        for raw in ('', 'refusal', '{"facts":[{}', '{"facts":[]} and {"facts":[]}', '[{"facts":[]}]'):
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                copyedit.decode_reply(raw)
 
     def test_invalid_edit_never_publishes_partial_book(self):
         with tempfile.TemporaryDirectory() as d:

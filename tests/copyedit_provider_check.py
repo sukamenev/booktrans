@@ -79,7 +79,12 @@ print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                calls.append((self.path, body["model"], self.headers["Authorization"]))
+                calls.append((self.path, body["model"], self.headers["Authorization"], body.get("response_format")))
+                if body["model"] == "one-off" and "response_format" in body:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":{"message":"response_format is unsupported"}}')
+                    return
                 scout = isinstance(json.loads(body["messages"][-1]["content"]), list)
                 reply = {"facts": []} if scout else {"edits": [], "queries": []}
                 event = {"choices": [{"delta": {"content": json.dumps(reply)}, "finish_reason": "stop"}]}
@@ -110,8 +115,9 @@ print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':
                 server.shutdown()
                 thread.join()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(calls, [("/v1/chat/completions", model, "Bearer fixture") for model in
-                                 ("shared", "editor-model", "shared", "one-off")])
+        self.assertEqual(calls, [("/v1/chat/completions", model, "Bearer fixture", {"type": "json_object"})
+                                 for model in ("shared", "editor-model", "shared", "one-off")] +
+                         [("/v1/chat/completions", "one-off", "Bearer fixture", None)])
 
 
 if __name__ == "__main__":

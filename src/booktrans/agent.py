@@ -360,11 +360,17 @@ class WaitingAgent:
         return getattr(self.inner, "effort", None)
 
     def run(self, system, user, image=None):
+        return self._run(self.inner.run, system, user, image=image)
+
+    def run_json(self, system, user):
+        return self._run(getattr(self.inner, "run_json", self.inner.run), system, user)
+
+    def _run(self, call, system, user, **kwargs):
         left = LIMITS.left(key_of(self))
         if left:
             raise RateLimited(T("lim_known", self.model, max(int(left) // 60, 1)))
         try:
-            text, meta = self.inner.run(system, user, image=image)
+            text, meta = call(system, user, **kwargs)
         except RateLimited as e:
             # Названо точное время снятия — берём его, а не четверть часа
             # вслепую. Полминуты сверху: часы у нас и у поставщика расходятся,
@@ -1173,7 +1179,10 @@ class OpenAIAgent(OpenRouterAgent):
             out["reasoning_effort"] = self.effort
         return out
 
-    def run(self, system, user, image=None):
+    def run_json(self, system, user):
+        return self.run(system, user, json_object=True)
+
+    def run(self, system, user, image=None, *, json_object=False):
         key, url = openai_key(), openai_url()
         if not key or not url:
             raise Fatal(T("openai_key", OPENAI_URL_ENV, OPENAI_ENV,
@@ -1182,6 +1191,8 @@ class OpenAIAgent(OpenRouterAgent):
             raise Fatal(T("openai_model"))
         endpoint = url.rstrip("/") + "/chat/completions"
         body = self.body(system, user, image)
+        if json_object and not getattr(self, "_no_json_mode", False):
+            body["response_format"] = {"type": "json_object"}
         # OpenCode Go отвергает запрос без своего заголовка сеанса; значение
         # любое устойчивое, ему оно нужно для маршрутизации и кэша.
         extra = {"x-opencode-session": self.session} if "opencode.ai" in url else None
@@ -1189,11 +1200,18 @@ class OpenAIAgent(OpenRouterAgent):
         err = (events[0].get("error") or events[0]) if events else {}
         # Точка отвергла необязательное поле — повторяем без него: модель не
         # думает вовсе, или предел вывода у неё ниже названного.
-        for field, word in (("reasoning_effort", "reasoning"), ("max_tokens", "max_tokens")):
-            if status == 400 and field in body and word in str(err.get("message")).lower():
-                del body[field]
-                status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
-                err = (events[0].get("error") or events[0]) if events else {}
+        optional = {"reasoning_effort": "reasoning", "max_tokens": "max_tokens",
+                    "response_format": "response_format"}
+        while status in (400, 422):
+            detail = str(err).lower()
+            field = next((k for k, word in optional.items() if k in body and word in detail), None)
+            if not field:
+                break
+            del body[field]
+            if field == "response_format":
+                self._no_json_mode = True
+            status, events = openrouter_post(body, key, self.timeout, endpoint, extra)
+            err = (events[0].get("error") or events[0]) if events else {}
         if status != 200:
             raise openrouter_error(status, err)
         return collect_stream(events, self.model)

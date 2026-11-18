@@ -70,7 +70,8 @@ def facts(data, source):
     for f in rows(data, "facts"):
         strings(f, "name", "id", "quote")
         if f["quote"] not in source.get(f["id"], "") or f["name"] not in f["quote"]:
-            raise ValueError("Style sheet evidence does not match the manuscript")
+            raise ValueError(f"ID {f['id']}: quote must match the fragment verbatim, "
+                             "and contain the exact spelling of name. Omit unsupported entries.")
         result.append({k: f[k] for k in ("name", "id", "quote")})
     return result
 
@@ -140,24 +141,76 @@ def atomic(path, write):
         tmp.unlink(missing_ok=True)
 
 
-def request(agent, system, payload, parse, work, identity, retries):
+class Progress:
+    """Human-readable snapshot. Validated response files remain the resume index."""
+    def __init__(self, work, src):
+        self.path = work / "progress.json"
+        self.status = {"source": src.name, "completed": {"scout": 0, "editor": 0}}
+
+    def write(self, **fields):
+        self.status.update(fields)
+        atomic(self.path, lambda tmp: tmp.write_text(json.dumps(self.status, ensure_ascii=False,
+                                                               indent=2), encoding="utf-8"))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type and "stage" in self.status:
+            self.write(state="interrupted" if exc_type is KeyboardInterrupt else "failed")
+
+
+def decode_reply(raw):
+    text = raw.strip().lstrip("\ufeff").strip()
+    if not text:
+        raise ValueError("empty reply (no JSON)")
+    # Skip prose/Markdown around one object, never salvage a nested object
+    # from a truncated outer one or choose between two different answers.
+    start = re.search(r"[\[{]", text)
+    if not start:
+        raise ValueError(f"no JSON in reply ({len(text)} characters)")
+    data, end = json.JSONDecoder().raw_decode(text, start.start())
+    if not isinstance(data, dict) or re.search(r"[\[\]{}]", text[end:]):
+        raise ValueError("expected a single JSON object")
+    return data
+
+
+def request(agent, system, payload, parse, work, identity, retries, *, label="", log=None):
     user = json.dumps(payload, ensure_ascii=False)
     digest = hashlib.sha256(json.dumps([identity, system, user]).encode()).hexdigest()
     path = work / (digest + ".json")
     if path.exists():
-        return parse(json.loads(path.read_text(encoding="utf-8")))
-    feedback = ""
-    for _ in range(max(1, retries)):
-        raw, _usage = agent.run(system + feedback, user)
         try:
-            data = json.loads(raw.strip().removeprefix("```json").removesuffix("```").strip())
+            result = parse(json.loads(path.read_text(encoding="utf-8")))
+        except ValueError:
+            os.replace(path, path.with_suffix(".invalid-cache"))
+        else:
+            if log:
+                log(f"  copyedit: {label} [кэш, без запроса]")
+            return result
+    if log:
+        log(f"  copyedit: {label} [запрос]")
+    feedback = ""
+    attempts = max(1, retries)
+    for n in range(1, attempts + 1):
+        raw, _usage = getattr(agent, "run_json", agent.run)(system + feedback, user)
+        try:
+            data = decode_reply(raw)
             result = parse(data)
         except ValueError as exc:
-            feedback = "\nCorrect your response: " + str(exc)
+            error = str(exc)
+            diagnostic = work / "last-invalid-response.json"
+            record = {"chunk": label, "attempt": n, "error": error, "response": raw}
+            atomic(diagnostic, lambda tmp: tmp.write_text(json.dumps(record, ensure_ascii=False,
+                                                                     indent=2), encoding="utf-8"))
+            if log:
+                log(f"    {n}/{attempts}: {error}")
+            feedback = "\nReturn exactly one complete JSON object (no Markdown or explanation). " + error
             continue
         atomic(path, lambda tmp: tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8"))
         return result
-    raise ValueError("Invalid model output: " + feedback.strip())
+    raise ValueError(f"{label}: invalid model output after {attempts} attempts: {error}. "
+                     f"Последний ответ: {diagnostic}. Для продолжения повторите ту же команду.")
 
 
 def run(args, models, log):
@@ -173,11 +226,12 @@ def run(args, models, log):
     work.mkdir(parents=True, exist_ok=True)
     _, instructions = read_prompt(args.prompt, log, args.prompt_text)
     try:
-        with locked(work):
+        with locked(work), Progress(work, src) as progress:
             book = Book(src, args.encoding)
             chunks = list(batches(book, args.chunk_words))
             if not chunks:
                 raise ValueError("No editable prose found")
+            progress.status["chunks_per_stage"] = len(chunks)
             memory, queries, edits = [], [], []
             system = EDIT
             if instructions:
@@ -191,25 +245,29 @@ def run(args, models, log):
                 if name == "openai":
                     identity.append(openai_url())
                 for i, chunk in enumerate(chunks, 1):
-                    log(f"  copyedit: {role} {i}/{len(chunks)}")
+                    label = f"{role} {i}/{len(chunks)}"
+                    progress.write(stage=role, chunk=i, state="processing")
                     source = {b["id"]: b["text"] for b in chunk}
                     if role == "scout":
                         memory.extend(request(agent, SCOUT, chunk, lambda d: facts(d, source),
-                                              work, identity, args.retries))
-                        continue
-                    refs = references(memory, "\n".join(source.values()))
-                    result, doubts = request(agent, system, {"fragments": chunk, "evidence": refs},
-                                             lambda d: changes(d, source, book), work,
-                                             identity, args.retries)
-                    queries.extend(doubts)
-                    for key, text in result.items():
-                        book.apply(key, text)
-                        edits.append({"id": key, "before": source[key], "after": text})
+                                              work, identity, args.retries, label=label, log=log))
+                    else:
+                        refs = references(memory, "\n".join(source.values()))
+                        result, doubts = request(agent, system, {"fragments": chunk, "evidence": refs},
+                                                 lambda d: changes(d, source, book), work,
+                                                 identity, args.retries, label=label, log=log)
+                        queries.extend(doubts)
+                        for key, text in result.items():
+                            book.apply(key, text)
+                            edits.append({"id": key, "before": source[key], "after": text})
+                    progress.status["completed"][role] = i
+                    progress.write(state="saved")
             summary = {"mode": "copyedit", "source": src.name, "edits": edits,
                        "queries": queries, "evidence": memory}
             atomic(report, lambda tmp: tmp.write_text(json.dumps(summary, ensure_ascii=False,
                                                                  indent=2), encoding="utf-8"))
             atomic(dest, book.save)
+            progress.write(stage="done", chunk=None, state="finished")
     except (OSError, ValueError, BadZipFile, ExpatError, KeyError, IndexError) as exc:
         raise SystemExit(f"Copyedit: {exc}") from exc
     log(f"  {dest} — {len(edits)} edited fragments, {len(queries)} queries: {report}")
