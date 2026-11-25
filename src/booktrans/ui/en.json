@@ -6,6 +6,7 @@
  "reading": "reading {}",
  "images": "images extracted: {}",
  "links_found": "links carried over from the book: {}",
+ "pdf_note_links": "PDF notes: {} links confirmed, {} pairs need review",
  "cleaned": "removed: {} watermarks, {} boilerplate pages",
  "counts": "{} paragraphs, {} words, {} chunks, {} headings",
  "workdir": "work directory: {}",

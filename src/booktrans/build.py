@@ -394,6 +394,8 @@ def esc(s, links=None, notes_map=None):
         s = s.replace(f"&lt;{src}&gt;", f"<{dst}>").replace(f"&lt;/{src}&gt;", f"</{dst}>")
     if links:
         for i, url in enumerate(links, 1):
+            if not url:
+                continue
             if "#" in url and not url.startswith("http"):
                 # Ссылка на авторскую сноску: адрес внутри книги, и на выходе
                 # он должен указывать на нашу собственную нумерацию. Ссылка
@@ -434,7 +436,8 @@ def link_targets(blocks):
             if u.startswith("#")}
 
 
-def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None):
+def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None,
+               source_pdf=None):
     from . import indexing
     blocks, index_tr = indexing.assemble(work, blocks, meta, partial)
     # Язык перевода — свойство прогона, и он же выбирает языковую часть
@@ -509,11 +512,27 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     if missing:
         log("  " + lang.T("preview_left", len(missing)))
 
+    # A legacy work directory already has translated paragraphs. Rebind
+    # only marks we can find in them, on copies for the current export.
+    # This fallback and source_pdf plumbing can be removed from 2027-02-01.
+    pdf_notes = meta.get("pdf_note_pass")
+    if source_pdf and pdf_notes is None:
+        from copy import deepcopy
+        from . import pdfnotes
+        blocks = deepcopy(blocks)
+        linked, pending = pdfnotes.bind(pdfnotes.read_anchors(source_pdf), blocks, tr)
+        pdf_notes = {"linked": linked, "pending": pending}
+    if pdf_notes and (pdf_notes["linked"] or pdf_notes["pending"]):
+        log("  " + lang.T("pdf_note_links", pdf_notes["linked"], pdf_notes["pending"]))
+    separate = bool(pdf_notes and pdf_notes["linked"])
+
     # Строки для читателя — на языке перевода, и нужны они обоим путям: и
     # сборщику fb2 ниже, и писателям остальных форматов. Берутся до сносок:
     # оговорка у цитаты — тоже строка для читателя.
     code = meta.get("target_lang", "ru")
     st = lang.book_strings(code)
+    if separate:
+        st = dict(st, notes_title=st.get("translation_notes_title", st.get("notes_title", "Notes")))
 
     # Многоточия — к одному виду, если правила языка его задают. Правится
     # только собранная книга: слои перевода и правок лежат как были.
@@ -553,6 +572,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
     note_seq = []            # (якорь, номер, текст, из_книги_ли)
     nid = {}                 # блок -> якорь (сноска конвейера)
     notes_map = {}           # якорь из epub -> наш якорь (авторская)
+    added_no = 0
     for b in blocks:
         if b["kind"] == "note":
             a = f"n{len(note_seq) + 1}"
@@ -562,7 +582,8 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
             a = f"n{len(note_seq) + 1}"
             nid[b["id"]] = a
             v = notes[b["id"]]
-            note_seq.append((a, len(note_seq) + 1,
+            added_no += 1
+            note_seq.append((a, added_no if separate else len(note_seq) + 1,
                              v["text"] if isinstance(v, dict) else v,
                              bool(isinstance(v, dict) and v.get("source_only"))))
     if notes:
@@ -653,6 +674,7 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None)
 
         kw.update({
             "note_seq": note_seq, "nid": nid, "notes_map": notes_map,
+            "separate_note_labels": separate,
             "bi_titles": bi_titles,
             # Сборщик сам считает, сколько картинок вложил: из набора в книгу
             # идёт не всё, и сказать об этом может только он.

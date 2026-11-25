@@ -3351,6 +3351,13 @@ def read_book(path, styles=None, encoding=None, ask=None, marks=None, agent=None
             indexing.mark(blocks)
         _mark_refs(blocks)
         _mark_cites(blocks)     # до _prune_notes: правило смотрит на вид блока
+        if ext == ".pdf":
+            from . import pdfnotes
+            linked, pending = pdfnotes.bind(pdfnotes.read_anchors(path), blocks)
+            meta["pdf_note_pass"] = {"linked": linked, "pending": pending}
+            if log and (linked or pending):
+                from . import lang
+                log("  " + lang.T("pdf_note_links", linked, pending))
         _prune_notes(blocks)
         for b in blocks:
             if b["kind"] == "code":

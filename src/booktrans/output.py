@@ -315,6 +315,10 @@ def _table_html(text, inline, spans=None):
     return "<table>" + "".join(rows) + "</table>"
 
 
+def _note_sign(number, separate):
+    return f"[+{number}]" if separate else f"[{number}]"
+
+
 def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
     st = st or {}
     out = []
@@ -349,11 +353,11 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
         elif kind == "origv":
             out.append("    " + _plain(text))
         elif kind in ("ptr", "vtr"):
-            mark = f" [{nums[bid]}]" if bid in nums else ""
+            mark = " " + _note_sign(nums[bid], kw.get("separate_note_labels")) if bid in nums else ""
             body, mark = _anchored(_plain(text), bid, mark)
             out.append("    | " + body + mark)
         else:
-            mark = f" [{nums[bid]}]" if bid in nums else ""
+            mark = " " + _note_sign(nums[bid], kw.get("separate_note_labels")) if bid in nums else ""
             body, mark = _anchored(_plain(text), bid, mark)
             out.append(body + mark)
             out.append("")
@@ -365,7 +369,8 @@ def write_txt(path, meta, items, notes, images, note_prefix, st=None, **kw):
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
             # Разметку разворачиваем и снимаем: в голом тексте тегам не место.
-            out += [f"{i}. {_plain(_md_inline(body))}", ""]
+            number = _note_sign(i, True) if kw.get("separate_note_labels") else f"{i}."
+            out += [f"{number} {_plain(_md_inline(body))}", ""]
     open(path, "w", encoding="utf-8").write("\n".join(out).strip() + "\n")
 
 
@@ -419,6 +424,8 @@ def _md(s, links=None):
         s = s.replace(f"<{src}>", mark).replace(f"</{src}>", mark)
     s = re.sub(r"<br\s*/?>", "  \n", s)          # жёсткий перенос markdown
     for i, url in enumerate(links or (), 1):
+        if not url:
+            continue
         s = re.sub(rf"<a{i}>(.*?)</a{i}>", lambda m: f"[{m.group(1)}]({url})",
                    s, flags=re.S)
     return re.sub(r"</?a\d+>", "", s)
@@ -478,6 +485,14 @@ def write_md(path, meta, items, notes, images, note_prefix, st=None, cover=None,
             o.append(f"*{_md(author)}*")
 
     nums = {b: i for i, b in enumerate(notes, 1)}
+    separate = kw.get("separate_note_labels")
+
+    def note_mark(bid):
+        n = nums.get(bid)
+        if n is None:
+            return ""
+        return f"<a href=\"#translation-note-{n}\">[+{n}]</a>" if separate else f"[^{n}]"
+
     verse = []
 
     def flush():
@@ -516,11 +531,11 @@ def write_md(path, meta, items, notes, images, note_prefix, st=None, cover=None,
         elif kind == "origv":
             o.append("    " + _md(text, links))
         elif kind in ("ptr", "vtr"):
-            mark = f"[^{nums[bid]}]" if bid in nums else ""
+            mark = note_mark(bid)
             body, mark = _anchored(_md_par(_md(text, links)), bid, mark)
             o.append(at + "> " + body + mark)
         elif kind == "p":
-            mark = f"[^{nums[bid]}]" if bid in nums else ""
+            mark = note_mark(bid)
             body, mark = _anchored(_md_par(_md(text, links)), bid, mark)
             o.append(at + body + mark)
     flush()
@@ -532,7 +547,8 @@ def write_md(path, meta, items, notes, images, note_prefix, st=None, cover=None,
             src_only = isinstance(txt, dict) and txt.get("source_only")
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
-            o.append(f"[^{i}]: " + _md(_md_inline(body)))
+            mark = f'<a id="translation-note-{i}"></a>[+{i}] ' if separate else f"[^{i}]: "
+            o.append(mark + _md(_md_inline(body)))
 
     open(path, "w", encoding="utf-8").write("\n\n".join(o).strip() + "\n")
     if log and lang and kept:
@@ -618,12 +634,12 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         elif kind == "origv":
             o.append(f'<p class="v"{_at(bid, targets)}>{_inline(text, HTML_INLINE, links)}</p>')
         elif kind in ("ptr", "vtr"):
-            mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">[{nums[bid]}]</a></sup>'
+            mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">{_note_sign(nums[bid], kw.get("separate_note_labels"))}</a></sup>'
                     if bid in nums else "")
             body, mark = _anchored(_inline(text, HTML_INLINE, links), bid, mark)
             o.append(f'<p class="{"tr" if kind == "ptr" else "v tr"}{_trstyle(meta)}"{_at(bid, targets)}{_lang(tl)}>{body}{mark}</p>')
         elif kind == "p":
-            mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">[{nums[bid]}]</a></sup>'
+            mark = (f'<sup><a href="#n{nums[bid]}" id="r{nums[bid]}">{_note_sign(nums[bid], kw.get("separate_note_labels"))}</a></sup>'
                     if bid in nums else "")
             body, mark = _anchored(_inline(text, HTML_INLINE, links), bid, mark)
             o.append(f"<p{_at(bid, targets)}>{body}{mark}</p>")
@@ -637,7 +653,8 @@ def write_html(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             # Сноска несёт разметку — курсив названий ставит и переводчик, и
             # модель звёздочками. `escape` отдавал читателю буквальное «<i>».
             body = _inline(_md_inline(body), HTML_INLINE)
-            o.append(f'<li id="n{i}">{body} <a href="#r{i}">↑</a></li>')
+            label = f' style="list-style-type:none">[+{i}] ' if kw.get("separate_note_labels") else ">"
+            o.append(f'<li id="n{i}"{label}{body} <a href="#r{i}">↑</a></li>')
         o.append("</ol></div>")
     o.append("</body></html>")
     open(path, "w", encoding="utf-8").write("\n".join(o))
@@ -757,12 +774,12 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             elif kind == "origv":
                 o.append(f'<p class="v"{_at(bid, targets)}>{_inline(text, HTML_INLINE, links)}</p>')
             elif kind in ("ptr", "vtr"):
-                mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">[{nums[bid]}]</a></sup>'
+                mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">{_note_sign(nums[bid], kw.get("separate_note_labels"))}</a></sup>'
                         if bid in nums else "")
                 body, mark = _anchored(_inline(text, HTML_INLINE, links), bid, mark)
                 o.append(f'<p class="{"tr" if kind == "ptr" else "v tr"}{_trstyle(meta)}"{_at(bid, targets)}{_lang(tl)}>{body}{mark}</p>')
             elif kind == "p":
-                mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">[{nums[bid]}]</a></sup>'
+                mark = (f'<sup><a href="notes.xhtml#n{nums[bid]}">{_note_sign(nums[bid], kw.get("separate_note_labels"))}</a></sup>'
                         if bid in nums else "")
                 body, mark = _anchored(_inline(text, HTML_INLINE, links), bid, mark)
                 o.append(f"<p{_at(bid, targets)}>{body}{mark}</p>")
@@ -776,7 +793,8 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
             if not src_only and not body.startswith(note_prefix):
                 body = note_prefix + body
             body = _inline(_md_inline(body), HTML_INLINE)
-            o.append(f'<li id="n{i}">{body}</li>')
+            label = f' style="list-style-type:none">[+{i}] ' if kw.get("separate_note_labels") else ">"
+            o.append(f'<li id="n{i}"{label}{body}</li>')
         # Хвост от html-сборщика: там список обёрнут в <div class="notes">, а
         # здесь обёртки нет, и закрытие оставалось сиротой. Читалки прощали,
         # разбор xml — нет; проверка не видела, потому что собирала книгу без
@@ -1012,6 +1030,10 @@ def hyph_tex(code):
     return "\n".join(out) + "\n"
 
 
+def _tex_destination(anchor):
+    return "bt-" + anchor.encode("utf-8").hex()
+
+
 def _tex(s, links=None, notes_dict=None):
     """Текст в TeX: экранирование и разворот инлайновой разметки."""
     # Декодируем HTML-сущности, которые OCR-модель вставляет для отступов
@@ -1058,7 +1080,8 @@ def _tex(s, links=None, notes_dict=None):
             return tex_inline(f) or hide(m)
         return hide(m)
 
-    s = re.sub(r"\$([^$]*?)\$", math_or_text, s, flags=re.DOTALL)
+    s = re.sub(r"(?<!\\)\$((?:\\\$|[^$])*?)(?<!\\)\$", math_or_text, s, flags=re.DOTALL)
+    s = re.sub(r"\\\$", hide, s)
     
     def hide_md_link(m):
         url = m.group(2).replace("%", r"\%").replace("#", r"\#")
@@ -1089,7 +1112,7 @@ def _tex(s, links=None, notes_dict=None):
 
     def back(m):
         t = marks[int(m.group(1))]
-        if t.startswith(("$", r"\footnote", r"\href", r"\url", r"\newline")) or t == "}":
+        if t.startswith(("$", r"\$", r"\footnote", r"\href", r"\url", r"\newline")) or t == "}":
             return t
         name = re.match(r"</?([a-z]+)", t).group(1)
         close = t.startswith("</")
@@ -1100,6 +1123,8 @@ def _tex(s, links=None, notes_dict=None):
                 return ""
             if close:
                 return "}"
+            if url.startswith("#"):
+                return r"\hyperlink{%s}{" % _tex_destination(url[1:])
             return r"\href{%s}{" % url.replace("%", r"\%").replace("#", r"\#")
         return "}" if close else "\\%s{" % TEX_INLINE[name]
 
@@ -1223,7 +1248,12 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                   for orig_id, (new_a, _) in notes_map.items()
                   if new_a in new_anchor_to_text}
 
-    o = [_tex_preamble(meta, st, code)]
+    preamble = _tex_preamble(meta, st, code)
+    if kw.get("separate_note_labels"):
+        preamble = preamble.replace(r"\begin{document}",
+                                    r"\renewcommand{\thefootnote}{[+\arabic{footnote}]}"
+                                    "\n" + r"\begin{document}", 1)
+    o = [preamble]
     if cover:
         name = "%s.img/cover.%s" % (os.path.splitext(os.path.basename(path))[0],
                                     _cover_mime(cover)[1])
@@ -1252,6 +1282,7 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
     o.append(r"\date{%s}" % _tex(year, notes_dict=notes_dict))
     o.append(r"\maketitle")
     nums = {b: i for i, b in enumerate(notes, 1)}
+    targets = _targets(items)
     toc_added = False
     in_abstract = False
     for kind, text, bid, links, *sp in items:
@@ -1261,8 +1292,9 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
             o.append(r"\clearpage")
             toc_added = True
 
+        anchor = r"\hypertarget{%s}{}" % _tex_destination(bid) if bid in targets else ""
         if kind == "title":
-            t = _tex(text, links, notes_dict=notes_dict)
+            t = anchor + _tex(text, links, notes_dict=notes_dict)
             clean_text = re.sub(r"<a\d+>.*?</a\d+>", "", text).strip()
             clean_t = _tex(clean_text)
             
@@ -1303,22 +1335,22 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                 if star: o.append(r"\subsubsection*{%s}" % t)
                 else: o.append(r"\subsubsection[%s]{%s}" % (clean_t, t))
         elif kind == "subtitle":
-            o.append(r"\subsection*{%s}" % _tex(text, notes_dict=notes_dict))
+            o.append(r"\subsection*{%s}" % (anchor + _tex(text, links, notes_dict=notes_dict)))
         elif kind == "gap":
             o.append(r"\medskip")
         elif kind == "break":
             o.append(r"\begin{center}* * *\end{center}")
         elif kind == "image" and text in images and _tex_pic(text):
-            o.append(r"\begin{center}\includegraphics[width=0.9\textwidth,"
+            o.append(anchor + r"\begin{center}\includegraphics[width=0.9\textwidth,"
                      r"keepaspectratio]{%s.img/%s}\end{center}"
                      % (os.path.splitext(os.path.basename(path))[0], text))
         elif kind == "verse":
-            o.append(r"\begin{verse}%s\end{verse}"
-                     % r"\\".join(_tex(l, notes_dict=notes_dict) for l in text.splitlines()))
+            o.append(anchor + r"\begin{verse}%s\end{verse}"
+                     % r"\\".join(_tex(l, links, notes_dict=notes_dict) for l in text.splitlines()))
         elif kind == "code":
-            o.append(r"\begin{verbatim}" + "\n" + text + "\n" + r"\end{verbatim}")
+            o.append(anchor + r"\begin{verbatim}" + "\n" + text + "\n" + r"\end{verbatim}")
         elif kind == "table":
-            o.append(_tex_table(text, sp[0] if sp else None))
+            o.append(anchor + _tex_table(text, sp[0] if sp else None))
         elif kind == "note":
             continue                       # сноски встают по месту, ниже
         else:
@@ -1329,8 +1361,10 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                 if not body.startswith(note_prefix):
                     body = note_prefix + body
                 body = _md_inline(body)
-                note = r"\footnote{%s}" % _tex(body, notes_dict=notes_dict)
-            p_tex = _tex(text, links, notes_dict=notes_dict)
+                note = (r"\footnote[%d]{%s}" % (nums[bid], _tex(body, notes_dict=notes_dict))
+                        if kw.get("separate_note_labels")
+                        else r"\footnote{%s}" % _tex(body, notes_dict=notes_dict))
+            p_tex = anchor + _tex(text, links, notes_dict=notes_dict)
             if bid.startswith("_about") or bid.startswith("_details"):
                 p_tex = r"\noindent " + p_tex
             # В LaTeX сноска и есть её знак: по метке она встаёт прямо за
@@ -1575,6 +1609,7 @@ def tex_inline(f):
 
 
 MATH_RE = re.compile(r"\$\$(.*?)\$\$|\$([^\$]+?)\$")
+MATH_IMAGE = re.compile(r'(<imgmath name="[^"]+"/>)')
 
 
 def math_text(s):
@@ -1589,7 +1624,10 @@ def math_text(s):
             return m.group(0)
         got = tex_inline((m.group(1) if m.group(1) is not None else m.group(2)).strip())
         return got if got is not None else m.group(0)
-    return MATH_RE.sub(repl, s)
+    # The placeholder is an indivisible image. A stray dollar on either
+    # side can otherwise turn the underscore in its filename into <sub>.
+    return "".join(piece if i % 2 else MATH_RE.sub(repl, piece)
+                   for i, piece in enumerate(MATH_IMAGE.split(s)))
 
 
 def _render_math_to_images(items, images):
@@ -1875,7 +1913,8 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
             a = ""
             if b["id"] in nid:
                 num = next(n for k, n, _, _ in note_seq if k == nid[b["id"]])
-                a = f'<a l:href="#{nid[b["id"]]}" type="note">[{num}]</a>'
+                sign = _note_sign(num, kw.get("separate_note_labels"))
+                a = f'<a l:href="#{nid[b["id"]]}" type="note">{sign}</a>'
             # Перенос строки внутри абзаца: у <p> в fb2 нет <br/>, строки
             # выходят соседними абзацами; знак сноски — где его метка, иначе
             # на последней.
@@ -1929,7 +1968,8 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
         for anchor, num, body, from_source in note_seq:
             if not from_source and not body.startswith(pref):
                 body = pref + body
-            w(f'<section id="{anchor}"><title><p>{num}</p></title>'
+            label = _note_sign(num, True) if kw.get("separate_note_labels") and anchor in nid.values() else str(num)
+            w(f'<section id="{anchor}"><title><p>{label}</p></title>'
               f'<p>{_inline(_md_inline(body), FB2_INLINE)}</p></section>')
         w("</body>")
 

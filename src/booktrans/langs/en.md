@@ -57,6 +57,7 @@ str.editor_note: Ed. note
 str.date_fmt: {month} {d}, {y}
 str.months: January,February,March,April,May,June,July,August,September,October,November,December
 str.notes_title: Notes
+str.translation_notes_title: Notes on the translation
 str.toc_title: Contents
 str.part: Part {n}
 str.illustration: illustration: {alt}

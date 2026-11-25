@@ -684,7 +684,8 @@ class Run:
             # Свой набор картинок каждому: сборка дописывает в него
             # отрисованные формулы, и второму формату досталось бы чужое.
             build.build_book(self.work, self.meta, self.blocks, self.cover, dest,
-                             self.log, a.partial, dict(self.images))
+                             self.log, a.partial, dict(self.images),
+                             source_pdf=a.book if self.ext == ".pdf" else None)
         self.log("")
         return True
 

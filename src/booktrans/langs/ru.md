@@ -87,6 +87,7 @@ str.editor_note: Прим. ред.
 str.date_fmt: {d} {month} {y}
 str.months: января,февраля,марта,апреля,мая,июня,июля,августа,сентября,октября,ноября,декабря
 str.notes_title: Примечания
+str.translation_notes_title: Примечания к переводу
 str.toc_title: Оглавление
 str.part: Часть {n}
 str.illustration: иллюстрация: {alt}

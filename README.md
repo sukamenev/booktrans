@@ -757,10 +757,9 @@ same poppler can hand over the markup (`pdftohtml -xml`), so the addresses come
 from there — three seconds on a 634-page book. Measured: 5374 links of the 7435
 the source carries.
 
-A link inside a pdf aims at a **page**, not a paragraph: nothing finer exists
-in the format. The target is the first block of that page, so an index entry
-leads to the start of the page the word sits on. A link that lands on itself (a
-note on the same page) is not made.
+For ordinary PDF navigation, the Poppler XML supplies a destination page.
+BookTrans uses its first block, so an index entry leads to the start of the
+page the word sits on. Links that would point to their own block are skipped.
 
 The anchor is looked for in the blocks of its own page, in order. Not found —
 silently skipped: damaged text costs more than a lost link. What goes missing
@@ -768,6 +767,16 @@ is anchors the layout broke mid-word or set in italics.
 
 Recovering PDF links does not yet enable index translation; the index feature
 below currently applies only to EPUB input.
+
+**Numbered PDF notes.** After reading all pages, BookTrans checks each match
+against the printed number, the surrounding text, the entry and its backlink
+in the PDF. A confirmed link points to the entry even when chapter numbering
+restarts. If PDFium cannot resolve a named destination, BookTrans tries
+`mutool` when installed. When building an older `.work` with the original PDF,
+confirmed links are applied to the saved translation at export. Uncertain
+pairs need review, and legacy address collisions retain the visible marks and
+note text. When PDF notes have been linked, added notes render as `[+1]`,
+`[+2]`, and so on. The translation files and their markers keep their format.
 
 ### Book indexes (EPUB)
 
