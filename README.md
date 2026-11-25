@@ -650,10 +650,9 @@ and more, weighted 4, 2 or 1 by what the reader loses — and a judge model
 answers ok/fail on every trap against an answer key. The score, 0 to 100, is
 computed by code from the verdicts and the penalties for additions,
 omissions, untranslated fragments and broken structure. Only the translator
-is measured: no scouting and no editor. The judge by default is GPT-6 Sol,
-the stricter one; Opus 5.5 scores the same translations about 8 points
-higher on average and is the backup. Scores of different judges or test
-versions are not comparable.
+is measured: no scouting and no editor. The judge by default is GPT-6.2 Sol,
+with Opus 5.5 as backup. Scores of different judges or test versions are not
+comparable.
 
 Method, areas, key format, judge selection and the results table:
 [docs/bench/README.md](docs/bench/README.md) (Russian:
@@ -956,7 +955,7 @@ Hebrew and Arabic tables, plus East Asian `shift_jis`, `euc_jp`, `gb18030`,
 --bench [DIR]         benchmark the translator on the built-in text (or a set in DIR); no book needed
 --bench-runs N        how many times to translate and judge the benchmark text; the mean is reported (default 3)
 --bench-stats [VER]   pass rate of every benchmark check over finished runs here (or in -w); VER: exact key version(s), comma-separated; "1.4." takes the whole 1.4.N branch
---judge ID            judge model for the benchmark (default codex:gpt-6-sol:medium, backup claude:claude-opus-5-5:medium)
+--judge ID            judge model for the benchmark (default codex:gpt-6.2-sol:medium, backup claude:claude-opus-5-5:medium)
 --agent NAME          agent: claude|agy|codex|openrouter|openai|cmd
 --agent-cmd 'CMD'     your own command: {system} or {system_file}
 --jobs N              threads for editing, verification and footnotes

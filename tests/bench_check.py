@@ -156,12 +156,12 @@ def main():
             return Fake(n, m, e)
     who, dropped = B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))
     ok("судья семьи переводчика по умолчанию допущен",
-       [w.model for w in who] == ["gpt-6-sol", "claude-opus-5-5"] and dropped == [],
+       [w.model for w in who] == ["gpt-6.2-sol", "claude-opus-5-5"] and dropped == [],
        ([w.model for w in who], [x.model for x in dropped]))
     Args.self_edit = "never"
     who_n, dropped_n = B.judges(Args(), Ms(), Fake("claude", "claude-sonnet-5", "high"))
     ok("--self-edit never вычёркивает судью семьи переводчика",
-       [w.model for w in who_n] == ["gpt-6-sol"] and [x.model for x in dropped_n] == ["claude-opus-5-5"])
+       [w.model for w in who_n] == ["gpt-6.2-sol"] and [x.model for x in dropped_n] == ["claude-opus-5-5"])
     Args.self_edit = None
     ok("усилие судьи из умолчания — medium", who[0].effort == "medium", who[0].effort)
     Args.judge = "agy:claude-opus-4-6-thinking"

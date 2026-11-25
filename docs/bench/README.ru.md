@@ -6,7 +6,7 @@
     booktrans --bench --to ru --translator claude:claude-sonnet-5:medium
 
 Книга не нужна: текст в пакете. Обязательны язык перевода (`--to`) и
-переводчик (`--translator`). Судья по умолчанию — `codex:gpt-6-sol:medium`,
+переводчик (`--translator`). Судья по умолчанию — `codex:gpt-6.2-sol:medium`,
 запасной — `claude:claude-opus-5-5:medium`; другой задаётся ключом
 `--judge`. Текст переводится и судится три раза (`--bench-runs`), в отчёт
 идёт среднее, не медиана: медиана выбрасывает худший прогон, даже нулевой,

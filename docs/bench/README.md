@@ -7,7 +7,7 @@ rules on each of them, and code computes a score from 0 to 100.
 
 No book is needed: the text ships in the package. Required: the target
 language (`--to`) and the translator (`--translator`). The default judge is
-`codex:gpt-6-sol:medium`, the backup `claude:claude-opus-5-5:medium`;
+`codex:gpt-6.2-sol:medium`, the backup `claude:claude-opus-5-5:medium`;
 another is set with `--judge`. The text is translated and judged three times
 (`--bench-runs`) and the mean is reported, not the median: the median throws
 the worst run away, even a zero, while in a whole book the failed chapter
