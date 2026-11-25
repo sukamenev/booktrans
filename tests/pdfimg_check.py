@@ -40,7 +40,7 @@ PAGE = """# Глава
 | Red cells<br>![image](images/a.png) | 6–8 | Oxygen transport |
 | Platelets<br>![image](images/b.png) | 0.5–3.0 | Haemostasis |
 
-![image](images/c.png)
+![image](images/img_p0001_10_20.png)
 
 *Figure 1. Подпись под рисунком.*
 
@@ -65,11 +65,13 @@ def main():
     Image.new("RGB", (200, 280), "white").save(pdf, "PDF")
     pages = os.path.join(d, "book.work", "pdf_pages")
     os.makedirs(os.path.join(pages, "images"))
-    for n in "abc":
-        Image.new("RGB", (8, 8), "red").save(os.path.join(pages, "images", f"{n}.png"))
+    for name in ("a.png", "b.png", "img_p0001_10_20.png"):
+        Image.new("RGB", (8, 8), "red").save(os.path.join(pages, "images", name))
     open(os.path.join(pages, "page_0001.md"), "w", encoding="utf-8").write(PAGE)
     got = E._pdf_visual(pdf, None)
     blocks = next(x for x in got if isinstance(x, list) and x and isinstance(x[0], dict))
+    ok("метку OCR получает только вырезка",
+       [b["text"] for b in blocks if b.get("ocr_crop")] == ["img_p0001_10_20.png"])
     ids = collections.Counter(b["id"] for b in blocks)
     ok("идентификаторы блоков не повторяются", max(ids.values()) == 1,
        [k for k, v in ids.items() if v > 1])

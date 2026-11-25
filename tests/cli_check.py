@@ -52,6 +52,9 @@ def main():
        got == [s for s in cli.STEPS if s not in ("edit", "verify")], got)
     ok("notes — только через --only", "notes" not in cli.STEPS
        and cli.steps_of(args("--only", "notes")) == ["notes"])
+    ok("формат картинок по умолчанию — auto", args().image_format == "auto")
+    ok("формат картинок можно принудительно сделать PNG",
+       args("--image-format", "png").image_format == "png")
 
     # ---- книжный указатель: публичный ключ, режимы и отсутствие старого имени
     ok("указатель по умолчанию — auto", args().book_index == "auto")

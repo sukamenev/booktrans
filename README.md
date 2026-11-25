@@ -133,6 +133,13 @@ building another format from an existing translation makes no model requests.
 ./booktrans book.epub --to ru -o Book.epub
 ```
 
+When exporting image crops from visual PDF OCR, BookTrans uses JPEG for
+likely photos without small lettering or transparency when JPEG at quality
+95 with full-resolution color (4:4:4) saves at least 20% over PNG. Diagrams,
+text and uncertain cases use PNG. Use `--image-format png` to keep all OCR
+crops in PNG. Both modes preserve resolution and the files in `.work`.
+Images embedded in the source, including EPUB covers, keep their original bytes.
+
 ## Before a long run — a dry check
 
 **Always do this.** A minute against several hours of translating the wrong

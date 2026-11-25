@@ -8,6 +8,7 @@ import os
 import re
 import zipfile
 from xml.sax.saxutils import escape
+from .pictures import free_name
 from .tune import TEX_HEAD, CAPTION, MATH_MAX
 
 FB2_INLINE = {
@@ -67,7 +68,9 @@ def author_parts(raw, surname=""):
 
 
 def _mime(name):
-    return "image/png" if name.lower().endswith(".png") else "image/jpeg"
+    return {".png": "image/png", ".gif": "image/gif", ".webp": "image/webp",
+            ".svg": "image/svg+xml", ".bmp": "image/bmp", ".tif": "image/tiff",
+            ".tiff": "image/tiff"}.get(os.path.splitext(name)[1].lower(), "image/jpeg")
 
 
 # Голый адрес в тексте. `&` к этому месту уже превращён в `&amp;`, оттого в
@@ -475,7 +478,7 @@ def write_md(path, meta, items, notes, images, note_prefix, st=None, cover=None,
 
     o = []
     if cover:
-        o.append(f"![]({keep('cover.' + _cover_mime(cover)[1], cover)})")
+        o.append(f"![]({keep(_cover_name(cover, images), cover)})")
     # Титульный лист обычно уже лежит в блоках — сборщик книги кладёт его
     # первым. Свой заголовок печатаем, только если его там нет, иначе
     # заглавие и автор выходят дважды подряд.
@@ -674,6 +677,10 @@ def _cover_mime(raw):
     return "image/jpeg", "jpg"
 
 
+def _cover_name(cover, images):
+    return free_name("cover." + _cover_mime(cover)[1], {n.casefold() for n in images or ()})
+
+
 def _trstyle(meta):
     """Класс стиля перевода в двуязычной книге: light — ничего сверх `tr`."""
     s = (meta or {}).get("bilingual_style") or "light"
@@ -852,12 +859,12 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
     if n_img and kw.get("log") and kw.get("lang"):
         kw["log"]("  " + kw["lang"].T("images_n", n_img, len(spots)))
     man, spine = [], []
-    cmime, cext = _cover_mime(cover) if cover else ("", "")
-    cover_href = f"img/{same}" if same else (f"img/cover.{cext}" if cover else "")
+    cover_name = (same or _cover_name(cover, images)) if cover else ""
+    cover_href = f"img/{cover_name}" if cover_name else ""
     cover_id = "cover-img" if cover and not same else ""
     if cover and not same:
-        man.append(f'<item id="cover-img" href="img/cover.{cext}" '
-                   f'media-type="{cmime}" properties="cover-image"/>')
+        man.append(f'<item id="cover-img" href="{escape(cover_href)}" '
+                   f'media-type="{_cover_mime(cover)[0]}" properties="cover-image"/>')
     for i in range(1, len(parts) + 1):
         man.append(f'<item id="ch{i}" href="ch{i:03d}.xhtml" '
                    'media-type="application/xhtml+xml"/>')
@@ -936,7 +943,7 @@ def write_epub(path, meta, items, notes, images, note_prefix, st=None, cover=Non
         for name, raw in images.items():
             z.writestr("OEBPS/img/" + name, raw)
         if cover and not same:
-            z.writestr(f"OEBPS/img/cover.{cext}", cover)
+            z.writestr(f"OEBPS/{cover_href}", cover)
         if cover_href:
             z.writestr("OEBPS/cover.xhtml",
                        xhtml(f'<img class="cover" src="{escape(cover_href)}" alt=""/>',
@@ -1254,9 +1261,9 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
                                     r"\renewcommand{\thefootnote}{[+\arabic{footnote}]}"
                                     "\n" + r"\begin{document}", 1)
     o = [preamble]
+    cover_name = _cover_name(cover, images) if cover else ""
     if cover:
-        name = "%s.img/cover.%s" % (os.path.splitext(os.path.basename(path))[0],
-                                    _cover_mime(cover)[1])
+        name = "%s.img/%s" % (os.path.splitext(os.path.basename(path))[0], cover_name)
         o.append(r"\begin{titlepage}\centering")
         o.append(r"\includegraphics[width=\textwidth,height=0.8\textheight,"
                  r"keepaspectratio]{%s}\end{titlepage}" % name)
@@ -1388,7 +1395,7 @@ def write_tex(path, meta, items, notes, images, note_prefix, st=None, cover=None
         if name in used and _tex_pic(name):
             open(os.path.join(d, name), "wb").write(raw)
     if cover:
-        open(os.path.join(d, "cover." + _cover_mime(cover)[1]), "wb").write(cover)
+        open(os.path.join(d, cover_name), "wb").write(cover)
 
 
 def _tex_pic(name):
@@ -1746,8 +1753,9 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
     name = (meta.get("title_target") or meta.get("title")
             or st.get("untitled", "Без названия"))
     w(f"<book-title>{esc(name)}</book-title>")
+    cover_name = _cover_name(cover, images) if cover else ""
     if cover:
-        w('<coverpage><image l:href="#cover.jpg"/></coverpage>')
+        w(f'<coverpage><image l:href="#{cover_name}"/></coverpage>')
     w(f"<lang>{esc(meta.get('target_lang', 'ru'))}</lang>")
     if meta.get("lang"):
         w(f"<src-lang>{esc(meta['lang'][:2])}</src-lang>")
@@ -1973,8 +1981,7 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
               f'<p>{_inline(_md_inline(body), FB2_INLINE)}</p></section>')
         w("</body>")
 
-    def binary(name, raw):
-        mime = "image/png" if name.lower().endswith(".png") else "image/jpeg"
+    def binary(name, raw, mime):
         data = base64.b64encode(raw).decode()
         w(f'<binary id="{esc(name)}" content-type="{mime}">')
         for i in range(0, len(data), 76):
@@ -1982,15 +1989,15 @@ def write_fb2(dest, meta, items, notes, images, note_prefix, st=None, cover=None
         w("</binary>")
 
     if cover:
-        binary("cover.jpg", cover)
+        binary(cover_name, cover, _cover_mime(cover)[0])
     spots = [b for b in blocks if b["kind"] == "image"]
     used = {b["text"] for b in spots}
     used |= {n for it in items if isinstance(it[1], str)
              for n in re.findall(r'<imgmath name="([^"]+)"/>', it[1])}
     n_img = 0
     for name, raw in (images or {}).items():
-        if name in used and name != "cover.jpg":
-            binary(name, raw)
+        if name in used:
+            binary(name, raw, _mime(name))
             n_img += 1
     if n_img:
         # Двух чисел мало кому нужно, но одного тут недостаточно: из файла

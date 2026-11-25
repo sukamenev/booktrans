@@ -200,6 +200,7 @@
  "h_prompt_text": "instructions for the translator as a string (may be combined with -p)",
  "prompt_nofile": "no such instructions file: {0}. If you meant a string of instructions, the option for that is --prompt-text.",
  "h_out": "output file: fb2, epub, html, txt, tex or pdf (next to the source by default)",
+ "h_image_format": "visual PDF OCR crops at export: auto selects JPEG for suitable photos (default), png keeps all crops in PNG",
  "h_work": "working directory (<book>.work by default)",
  "h_only": "run a single step only",
  "h_skip": "skip steps, comma-separated",

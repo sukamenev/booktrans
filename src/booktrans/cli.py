@@ -186,6 +186,8 @@ def parser(ui):
     ap.add_argument("-p", "--prompt", help=T("h_prompt"))
     ap.add_argument("-pt", "--prompt-text", help=T("h_prompt_text"))
     ap.add_argument("-o", "--out", help=T("h_out"))
+    ap.add_argument("--image-format", choices=("auto", "png"), default="auto",
+                    help=T("h_image_format"))
     ap.add_argument("-w", "--work", help=T("h_work"))
     ap.add_argument("--only", choices=ALL_STEPS, help=T("h_only"))
     ap.add_argument("--skip", default="", help=T("h_skip"))

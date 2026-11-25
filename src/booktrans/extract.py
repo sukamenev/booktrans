@@ -2135,6 +2135,7 @@ def _pdf_visual(path, agent):
     
     import io
     from PIL import Image
+    from .pictures import OCR_CROP_NAME
 
     blocks = []
     images = {}
@@ -2150,7 +2151,9 @@ def _pdf_visual(path, agent):
         if not img_path_on_disk.exists():
             return
         images[img_name] = img_path_on_disk.read_bytes()
-        blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}", "kind": "image", "text": img_name, "_page": page_num})
+        blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}", "kind": "image",
+                       "text": img_name, "_page": page_num,
+                       "ocr_crop": bool(OCR_CROP_NAME.fullmatch(img_name))})
         if caption and caption != "image":
             blocks.append({"id": f"s{sec:02d}.img{len(blocks):04d}c", "kind": "p", "text": f"_{caption}_", "_page": page_num})
     

@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from xml.sax.saxutils import escape
 
-from . import lang, output
+from . import lang, output, pictures
 from .pipeline import _blockmap as pipe_blockmap
 from .pipeline import (all_notes, all_translations, chunk_files, fingerprint,
                        has_notes, lpath)
@@ -437,7 +437,7 @@ def link_targets(blocks):
 
 
 def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None,
-               source_pdf=None):
+               source_pdf=None, image_format="auto"):
     from . import indexing
     blocks, index_tr = indexing.assemble(work, blocks, meta, partial)
     # Язык перевода — свойство прогона, и он же выбирает языковую часть
@@ -596,6 +596,8 @@ def build_book(work, meta, blocks, cover, dest, log, partial=False, images=None,
     if ext == ".zip":
         ext = os.path.splitext(os.path.splitext(dest)[0])[1].lower() + ext
     if ext in output.WRITERS:
+        if ext != ".txt" and images:
+            blocks, images = pictures.prepare(blocks, images, image_format)
         head, body = about_lines(work, st, code, to)
         
         meta_items = []
